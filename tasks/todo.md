@@ -21,13 +21,13 @@
 
 ## M1 — Foundational auth & household model
 
-- [ ] `app.*` schema migrations (household, member, grants, events, transactions, meals, pantry, grocery_list, alerts, suggestions, actions, summaries) — @infra-platform  (blocked-by: M0)
-- [ ] RLS policies + helper functions + at-least-3-tests-per-table — @infra-platform
-- [ ] Supabase Auth: Google + email magic link — @infra-platform
-- [ ] Household create / invite / join flows (server actions) — @infra-platform
-- [ ] `getHouseholdContext()` helper for server components — @infra-platform
-- [ ] App shell scaffold (Next.js App Router tree per `specs/07-frontend/ui-architecture.md`) — @frontend-chat  (blocked-by: auth schema)
-- [ ] Settings: household, members, connections, notifications pages (skeleton) — @frontend-chat
+- [x] `app.*` schema migrations (household, member, grants, events, transactions, meals, pantry, grocery_list, alerts, suggestions, actions, summaries, conversation, model_calls, sync.*, audit.*) — @infra-platform (ede1ba4)
+- [x] RLS policies + helper functions + at-least-3-tests-per-table (23 test files, 26 tables) — @infra-platform (ede1ba4)
+- [x] Supabase Auth: Google + email magic link — @infra-platform (ede1ba4)
+- [x] Household create / invite / join flows (`packages/auth-server` + `apps/web/src/app/actions/*`) — @infra-platform (99ba8b5)
+- [x] `getHouseholdContext()` helper for server components — @infra-platform (99ba8b5, wrapped in `apps/web/src/lib/auth/context.ts`)
+- [x] App shell scaffold (Next.js App Router tree) — @frontend-chat (318a70d: login, invite/[token], onboarding, (app)/layout, dashboard stub)
+- [x] Settings: household + members skeletons — @frontend-chat (318a70d). Connections page defers to M2 (where real provider Connect lives); Notifications defers to M9.
 
 ## M2 — First provider end-to-end (Google Calendar)
 

@@ -180,4 +180,81 @@ Parallel work across two specialists. Ordering: @infra-platform migrations must 
 - `@infra-platform` (M1-B, after M1-A): server-side helpers — `getHouseholdContext()`, `requireMember()`, household create/invite/join server actions (in `apps/web` since they're server actions, but the data layer helpers live in a shared server-only package).
 - `@frontend-chat` (M1-C, after M1-A schema lands): app shell scaffold per `specs/07-frontend/ui-architecture.md` (login page, invite-token page, app-layout auth boundary with ⌘K launcher placeholder, settings skeleton: household/members/connections/notifications pages) — stubs acceptable where tools/data haven't arrived.
 
+## 2026-04-20 — M1-A reviewed & accepted (commit ede1ba4)
+
+Scope delivered: nine forward-only migrations (0003–0009) introducing 26 tables across `app.*`, `sync.*`, `audit.*` with RLS enabled on every table. Auth helpers (`app.current_user_id`, `is_member`, `can_read/write_segment`, `can_read/write_account`) all `security definer` with locked-down `search_path`. Supabase Auth configured with Google OAuth + email magic link. `app.household_invitation` stores tokens as hashes. `app.action` has a status-transition trigger. `app.model_calls` and `sync.dead_letter` tables exist — M0-C stubs are ready to be wired for real. 23 RLS test files (one per policy-bearing table), all passing against a validator Postgres. `packages/db/src/types.generated.ts` regenerated; all 22 workspace packages still typecheck clean. New CI job `rls-tests` runs the full suite on every PR.
+
+Specialist decisions accepted:
+
+1. **Helpers in `plpgsql`** (not `sql`) — enables forward references across migration order. Accepted; they're `stable` + `security definer` with pinned `search_path`.
+2. **`auth.enable_signup = true` + `auth.email.enable_signup = false`** — permits local signups but gates email-link signups through invitations. Production flip to `auth.enable_signup = false` is on the deploy runbook; document it in `infra/nango/docs/production-deploy.md` parallel when we add a corresponding production supabase deploy runbook.
+3. **`audit.event` is service-role-only (read and write)** — aligns with the open-question lean in `specs/02-data-model/row-level-security.md`. The owner-read view is a later add when a real owner-facing audit surface is scoped.
+4. **Invitation token stored as hash only.** Single best-practice call.
+5. **`action` status transitions enforced by trigger, not check constraint.** Correct — checks can't reference old row values.
+6. **RLS tests structured for a mechanical pgTAP port later.** The assertions are already the load-bearing part; when pgTAP is installable in CI, port is straight-line. Fine.
+
+Nothing blocks M1-B.
+
+## 2026-04-20 — M1-B dispatched
+
+`@infra-platform`: server-side auth/household helpers that `@frontend-chat` will consume, household create/invite/join server actions (server-only package with a thin re-export from `apps/web` so Next.js picks them up), and unstub the M0-C worker-runtime helpers now that the backing tables (`sync.dead_letter`, `app.model_calls`) exist. Single dispatch. Keeps auth logic in one specialist's lane; frontend specialist gets a clean import surface for M1-C.
+
+## 2026-04-20 — M1-B reviewed & accepted (commit 99ba8b5)
+
+Scope delivered: `packages/auth-server` (clients, session, household context + resolver, invitation token hash, audit writer, seven household flow helpers, typed errors, Zod schemas), `apps/web/src/app/actions/{household,members}.ts` server actions wrapping the helpers in an `ActionResult<T>` envelope, `apps/web/src/lib/auth/context.ts` wrapper for React `cache()` integration, and real implementations of `queueClient.deadLetter` / model-calls recorder / `withBudgetGuard` now that M1-A tables exist. 36 tests in auth-server (mocked-Supabase flow coverage), 29 in worker-runtime (9 new behavior tests replace the stub assertions). All 23 workspace packages typecheck clean.
+
+Specialist decisions accepted:
+
+1. **Mocked-Supabase unit tests** in `auth-server` rather than live DB integration. Correct call — RLS is covered by the pgTAP suite in `packages/db/tests/rls/`; flow-code branches are better tested with fast mocks. Standing decision: auth-server = unit tests with fakes; DB policy = pgTAP.
+2. **`revokeMember` soft-deletes to `role='guest'`** and strips grants but preserves the `app.member` row. Matches the spec lean in `households.md` open questions; keeps memory-graph anchors intact. The "Bob (former member)" rename is tracked as M8 work.
+3. **`react/cache` wrapper lives in `apps/web/src/lib/auth/context.ts`**, not in `auth-server`. Correct — keeps `auth-server` framework-agnostic (importable from Node workers, not just Next.js).
+4. **Invite email delivery deferred.** `inviteMemberAction` returns the raw token; the frontend renders a shareable `/invite/:token` URL. Production mailer lands in a later milestone.
+5. **Account-level grants out of scope** until M5 (when `app.account` sees UI). Right call.
+
+Follow-up not blocking M1-C:
+
+- **Production `[auth].enable_signup = false` flip** documented in `packages/db/supabase/production-notes.md`. Pair it with admin-pre-create of `auth.users` when we wire the production Supabase link.
+
+## 2026-04-20 — M1-C dispatched
+
+`@frontend-chat`: app shell on top of M1-B helpers. Login page (Google + magic link), invite-accept page at `/invite/[token]`, authenticated app layout with ⌘K placeholder, onboarding for users with no household, settings skeleton (household / members / connections / notifications). No segment pages, no chat, no graph browser yet — those are M2/M3/M3.5. Full spec in `specs/07-frontend/ui-architecture.md` + `pages.md`; ownership in `scripts/agents/frontend-chat.md`.
+
+## 2026-04-20 — M1-C reviewed & accepted (commit 318a70d)
+
+Scope delivered: `(public)` route group (`login`, `invite/[token]`, `auth/callback`), `(onboarding)` route group, `(app)` layout with auth+household boundary, dashboard stub with disabled segment cards, settings skeletons (household + members). shadcn/ui primitives landed (button/input/label/form/card/dialog/dropdown/tabs/checkbox/select/separator/sheet/toast/badge) in `new-york` style with `slate` base color, CSS-vars mode. Four new server actions (auth.ts, + previewInvitation/updateHousehold/listInvitations). Three new auth-server helpers with Zod schemas + unit tests. HouseholdSwitcher uses a `hh_active_household` cookie the context reader honors. Accessibility: skip link, focus-visible rings, `aria-live` errors, color+icon for severity. No middleware — layout-level redirects are sufficient. 26 tests in `apps/web`, 94 in `auth-server` (up from 75), 29 in `worker-runtime`.
+
+Specialist decisions accepted:
+
+1. **shadcn primitives emitted directly** (not via interactive `init`) with `components.json` committed for reproducibility. Pragmatic, fine.
+2. **`(onboarding)` as its own route group** outside `(app)` — dodges the "no household → /onboarding" redirect loop cleanly.
+3. **`settings/connections` deferred to M2** — connections UI gets meaningful content once Google Calendar lands. Standing decision: connections page lands with the first provider dispatch, not before.
+4. **`settings/notifications` deferred to M9** — there's no notifications backend yet; a stub with a toast-on-save is deferred until the write target exists.
+5. **No `middleware.ts`** — layout-server-side redirects + the `auth-server` single source of truth. Acceptable. Revisit if we ever want to short-circuit before Server Component boot.
+6. **`tailwindcss-animate` skipped**; small CSS keyframe shim in `globals.css` covers Radix state transitions. Tailwind v4 + tailwindcss-animate compat is still in flux; this is the right interim call.
+7. **Invite email-mismatch soft warning** — warns the authenticated user if the invitation was addressed to a different email, but lets them accept (the row, not the email, is canonical). Fine for v1. Stricter pairing can come with the production mailer.
+8. **`listInvitations` never returns raw token** — correct; the token is one-time-issue. Fresh invites get a prominent copy button; re-issue the only way to recover a lost link.
+
+Follow-ups tracked, not blocking M2:
+
+- Bundle size on `/settings/members` (192 kB first-load). Revisit when chat lands and the shared chunk grows.
+- Connections stub page lands in M2.
+- Notifications stub page lands in M9.
+- Real mailer for invite delivery — later.
+
+## 2026-04-20 — **M1 COMPLETE**
+
+Commits: ede1ba4 (schema + RLS + auth config), 99ba8b5 (auth-server + server actions + worker-runtime unstub), 318a70d (frontend app shell). A household can be created, an invite issued, a second member can accept and see the shared dashboard. The per-household boundary is RLS-enforced at the DB and verified by pgTAP. All 23 workspace packages typecheck clean; ~170 tests green across the tree.
+
+Human-gated items still parked: Supabase Pro / Vercel / Railway / OpenRouter / Nango Railway deploy / Google OAuth client. Each has a runbook.
+
+## 2026-04-20 — M2 dispatched
+
+Three parallel streams now that M1 is done and RLS is trustworthy:
+
+- `@integrations` (M2-A): register `google-calendar` provider in Nango (local compose), `packages/providers/calendar` adapter + Nango proxy wrapper, `apps/workers/sync-gcal` worker with delta-sync via Google sync tokens, Google push notifications → webhook-ingest → enrichment queue, `/api/integrations/connect` server action. Migration `0010_sync_gcal.sql` if any index/column additions are needed (coordinate with @infra-platform for the actual migration PR).
+- `@memory-background` (M2-B): event enrichment MVP. `packages/prompts/extraction/event.md` + `apps/workers/enrichment` handler for `enrich_event` queue — extracts person/place/topic atomic facts + writes `mem.episode` rows — but since `mem.*` schema lands in M3, this dispatch goes SHALLOW for M2: a DB trigger that enqueues `enrich_event`, a worker handler that parses the event and logs the would-be facts to a staging table `app.event_enrichment_preview` (new migration 0011 via @infra-platform) until M3 `mem.*` exists. Enrichment becomes real in M3.
+- `@frontend-chat` (M2-C): `/{segment}` shell with unified `/calendar` MVP (read-only, no filter), real `/settings/connections` page with Google Calendar "Connect" button that calls @integrations's `/api/integrations/connect`. Dashboard's "Today" strip reads from `app.event` via a server helper.
+
+M2-A + M2-B + M2-C can run in parallel — they touch disjoint files. I'll dispatch them one-per-message and review independently. @infra-platform gets a shared dispatch for the two support migrations (0010 sync-gcal metadata, 0011 event_enrichment_preview staging).
+
 
