@@ -89,6 +89,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build workspace packages
+        # Every `@homehub/*` package has `main` → `dist/index.js`; tests
+        # that import a workspace package via the package name (not a
+        # vitest alias) fail to resolve that entry unless dist exists.
+        # Building everything except @homehub/web (which needs real
+        # NEXT_PUBLIC_* env and is covered by the web-build job) ensures
+        # every cross-package import resolves cleanly.
+        run: pnpm --filter '!@homehub/web' -r --if-present run build
+
       - name: Test
         run: pnpm -r --if-present run test
 
@@ -172,14 +181,14 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build workspace packages
+        # Populate `dist/` for every workspace package so `next build`
+        # can resolve `@homehub/*` imports via their package.json main.
+        # Scoped to non-web packages; web is built in the next step.
+        run: pnpm --filter '!@homehub/web' -r --if-present run build
+
       - name: Build web app
-        # `...@homehub/web` = web + all its transitive workspace deps,
-        # built in topological order. Each workspace package's `build`
-        # is `tsc`, which populates `dist/` so webpack's module
-        # resolution (main/exports → dist/index.js) finds the entry.
-        # Without this, `next build` fails with
-        # "Module not found: Can't resolve '@homehub/shared'" etc.
-        run: pnpm --filter "...@homehub/web" build
+        run: pnpm --filter @homehub/web build
 
   nango-compose-validate:
     name: Nango compose validate
