@@ -10,7 +10,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20.18.0'
+  NODE_VERSION: '20.19.0'
   # Pinned Supabase CLI version. Bump deliberately; a bump can change
   # migration linter behavior or bundled Postgres extension versions.
   SUPABASE_CLI_VERSION: '2.90.0'
@@ -163,7 +163,10 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build web app
-        run: pnpm --filter @homehub/web build
+        # `@homehub/web` imports multiple workspace packages that export
+        # built `dist/*` entrypoints. Build the app plus its transitive
+        # workspace deps so a clean CI install matches developer machines.
+        run: pnpm --filter @homehub/web... build
 
   nango-compose-validate:
     name: Nango compose validate

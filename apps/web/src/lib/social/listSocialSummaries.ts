@@ -9,7 +9,6 @@ import { hasSocialRead, type SegmentGrant, type SocialSummaryRow } from './types
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const listSocialSummariesArgsSchema = z.object({
   householdId: z.string().uuid(),
   limit: z.number().int().positive().max(60).optional(),

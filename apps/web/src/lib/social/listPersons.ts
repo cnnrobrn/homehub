@@ -19,7 +19,6 @@ import { hasSocialRead, type PersonRow, type SegmentGrant } from './types';
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const listPersonsArgsSchema = z.object({
   householdId: z.string().uuid(),
   searchText: z.string().trim().min(1).max(200).optional(),

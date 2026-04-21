@@ -35,7 +35,6 @@ import { type ActionResult, ok, toErr } from './_envelope';
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
 
-
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
 interface AuthedActor {
