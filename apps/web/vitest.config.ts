@@ -22,6 +22,9 @@ const dbSrc = fileURLToPath(new URL('../../packages/db/src/index.ts', import.met
 const authServerSrc = fileURLToPath(
   new URL('../../packages/auth-server/src/index.ts', import.meta.url),
 );
+const approvalFlowSrc = fileURLToPath(
+  new URL('../../packages/approval-flow/src/index.ts', import.meta.url),
+);
 const queryMemorySrc = fileURLToPath(
   new URL('../../packages/query-memory/src/index.ts', import.meta.url),
 );
@@ -47,6 +50,7 @@ export default defineConfig({
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
       '@homehub/auth-server': authServerSrc,
+      '@homehub/approval-flow': approvalFlowSrc,
       '@homehub/query-memory': queryMemorySrc,
       '@homehub/tools': toolsSrc,
       '@homehub/worker-foreground-agent': foregroundAgentSrc,

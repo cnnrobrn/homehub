@@ -12,6 +12,7 @@
  */
 
 import { createRuleTool } from './tools/createRule.js';
+import { draftMessageTool } from './tools/draftMessage.js';
 import { draftWriteStubs } from './tools/draftWriteStubs.js';
 import { addMealToPlanTool } from './tools/food/addMealToPlan.js';
 import { addPantryItemTool } from './tools/food/addPantryItem.js';
@@ -32,8 +33,13 @@ import { listEventsTool } from './tools/listEvents.js';
 import { listMealsTool } from './tools/listMeals.js';
 import { listSuggestionsTool } from './tools/listSuggestions.js';
 import { listTransactionsTool } from './tools/listTransactions.js';
+import { proposeAddToCalendarTool } from './tools/proposeAddToCalendar.js';
+import { proposeBookReservationTool } from './tools/proposeBookReservation.js';
+import { proposeCancelSubscriptionTool } from './tools/proposeCancelSubscription.js';
+import { proposeTransferTool } from './tools/proposeTransfer.js';
 import { queryMemoryTool } from './tools/queryMemory.js';
 import { rememberFactTool } from './tools/rememberFact.js';
+import { settleSharedExpenseTool } from './tools/settleSharedExpense.js';
 
 import type { ToolDefinition } from './types.js';
 
@@ -65,6 +71,12 @@ export function defaultToolSet(): ReadonlyArray<ToolDefinition<unknown, unknown>
     // Draft-writes with real suggestion persistence
     draftMealPlanTool as ToolDefinition<unknown, unknown>,
     proposeGroceryOrderTool as ToolDefinition<unknown, unknown>,
+    proposeTransferTool as ToolDefinition<unknown, unknown>,
+    proposeCancelSubscriptionTool as ToolDefinition<unknown, unknown>,
+    draftMessageTool as ToolDefinition<unknown, unknown>,
+    proposeAddToCalendarTool as ToolDefinition<unknown, unknown>,
+    proposeBookReservationTool as ToolDefinition<unknown, unknown>,
+    settleSharedExpenseTool as ToolDefinition<unknown, unknown>,
     // Draft-write stubs (suggestion-card surface for the UI)
     ...(draftWriteStubs as ReadonlyArray<ToolDefinition<unknown, unknown>>),
   ];

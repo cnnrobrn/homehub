@@ -63,14 +63,15 @@ export { getNodeTool } from './tools/getNode.js';
 export { getEpisodeTimelineTool } from './tools/getEpisodeTimeline.js';
 export { rememberFactTool } from './tools/rememberFact.js';
 export { createRuleTool } from './tools/createRule.js';
-export {
-  draftWriteStubs,
-  proposeTransferStub,
-  draftMessageStub,
-  proposeAddToCalendarStub,
-  supersedeFactStub,
-  forgetFactStub,
-} from './tools/draftWriteStubs.js';
+export { draftWriteStubs, supersedeFactStub, forgetFactStub } from './tools/draftWriteStubs.js';
+
+// M9-C draft-write tools with real suggestion persistence.
+export { proposeTransferTool } from './tools/proposeTransfer.js';
+export { proposeCancelSubscriptionTool } from './tools/proposeCancelSubscription.js';
+export { draftMessageTool } from './tools/draftMessage.js';
+export { proposeAddToCalendarTool } from './tools/proposeAddToCalendar.js';
+export { proposeBookReservationTool } from './tools/proposeBookReservation.js';
+export { settleSharedExpenseTool } from './tools/settleSharedExpense.js';
 
 // Food-segment tools (M6).
 export { addMealToPlanTool } from './tools/food/addMealToPlan.js';

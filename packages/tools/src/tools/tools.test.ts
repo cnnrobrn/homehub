@@ -10,7 +10,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import { createRuleTool } from './createRule.js';
-import { draftWriteStubs, proposeTransferStub } from './draftWriteStubs.js';
+import { draftWriteStubs, supersedeFactStub } from './draftWriteStubs.js';
 import { getAccountBalancesTool } from './getAccountBalances.js';
 import { getGroceryListTool } from './getGroceryList.js';
 import { getHouseholdMembersTool } from './getHouseholdMembers.js';
@@ -462,20 +462,16 @@ describe('createRule tool', () => {
 });
 
 describe('draft-write stubs', () => {
-  it('all stubs return a pending_approval envelope', async () => {
-    const sb = stubSupabase({});
-    const ctx = mkCtx(sb);
-    const res = await proposeTransferStub.handler(
+  it('supersede_fact stub returns a pending_approval envelope', async () => {
+    const res = await supersedeFactStub.handler(
       {
-        from_account: '00000000-0000-0000-0000-000000000001',
-        to_account: '00000000-0000-0000-0000-000000000002',
-        amount_cents: 20000,
-        reason: 'savings top-up',
+        fact_id: '00000000-0000-0000-0000-000000000001',
+        reason: 'moved',
       },
-      ctx,
+      {} as never,
     );
     expect(res.status).toBe('pending_approval');
-    expect(res.summary).toContain('$200');
+    expect(res.summary).toContain('Supersede');
   });
 
   it('stubs are all classified as draft-write', () => {
