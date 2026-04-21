@@ -12,7 +12,6 @@ import { hasFoodRead, type SegmentGrant } from './types';
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const listFoodSuggestionsArgsSchema = z.object({
   householdId: z.string().uuid(),
   kinds: z.array(z.string()).optional(),

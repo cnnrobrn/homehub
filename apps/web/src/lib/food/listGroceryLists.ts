@@ -13,7 +13,6 @@ import { GROCERY_STATUSES, hasFoodRead, type GroceryStatus, type SegmentGrant } 
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const listGroceryListsArgsSchema = z.object({
   householdId: z.string().uuid(),
   statuses: z.array(z.enum(GROCERY_STATUSES)).optional(),

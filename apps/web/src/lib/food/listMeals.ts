@@ -14,7 +14,6 @@ import { hasFoodRead, type MealSlot, type MealStatus, type SegmentGrant } from '
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
 
 export const listMealsArgsSchema = z.object({

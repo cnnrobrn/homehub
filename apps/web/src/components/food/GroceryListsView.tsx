@@ -8,7 +8,6 @@
 import { useRouter } from 'next/navigation';
 import { useTransition, useState } from 'react';
 
-
 import type { FoodSuggestionRow } from '@/lib/food/listFoodSuggestions';
 import type { GroceryListRow } from '@/lib/food/listGroceryLists';
 

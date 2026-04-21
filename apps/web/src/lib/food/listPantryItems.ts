@@ -9,7 +9,6 @@ import { hasFoodRead, type PantryLocation, type SegmentGrant } from './types';
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const listPantryItemsArgsSchema = z.object({
   householdId: z.string().uuid(),
   location: z.enum(['fridge', 'freezer', 'pantry']).optional(),

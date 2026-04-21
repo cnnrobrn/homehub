@@ -15,7 +15,6 @@ import { getHouseholdContext } from '@/lib/auth/context';
 import { cn } from '@/lib/cn';
 import { hasFoodRead, type SegmentGrant } from '@/lib/food';
 
-
 export const metadata = {
   title: 'Food — HomeHub',
 };

@@ -16,7 +16,6 @@ import type { PantryItemRow } from '@/lib/food/listPantryItems';
 import { deletePantryItemAction, upsertPantryItemAction } from '@/app/actions/food';
 import { cn } from '@/lib/cn';
 
-
 export interface PantryTableProps {
   householdId: string;
   initial: readonly PantryItemRow[];

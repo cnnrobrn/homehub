@@ -32,7 +32,6 @@ import { deleteMealAction, upsertMealAction } from '@/app/actions/food';
 import { cn } from '@/lib/cn';
 import { MEAL_SLOTS, type MealSlot } from '@/lib/food/types';
 
-
 const SLOT_LABELS: Record<MealSlot, string> = {
   breakfast: 'Breakfast',
   lunch: 'Lunch',

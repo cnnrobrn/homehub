@@ -13,7 +13,6 @@ import { hasFoodRead, type SegmentGrant } from './types';
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const listDishesArgsSchema = z.object({
   householdId: z.string().uuid(),
   searchText: z.string().min(1).max(200).optional(),

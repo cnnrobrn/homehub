@@ -7,7 +7,6 @@ import type { FoodAlertRow } from '@/lib/food/listFoodAlerts';
 
 import { cn } from '@/lib/cn';
 
-
 export interface FoodAlertsFeedProps {
   alerts: readonly FoodAlertRow[];
 }

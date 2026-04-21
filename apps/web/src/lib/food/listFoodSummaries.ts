@@ -9,7 +9,6 @@ import { hasFoodRead, type SegmentGrant } from './types';
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const listFoodSummariesArgsSchema = z.object({
   householdId: z.string().uuid(),
   limit: z.number().int().positive().max(60).optional(),

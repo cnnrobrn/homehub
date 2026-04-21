@@ -11,7 +11,6 @@ import { hasFoodRead, type SegmentGrant } from './types';
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const FOOD_ALERT_SEVERITIES = ['critical', 'warn', 'info'] as const;
 export type FoodAlertSeverity = (typeof FOOD_ALERT_SEVERITIES)[number];
 
