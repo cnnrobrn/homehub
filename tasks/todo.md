@@ -10,14 +10,14 @@
 
 ## M0 — Scaffolding
 
-- [ ] Create monorepo structure (pnpm workspaces) — @infra-platform
-- [ ] Base tsconfig, eslint, prettier, commitlint — @infra-platform
-- [ ] GitHub Actions CI: lint, typecheck, migration-lint (unit/integration to be added later) — @infra-platform
-- [ ] Provision Supabase project (staging); enable `pgvector`, `pgmq`, `pg_cron`, `pg_trgm`, `uuid-ossp` — @infra-platform
-- [ ] Provision Railway project; create worker service stubs per `specs/05-agents/workers.md` — @infra-platform
-- [ ] Deploy self-hosted Nango on Railway (pinned version, isolated Postgres) — @infra-platform
-- [ ] OpenRouter account; `generate()` helper in `packages/worker-runtime` with prompt-cache awareness — @infra-platform
-- [ ] Vercel project for `apps/web`; wire Supabase env — @infra-platform
+- [x] Create monorepo structure (pnpm workspaces) — @infra-platform (1556d8d)
+- [x] Base tsconfig, eslint, prettier, commitlint — @infra-platform (1556d8d)
+- [x] GitHub Actions CI: lint, typecheck, format-check, test, migration-lint, web-build, nango-compose-validate — @infra-platform (1556d8d, 55da152, 28ffab3, 579463b, daa6e25)
+- [x] Provision Supabase (local scaffold + extensions migration + schemas migration + CI migration-lint; cloud Pro provisioning human-gated) — @infra-platform (55da152)
+- [x] Worker service stubs (17 services wired to @homehub/worker-runtime with Dockerfile + railway.toml each; Railway account link human-gated) — @infra-platform (817cfec)
+- [x] Self-hosted Nango assets (pinned docker-compose + production railway.toml + runbooks; live deploy human-gated) — @infra-platform (daa6e25)
+- [x] OpenRouter `generate()` helper in `packages/worker-runtime` with prompt-cache awareness + JSON-schema validation + fallback + model_calls logging — @infra-platform (28ffab3)
+- [x] Vercel project for `apps/web` (Next.js 15 + Tailwind 4 + @supabase/ssr + design-system tokens + /api/health + CI web-build; Vercel link human-gated) — @infra-platform (579463b)
 
 ## M1 — Foundational auth & household model
 
