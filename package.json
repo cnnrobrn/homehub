@@ -16,6 +16,8 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "typecheck": "pnpm -r --if-present run typecheck",
+    "lint:log-fields": "tsx scripts/lint-log-fields.ts --warn",
+    "lint:log-fields:strict": "tsx scripts/lint-log-fields.ts",
     "prepare": "husky"
   },
   "pnpm": {

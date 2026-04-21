@@ -30,6 +30,12 @@ export const workerRuntimeEnvSchema = baseServerEnvSchema.extend({
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
   OPENROUTER_HTTP_REFERER: z.string().url().default('https://homehub.app'),
   OPENROUTER_APP_TITLE: z.string().min(1).default('HomeHub'),
+
+  /**
+   * Optional Sentry DSN for error reporting. When unset, `initSentry()`
+   * no-ops so dev environments aren't forced to set up Sentry.
+   */
+  SENTRY_DSN: z.string().url().optional(),
 });
 
 export type WorkerRuntimeEnv = z.infer<typeof workerRuntimeEnvSchema>;

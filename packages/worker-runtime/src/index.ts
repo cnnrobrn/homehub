@@ -50,6 +50,16 @@ export {
 
 export { initTracing, type TracingHandle } from './otel/tracing.js';
 
+export { initSentry, type InitSentryOptions, type SentryHandle } from './sentry/init.js';
+
+export {
+  recordWorkerHeartbeat,
+  startHeartbeatLoop,
+  type HeartbeatLoopHandle,
+  type RecordHeartbeatArgs,
+  type StartHeartbeatLoopOptions,
+} from './heartbeat/heartbeat.js';
+
 export { onShutdown, runWorker, type RunWorkerOptions } from './lifecycle/run.js';
 
 export {

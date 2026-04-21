@@ -113,6 +113,32 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
+  log-field-lint:
+    name: Log-field lint
+    runs-on: ubuntu-latest
+    # Enforces that workers emit through the structured logger rather
+    # than bare `console.*`. See `scripts/lint-log-fields.ts`.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run log-field lint
+        run: pnpm lint:log-fields
+
   web-build:
     name: Web build
     runs-on: ubuntu-latest

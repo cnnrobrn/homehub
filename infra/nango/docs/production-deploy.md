@@ -267,3 +267,7 @@ If Nango will be down for >1 hour:
 - [`../docker-compose.yml`](../docker-compose.yml) — pinned image.
 - [`specs/03-integrations/nango.md`](../../../specs/03-integrations/nango.md) — architecture + provider list.
 - [`specs/10-operations/observability.md`](../../../specs/10-operations/observability.md) — how Nango's logs reach our pipeline.
+- [`docs/ops/README.md`](../../../docs/ops/README.md) — top-level operator runbook.
+- [`docs/ops/runbooks/dlq-replay.md`](../../../docs/ops/runbooks/dlq-replay.md) — handling a DLQ alert.
+- [`docs/ops/runbooks/worker-down.md`](../../../docs/ops/runbooks/worker-down.md) — worker heartbeat missing.
+- [`docs/ops/runbooks/incident-response.md`](../../../docs/ops/runbooks/incident-response.md) — incident template.
