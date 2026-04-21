@@ -43,6 +43,14 @@ const serverSchema = baseServerEnvSchema.extend({
   NEXT_PUBLIC_SUPABASE_ANON_KEY: buildSafeString,
   SUPABASE_SERVICE_ROLE_KEY: buildSafeString,
   NEXT_PUBLIC_APP_URL: buildSafeUrl,
+  /**
+   * Nango host + secret key. Used by the `/api/integrations/connect`
+   * route handler to mint a hosted-auth session for the member. Both
+   * are optional so the app can boot without Nango configured (the
+   * connect route itself returns 503 in that case).
+   */
+  NANGO_HOST: z.string().url().optional(),
+  NANGO_SECRET_KEY: z.string().min(1).optional(),
 });
 
 export type PublicEnv = z.infer<typeof publicSchema>;

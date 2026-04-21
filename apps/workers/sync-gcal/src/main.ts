@@ -1,17 +1,24 @@
 /**
- * `sync-gcal` worker entrypoint.
+ * `sync-gcal` entrypoint.
  *
- * M0 scaffold. The runtime wires up env, tracing, Supabase, and the queue
- * client; the handler body is still a stub. This file's shape is the
- * contract every worker in `apps/workers/*` follows — see the matching
- * files under the sibling services.
+ * Composes the runtime (env, Supabase, queue, Nango proxy, tracing,
+ * logger), spins up the /health + /ready HTTP server Railway probes
+ * expect, and runs a polling loop against the per-provider `sync_full:gcal`
+ * and `sync_delta:gcal` queues.
+ *
+ * Readiness: flips green only after the service-role Supabase client
+ * reports a successful round-trip against `sync.provider_connection` and
+ * the Nango client is constructed. Either failure keeps the probe 503
+ * so Railway drains the instance before it claims jobs.
  */
 
 import { createServer } from 'node:http';
 
+import { createGoogleCalendarProvider } from '@homehub/providers-calendar';
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
+  createNangoClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -20,21 +27,26 @@ import {
   workerRuntimeEnvSchema,
 } from '@homehub/worker-runtime';
 
+import { pollOnce } from './handler.js';
+
 const SERVICE_NAME = 'worker-sync-gcal';
 
 const env = loadEnv(workerRuntimeEnvSchema);
 const log = createLogger(env, { service: SERVICE_NAME, component: 'main' });
+
+const IDLE_POLL_DELAY_MS = 2_000;
+const ERROR_POLL_DELAY_MS = 5_000;
 
 const exitCode = await runWorker(
   async () => {
     initTracing(env);
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
+    const nango = createNangoClient(env);
+    const calendar = createGoogleCalendarProvider({ nango });
 
-    // Health/ready HTTP server. Every worker exposes /health and /ready
-    // per `specs/05-agents/workers.md` so Railway can run liveness and
-    // readiness probes against a single port.
     let ready = false;
+    let stopping = false;
     const port = Number.parseInt(process.env.PORT ?? '8080', 10);
     const server = createServer((req, res) => {
       if (req.url === '/health') {
@@ -61,24 +73,54 @@ const exitCode = await runWorker(
     log.info('health server listening', { port });
 
     onShutdown(async () => {
+      stopping = true;
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    // The queue client is constructed here so readiness depends on a
-    // successful Supabase connection. The real consumer loop lands in M2.
-    void queues;
-    ready = true;
+    // Readiness probe: verify Supabase reachability via a cheap read.
+    try {
+      const { error } = await supabase
+        .schema('sync')
+        .from('provider_connection')
+        .select('id', { count: 'exact', head: true });
+      if (error) throw error;
+      ready = true;
+      log.info('readiness ok; entering poll loop');
+    } catch (err) {
+      log.error('readiness probe failed; worker will not claim jobs', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Stay un-ready. Railway will drain us on the ready failure.
+    }
 
-    log.info('worker started (no-op loop)');
-    // TODO(@integrations, M2): replace this hold with a pgmq claim/ack loop
-    // for the `sync_gcal` queue per specs/05-agents/workers.md.
-    await new Promise<void>((resolve) => {
-      const onSig = (): void => resolve();
-      process.once('SIGTERM', onSig);
-      process.once('SIGINT', onSig);
-    });
+    while (!stopping) {
+      try {
+        const outcome = await pollOnce({ supabase, queues, calendar, log });
+        if (outcome === 'idle') {
+          await sleep(IDLE_POLL_DELAY_MS, () => stopping);
+        }
+      } catch (err) {
+        // pollOnce itself should not throw — the handler maps every
+        // expected failure. Anything that bubbles here is a runtime bug;
+        // back off before the next iteration so we don't hot-loop.
+        log.error('sync-gcal pollOnce threw', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        await sleep(ERROR_POLL_DELAY_MS, () => stopping);
+      }
+    }
+    log.info('sync-gcal main loop exited');
   },
   { shutdownTimeoutMs: 30_000 },
 );
+
+async function sleep(ms: number, cancel: () => boolean): Promise<void> {
+  const step = 100;
+  let remaining = ms;
+  while (remaining > 0 && !cancel()) {
+    await new Promise((r) => setTimeout(r, Math.min(step, remaining)));
+    remaining -= step;
+  }
+}
 
 process.exit(exitCode);

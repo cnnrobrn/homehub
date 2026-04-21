@@ -38,10 +38,40 @@ export interface NangoConnection {
   metadata?: Record<string, unknown> | null;
 }
 
+export interface ConnectSessionEndUser {
+  id: string;
+  email?: string;
+  displayName?: string;
+  tags?: Record<string, string>;
+}
+
+export interface CreateConnectSessionOptions {
+  endUser: ConnectSessionEndUser;
+  /**
+   * Restricts the hosted-auth page to a single provider (e.g.
+   * `'google-calendar'`). HomeHub always scopes to exactly one.
+   */
+  allowedIntegrations: string[];
+  /**
+   * Free-form tags applied to the created session/connection. HomeHub
+   * stamps `{ household_id, member_id, provider }` so the
+   * `connection.created` webhook can resolve the target row.
+   */
+  tags?: Record<string, string>;
+}
+
+export interface CreateConnectSessionResult {
+  token: string;
+  connectLink: string;
+  expiresAt: string;
+}
+
 export interface NangoClient {
   proxy<T = unknown>(options: ProxyOptions): Promise<T>;
   getConnection(providerConfigKey: string, connectionId: string): Promise<NangoConnection>;
   listConnections(): Promise<NangoConnection[]>;
+  createConnectSession(options: CreateConnectSessionOptions): Promise<CreateConnectSessionResult>;
+  deleteConnection(providerConfigKey: string, connectionId: string): Promise<void>;
 }
 
 export function createNangoClient(env: WorkerRuntimeEnv): NangoClient {
@@ -100,6 +130,52 @@ export function createNangoClient(env: WorkerRuntimeEnv): NangoClient {
         return raw as NangoConnection[];
       } catch (error) {
         throw new NangoError('nango.listConnections failed', {}, { cause: error });
+      }
+    },
+
+    async createConnectSession(options) {
+      try {
+        // The Nango SDK's body type uses snake_case; map our camelCase
+        // surface onto it. `end_user.id` is a free-form stable id from
+        // HomeHub — we pass `member_id:<uuid>` for traceability.
+        const body = {
+          end_user: {
+            id: options.endUser.id,
+            ...(options.endUser.email ? { email: options.endUser.email } : {}),
+            ...(options.endUser.displayName ? { display_name: options.endUser.displayName } : {}),
+            ...(options.endUser.tags ? { tags: options.endUser.tags } : {}),
+          },
+          allowed_integrations: options.allowedIntegrations,
+          ...(options.tags ? { tags: options.tags } : {}),
+        };
+        const result = (await (
+          nango as unknown as {
+            createConnectSession: (
+              body: unknown,
+            ) => Promise<{ data: { token: string; connect_link: string; expires_at: string } }>;
+          }
+        ).createConnectSession(body)) as {
+          data: { token: string; connect_link: string; expires_at: string };
+        };
+        return {
+          token: result.data.token,
+          connectLink: result.data.connect_link,
+          expiresAt: result.data.expires_at,
+        };
+      } catch (error) {
+        throw new NangoError('nango.createConnectSession failed', {}, { cause: error });
+      }
+    },
+
+    async deleteConnection(providerConfigKey, connectionId) {
+      try {
+        await nango.deleteConnection(providerConfigKey, connectionId);
+      } catch (error) {
+        throw new NangoError(
+          'nango.deleteConnection failed',
+          { providerConfigKey, connectionId },
+          { cause: error },
+        );
       }
     },
   };

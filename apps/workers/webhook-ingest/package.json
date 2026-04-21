@@ -13,8 +13,11 @@
   },
   "dependencies": {
     "@homehub/db": "workspace:*",
+    "@homehub/providers-calendar": "workspace:*",
     "@homehub/shared": "workspace:*",
-    "@homehub/worker-runtime": "workspace:*"
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

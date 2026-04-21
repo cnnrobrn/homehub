@@ -23,11 +23,7 @@ interface NavItem {
 const ITEMS: NavItem[] = [
   { label: 'Household', href: '/settings/household' },
   { label: 'Members', href: '/settings/members' },
-  {
-    label: 'Connections',
-    disabled: true,
-    disabledLabel: 'Available in M2 (Google Calendar first)',
-  },
+  { label: 'Connections', href: '/settings/connections' },
   {
     label: 'Notifications',
     disabled: true,

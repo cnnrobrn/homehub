@@ -37,6 +37,9 @@ export { resolveDefaults, type ModelParams } from './model/defaults.js';
 
 export {
   createNangoClient,
+  type ConnectSessionEndUser,
+  type CreateConnectSessionOptions,
+  type CreateConnectSessionResult,
   type NangoClient,
   type NangoConnection,
   type ProxyOptions,
