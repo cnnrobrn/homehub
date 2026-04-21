@@ -318,3 +318,60 @@ values
   ('a000002a-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
    current_date - 7, '# Weekly insight\n- Grocery spend down 8%')
 on conflict (id) do nothing;
+
+-- -------- app.email / app.email_attachment (M4-A) ----------------------
+-- One ingested Gmail message per household so cross-household denial
+-- tests have symmetric targets. Household A gets two rows so the
+-- segment-gating assertion (Adam cannot read a financial email while he
+-- can read a system email) has both targets in the fixture.
+--
+-- Segments chosen:
+--   - Household A, 'system'   — default post-sync segment. Adam has
+--     read on system in his grants, so this row is visible to Adam.
+--   - Household A, 'financial'— post-extraction reclassification (a
+--     receipt). Adam has 'none' on financial; denial asserted.
+--   - Household B, 'system'   — cross-household denial target.
+insert into app.email
+  (id, household_id, member_id, connection_id, provider, source_id,
+   subject, from_email, received_at, categories, segment)
+values
+  ('a0000030-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'aaaaaaa1-1111-0000-0000-000000000000',
+   'a0000014-0000-0000-0000-000000000000',
+   'gmail', 'gmail-msg-a-system-001',
+   'Welcome to HomeHub', 'noreply@homehub.test',
+   now() - interval '1 hour', array[]::text[], 'system'),
+  ('a0000031-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'aaaaaaa1-1111-0000-0000-000000000000',
+   'a0000014-0000-0000-0000-000000000000',
+   'gmail', 'gmail-msg-a-financial-001',
+   'Receipt from Whole Foods', 'receipts@wholefoods.test',
+   now() - interval '2 hours', array['receipt']::text[], 'financial'),
+  ('b0000030-0000-0000-0000-000000000000', 'bbbbbbb1-0000-0000-0000-000000000000',
+   'bbbbbbb1-1111-0000-0000-000000000000', null,
+   'gmail', 'gmail-msg-b-system-001',
+   'Bob welcome', 'noreply@homehub.test',
+   now() - interval '1 hour', array[]::text[], 'system')
+on conflict (household_id, provider, source_id) do nothing;
+
+insert into app.email_attachment
+  (id, household_id, email_id, filename, content_type, size_bytes,
+   storage_path)
+values
+  -- Attachment on House A's financial (receipt) email — gated through
+  -- the financial segment.
+  ('a0000032-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'a0000031-0000-0000-0000-000000000000',
+   'receipt.pdf', 'application/pdf', 12345,
+   'aaaaaaa1-0000-0000-0000-000000000000/email/a0000031-0000-0000-0000-000000000000/att-001'),
+  -- Attachment on House A's system email — visible to Adam (system read).
+  ('a0000033-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'a0000030-0000-0000-0000-000000000000',
+   'welcome.pdf', 'application/pdf', 2048,
+   'aaaaaaa1-0000-0000-0000-000000000000/email/a0000030-0000-0000-0000-000000000000/att-002'),
+  -- Attachment on Bob's email — cross-household denial target.
+  ('b0000032-0000-0000-0000-000000000000', 'bbbbbbb1-0000-0000-0000-000000000000',
+   'b0000030-0000-0000-0000-000000000000',
+   'bob.pdf', 'application/pdf', 512,
+   'bbbbbbb1-0000-0000-0000-000000000000/email/b0000030-0000-0000-0000-000000000000/att-003')
+on conflict (storage_path) do nothing;
