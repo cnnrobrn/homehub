@@ -355,4 +355,68 @@ Follow-ups tracked for M3-B:
 
 M3-A unblocks @memory-background (M3-B) and, via M3-B's `query_memory`, @integrations (M3-C) and @frontend-chat (M3-D).
 
+## 2026-04-20 — M3-B reviewed & accepted (commit d5d0d65)
+
+Scope delivered: `@homehub/prompts` runtime loader with parsed markdown sections + Zod schemas, three prompt files (`event.md`, `event-classifier.md`, `node-doc.md`) versioned `2026-04-20-kimi-k2-v1`. Extended `@homehub/enrichment` with `createKimiEventClassifier`, `createKimiEventExtractor`, `createEnrichmentPipeline` (model → deterministic fallback, budget-aware), `reconcileCandidate` with typed decision matrix, destructive-predicate thresholds. New `@homehub/query-memory` package with hybrid retrieval (semantic seed via embeddings + structural expansion via recursive CTE + spec-default ranking weights + `as_of` bi-temporal filter + conflict surfacing). `@homehub/worker-runtime` gains `modelClient.embed()` logged to `app.model_calls`. Real `apps/workers/node-regen` with manual-notes preservation. Enrichment worker now chains classify → extract → reconcile → enqueue node_regen with full audit writes.
+
+Verified: all 26 packages typecheck clean. ~130 net new tests (+78 in enrichment, +25 in query-memory, +13 in prompts, +4 node-regen/enrichment worker). `mem.fact` inserts funnel through `insertCanonicalFact` inside the reconciler — no direct writes elsewhere.
+
+Specialist decisions accepted:
+
+1. **Sequential mutations + explicit rollback** instead of a PG transaction RPC. PostgREST has no transaction primitive via `@supabase/supabase-js`; blast radius is one candidate per call, next pass retries. Accept with a follow-up: consider a `mem.reconcile_candidate(candidate_id)` RPC later if we hit contention or need stricter atomicity.
+2. **Inline reconciler inside the enrichment worker** for M3-B. The separate `apps/workers/reconciler` service stays a stub until there's a batch-catch-up need (a `reconcile_candidate` queue). Correct staging.
+3. **Destructive-predicate set** = `{avoids, allergic_to, lives_at, has_birthday, born_on, works_at, has_medical_condition}` with threshold 0.9 + `needs_review=true`. Conservative and correct per spec guidance.
+4. **Confidence cap 0.99 + reinforcement bump 0.03.** Reasonable. Tune from telemetry in M11.
+5. **Embeddings at write time deferred.** `query_memory` tolerates null embeddings (neutral similarity + falls back to structural expansion). Follow-up: populate `mem.node.embedding` when nodes are created, either inline or via a new `mem.node.embed` queue — coordinate with `@infra-platform` for the queue name.
+6. **`query_memory` ranking weights** use the spec defaults verbatim (`α=0.5, β=0.15, γ=0.1, δ=0.05, ε=0.15, ζ=0.05`, half-life 30 days). Standing defaults; per-agent override is still supported via `RankingWeights`.
+
+Nothing blocks M3-C/D.
+
+## 2026-04-20 — M3-C + M3-D dispatched in parallel
+
+`@integrations` (M3-C): `apps/mcp/homehub-core` replaces the M0-E stub with real tool registrations consuming `@homehub/query-memory`. Tools: `query_memory`, `list_events`, `get_node`, `get_episode_timeline`. Per-member MCP tokens for external assistants; HMAC service tokens for internal workers. Tool catalog doubles as the source-of-truth for `@frontend-chat`'s foreground agent in M3.5.
+
+`@frontend-chat` (M3-D): graph browser page at `/memory`. Search (semantic via `query_memory` + exact via alias match), node detail with canonical document + facts panel + episodes panel + patterns panel + evidence drawer. Per-fact affordances (confirm / edit / dispute / delete / show evidence) ride the `mem.fact_candidate` pipeline — UI never writes to `mem.fact` directly. Node affordances (merge / delete / pin) via owner-gated server actions. Conflict visualization via `conflict_status != 'none'` + recent `superseded_at`.
+
+Both dispatches touch disjoint file trees. Running in parallel.
+
+## 2026-04-20 — M3-C reviewed & accepted (commit 6ffa0f0)
+
+Scope delivered: `apps/mcp/homehub-core` replaces the M0-E stub with a real MCP server. Four tools registered with Zod schemas: `query_memory` (delegates to `@homehub/query-memory`), `list_events` (household-scoped `app.event`), `get_node` (parallel load of facts + episodes + edges, same envelope for absent/cross-household), `get_episode_timeline` (`mem.episode` slice). Auth middleware supports `hh_mcp_*` member tokens (prod path throws NYI until `sync.mcp_token` lands) + `hh_svc_*` HMAC service tokens (5-minute replay window, `timingSafeEqual`, `X-HomeHub-Household-Id` header). Dev-allowlist via `MCP_DEV_TOKENS` for `NODE_ENV != 'production'`. Canonical `CalendarEventRow` now lives in `@homehub/shared/events/types` — frontend and MCP converge. 33 new tests across 6 files.
+
+Specialist decisions accepted:
+
+1. **Auth context stashed on `req.auth.extra.context`** — MCP SDK pattern; tool handlers never see the raw bearer. Fine.
+2. **Cross-household `get_node` returns same envelope** as "not found" — no presence leak. Correct.
+3. **`content[0].text` + `mimeType: 'application/json'`** result shape for widest client support. Fine.
+4. **Client-supplied `householdId` stripped** via Zod schema omission — explicit test locks this.
+5. **Canonical `CalendarEventRow` moves to `@homehub/shared`**. Standing decision: the frontend `listEvents` helper and the MCP `list_events` tool both import from `@homehub/shared/events/types`.
+
+Migration requested — tracked:
+
+**`@infra-platform` — `0012_sync_mcp_token.sql`**: `sync.mcp_token` table (household_id + optional member_id + token_hash + scopes + last_used_at + expires_at) with RLS (service-role writes; members read their own via member_id). Once merged, the dev-allowlist stub swaps for a real `token_hash = hmac_sha256(token)` lookup.
+
+## 2026-04-20 — M3-D reviewed & accepted (commit 61a0f24)
+
+Scope delivered: `/memory` page tree (`/memory` index, `/memory/[type]` type index, `/memory/[type]/[nodeId]` node detail with Document/Facts/Episodes/Edges tabs). Server helpers `queryHouseholdMemory` / `getNode` / `listNodes` wrap `@homehub/query-memory`. Eleven server actions in `apps/web/src/app/actions/memory.ts`: `confirmFact`, `disputeFact`, `editFact`, `deleteFact`, `updateManualNotes`, `toggleNeedsReview`, `pinNode`/`unpinNode`, `mergeNodes` (owner), `deleteNode` (owner), `searchMemory`. Every fact mutation writes `mem.fact_candidate` with `source='member'` — never direct to `mem.fact`. Every mutation writes `audit.event`. 10 custom components (6 Server, 10 Client islands), realtime refresher on `mem.fact` + `mem.node` with 500ms debounce, evidence drawer, conflict badges with icon + color (not color-alone), merge/delete dialogs. Sidebar Memory link lit up. 22 new web tests (93 total in apps/web).
+
+Specialist decisions accepted:
+
+1. **`deleteFact` via member-sourced null-object candidate.** Requires a reconciler decision-matrix extension to interpret this as a soft-delete signal (close canonical with `valid_to + superseded_at`, no successor). Follow-up flagged for `@memory-background`.
+2. **`mergeNodes` is soft-delete** via `metadata.merged_into` + canonical_name suffix. Facts/edges reassigned; aliases moved. No hard deletes. Correct.
+3. **Pin storage in `mem.node.metadata.pinned_by_member_ids[]`** via service-role because the member-update trigger guard bars metadata writes. Correct.
+4. **Realtime subscribed to both `mem.fact` and `mem.node`** with 500ms debounce. Good.
+5. **Server actions + `window.prompt` fallback** for dispute/forget reasons — acceptable UI MVP; inline Dialog replacement is pure polish.
+
+Follow-ups tracked, not blocking M3.5:
+
+- `@memory-background` reconciler extension for member-sourced null-object deletion candidates (either branch in `decideConflict` or a dedicated `deletion` candidate status).
+- `@integrations` + `@frontend-chat` together: MCP-tokens UI + the `sync.mcp_token` migration.
+- Replace `window.prompt` with inline Dialogs for dispute/forget reasons.
+- Populate `mem.node.embedding` on node creation so semantic search isn't a no-op for freshly-extracted nodes (enrichment worker can do it inline or via a `mem.node.embed` queue).
+
+## 2026-04-20 — **M3 COMPLETE**
+
+Six commits: ef5d5f0 (mem.* schema + RLS + pgTAP), d5d0d65 (extraction pipeline + reconciler + node-regen + query_memory), 6ffa0f0 (MCP tools), 61a0f24 (graph browser). End-to-end path verified: `sync-gcal` upserts `app.event` → `enrich_event` queued → enrichment worker classifies, extracts episodes + fact candidates, reconciler promotes to `mem.fact` with supersession, node-regen rebuilds `mem.node.document_md`, `/memory` renders the graph, MCP tools expose it to external assistants. Every schema layer has RLS + pgTAP; every fact write goes through the candidate pool.
+
 

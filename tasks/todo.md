@@ -42,15 +42,15 @@
 
 - [x] `mem.*` schema migrations (node, edge, episode, fact, fact_candidate, pattern, rule, mention, insight, alias) + bi-temporal columns + pgvector indexes — @infra-platform (ef5d5f0)
 - [x] RLS + tests for `mem.*` (10 tables, 15 policies, 33 total pgTAP files in the suite) — @infra-platform (ef5d5f0)
-- [ ] Extraction prompts v1 (event, email, transaction, meal, conversation) — @memory-background
-- [ ] Enrichment worker (Kimi K2 via OpenRouter, JSON mode, schema-validated) — @memory-background
-- [ ] Reconciler: candidate → canonical promotion; conflict routing — @memory-background
-- [ ] Node-regen worker (debounced) — @memory-background
-- [ ] `query_memory` implementation (layer-aware, hybrid ranking, `as_of`, conflict surfacing) — @memory-background
-- [ ] `mcp-homehub-core` server with `query_memory`, `list_events`, `get_node`, `get_episode_timeline` — @integrations  (blocked-by: query_memory)
-- [ ] Graph browser page (search, node doc, facts/episodes/patterns panels, evidence drawer) — @frontend-chat
-- [ ] Per-fact affordances (confirm / edit / dispute / delete / show evidence) — @frontend-chat
-- [ ] Node merge, delete, pin — @frontend-chat
+- [x] Extraction prompts v1 (event runtime + event-classifier + node-doc; additional source types in M4/M5) — @memory-background (d5d0d65)
+- [x] Enrichment pipeline (Kimi K2 model-backed + deterministic fallback, budget-aware, JSON-schema-validated) — @memory-background (d5d0d65)
+- [x] Reconciler: candidate → canonical promotion; conflict routing with destructive-predicate thresholds — @memory-background (d5d0d65)
+- [x] Node-regen worker (real handler, manual-notes preservation) — @memory-background (d5d0d65)
+- [x] `query_memory` implementation (layer-aware, hybrid ranking with spec-default weights, `as_of`, conflict surfacing) — @memory-background (d5d0d65)
+- [x] `mcp-homehub-core` server with `query_memory`, `list_events`, `get_node`, `get_episode_timeline` + member/service token auth (`sync.mcp_token` migration requested) — @integrations (6ffa0f0)
+- [x] Graph browser page (search, node doc, facts/episodes/patterns panels, evidence drawer, realtime) — @frontend-chat (61a0f24)
+- [x] Per-fact affordances (confirm / edit / dispute / delete via member-sourced candidates) — @frontend-chat (61a0f24)
+- [x] Node merge, delete, pin (soft-delete semantics, owner-gated) — @frontend-chat (61a0f24)
 
 ## M3.5 — First-party chat
 
