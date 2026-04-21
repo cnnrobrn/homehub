@@ -21,7 +21,6 @@ import type { Metadata } from 'next';
 import { LoginForm } from '@/components/auth/LoginForm';
 import { HomeHubMark } from '@/components/design-system';
 
-
 export const metadata: Metadata = {
   title: 'Sign in',
 };

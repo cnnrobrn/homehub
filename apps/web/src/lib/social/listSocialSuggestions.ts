@@ -10,7 +10,6 @@ import { hasSocialRead, type SegmentGrant, type SocialSuggestionRow } from './ty
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const listSocialSuggestionsArgsSchema = z.object({
   householdId: z.string().uuid(),
   personNodeId: z.string().uuid().optional(),
