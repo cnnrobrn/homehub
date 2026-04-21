@@ -33,6 +33,8 @@ export function createStore(): FakeStore {
       member_segment_grant: { rows: [] },
       household_invitation: { rows: [] },
       model_calls: { rows: [] },
+      suggestion: { rows: [] },
+      action: { rows: [] },
     },
     audit: {
       event: { rows: [] },

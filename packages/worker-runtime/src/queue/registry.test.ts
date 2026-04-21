@@ -19,6 +19,7 @@ describe('queueNames', () => {
   it('exposes the full static queue set', () => {
     expect(staticQueueNames).toContain('enrich_event');
     expect(staticQueueNames).toContain('execute_action');
+    expect(staticQueueNames).toContain('evaluate_suggestion_approval');
     expect(staticQueueNames).toContain('pantry_diff');
     // Templated names are intentionally NOT in the static list.
     expect(staticQueueNames).not.toContain('sync_full:gcal');

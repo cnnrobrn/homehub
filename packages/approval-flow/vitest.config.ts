@@ -1,8 +1,8 @@
 /**
- * Vitest config for `@homehub/auth-server`.
+ * Vitest config for `@homehub/approval-flow`.
  *
- * Mirrors the worker-runtime vitest config: alias workspace packages to
- * their `src/index.ts` so tests run without a prior `pnpm -r build`.
+ * Aliases workspace packages to their `src/index.ts` so tests resolve
+ * without requiring a prior `pnpm build` of shared / db / worker-runtime.
  */
 
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,6 @@ import { defineConfig } from 'vitest/config';
 
 const sharedSrc = fileURLToPath(new URL('../shared/src/index.ts', import.meta.url));
 const dbSrc = fileURLToPath(new URL('../db/src/index.ts', import.meta.url));
-const approvalFlowSrc = fileURLToPath(new URL('../approval-flow/src/index.ts', import.meta.url));
 const runtimeSrc = fileURLToPath(new URL('../worker-runtime/src/index.ts', import.meta.url));
 
 export default defineConfig({
@@ -19,7 +18,6 @@ export default defineConfig({
     alias: {
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
-      '@homehub/approval-flow': approvalFlowSrc,
       '@homehub/worker-runtime': runtimeSrc,
     },
   },

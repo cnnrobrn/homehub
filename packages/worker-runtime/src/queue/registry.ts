@@ -41,6 +41,23 @@ export const queueNames = {
   evaluateAlerts: 'evaluate_alerts',
   generateSuggestions: 'generate_suggestions',
   executeAction: 'execute_action',
+  /**
+   * `evaluate_suggestion_approval` — fired once per `app.suggestion`
+   * insert. The action-executor worker consumes this queue on a
+   * sibling claim loop: it looks up the suggestion's kind, resolves
+   * the effective policy (factoring in household settings and the
+   * destructive-kind deny list), and either auto-approves + dispatches
+   * or leaves the suggestion pending for a human tap. Owned by the
+   * approval-flow package + the action-executor worker (M9-A).
+   */
+  evaluateSuggestionApproval: 'evaluate_suggestion_approval',
+  /**
+   * `household_export` — requests a portable export of a household's
+   * data. Consumed by `@homehub/worker-backup-export` (M10). The
+   * envelope carries the `sync.household_export.id` as `entity_id` so
+   * the worker can update bookkeeping on the request row.
+   */
+  householdExport: 'household_export',
 
   /**
    * `sync_full:{provider}` — one queue per provider. Built from the
@@ -80,4 +97,6 @@ export const staticQueueNames: readonly string[] = [
   queueNames.evaluateAlerts,
   queueNames.generateSuggestions,
   queueNames.executeAction,
+  queueNames.evaluateSuggestionApproval,
+  queueNames.householdExport,
 ] as const;

@@ -1,8 +1,8 @@
 {
-  "name": "@homehub/auth-server",
+  "name": "@homehub/approval-flow",
   "version": "0.0.0",
   "private": true,
-  "description": "Server-only auth + household helpers for HomeHub. Thin TypeScript wrappers over Supabase Auth (@supabase/ssr) plus the household lifecycle (create/invite/accept/list/revoke/transfer). Consumed by Next.js Server Actions in apps/web.",
+  "description": "Approval state machine + policy evaluator + audit writer. Transitions suggestion/action status atomically, canonical-hashes previews for tamper detection, and writes audit.event rows for every approval / dispatch / state transition. Consumed by apps/workers/action-executor and apps/web server actions.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,10 +22,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@homehub/approval-flow": "workspace:*",
     "@homehub/db": "workspace:*",
     "@homehub/shared": "workspace:*",
-    "@supabase/ssr": "^0.10.2",
+    "@homehub/worker-runtime": "workspace:*",
     "@supabase/supabase-js": "^2.104.0",
     "zod": "^4.3.6"
   },

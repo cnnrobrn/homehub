@@ -130,3 +130,11 @@ export {
   type AuditActionType,
   type AuditWriteInput,
 } from './audit/index.js';
+
+export {
+  approveSuggestionAction,
+  getApprovalStateAction,
+  rejectSuggestionAction,
+  type ApprovalActionArgs,
+  type RejectSuggestionActionArgs,
+} from './approval/actions.js';

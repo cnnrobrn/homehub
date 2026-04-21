@@ -1,9 +1,26 @@
 /**
  * `action-executor` worker entrypoint.
  *
- * M0 scaffold. The runtime wires up env, tracing, Supabase, and the queue
- * client; the handler body is still a stub. This file mirrors the
- * template in sibling worker services under apps/workers/*.
+ * Two sibling claim loops run in the same process:
+ *
+ *   1. `execute_action`  — dispatches to the kind-keyed executor registry.
+ *                           M9-A ships with an empty registry; every
+ *                           kind DLQs with UnknownActionKindError until
+ *                           M9-B registers provider-backed executors.
+ *
+ *   2. `evaluate_suggestion_approval` — auto-approval evaluator.
+ *                           Suggestions whose policy's `autoApproveWhen`
+ *                           predicate returns true are approved +
+ *                           dispatched without a human tap. Destructive
+ *                           kinds can never be auto-approved (enforced
+ *                           in `@homehub/approval-flow`).
+ *
+ * Readiness: a cheap head-count against `app.action` confirms the DB
+ * connection before we flip the `/ready` probe green.
+ *
+ * Graceful shutdown: the claim loops stop on the next cycle; in-flight
+ * messages finish processing before the drain completes, because we
+ * only set the `stopping` flag and never interrupt a handler.
  */
 
 import { createServer } from 'node:http';
@@ -19,7 +36,13 @@ import {
   workerRuntimeEnvSchema,
 } from '@homehub/worker-runtime';
 
+import { pollOnceEvaluate } from './evaluate-handler.js';
+import { pollOnceExecute } from './execute-handler.js';
+
 const SERVICE_NAME = 'worker-action-executor';
+
+const IDLE_POLL_DELAY_MS = 2_000;
+const ERROR_POLL_DELAY_MS = 5_000;
 
 const env = loadEnv(workerRuntimeEnvSchema);
 const log = createLogger(env, { service: SERVICE_NAME, component: 'main' });
@@ -30,8 +53,8 @@ const exitCode = await runWorker(
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
 
-    // Health/ready HTTP server per specs/05-agents/workers.md.
     let ready = false;
+    let stopping = false;
     const port = Number.parseInt(process.env.PORT ?? '8080', 10);
     const server = createServer((req, res) => {
       if (req.url === '/health') {
@@ -58,23 +81,55 @@ const exitCode = await runWorker(
     log.info('health server listening', { port });
 
     onShutdown(async () => {
+      stopping = true;
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    // The queue client is constructed so readiness reflects a working
-    // Supabase connection. The real consumer loop lands later.
-    void queues;
-    ready = true;
+    // Readiness: a cheap head-count against app.action. If this fails
+    // we stay un-ready and Railway drains us.
+    try {
+      const { error } = await supabase
+        .schema('app')
+        .from('action')
+        .select('id', { count: 'exact', head: true });
+      if (error) throw error;
+      ready = true;
+      log.info('readiness ok; entering poll loop');
+    } catch (err) {
+      log.error('readiness probe failed; worker will not claim jobs', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
-    log.info('worker started (no-op loop)');
-    // TODO(@integrations, M9) + TODO(@memory-background, M9): replace with pgmq consumer for the execute_action queue.
-    await new Promise<void>((resolve) => {
-      const onSig = (): void => resolve();
-      process.once('SIGTERM', onSig);
-      process.once('SIGINT', onSig);
-    });
+    while (!stopping) {
+      try {
+        const outcomes = await Promise.all([
+          pollOnceExecute({ supabase, queues, log }),
+          pollOnceEvaluate({ supabase, queues, log }),
+        ]);
+        const anyClaimed = outcomes.some((o) => o === 'claimed');
+        if (!anyClaimed) {
+          await sleep(IDLE_POLL_DELAY_MS, () => stopping);
+        }
+      } catch (err) {
+        log.error('action-executor pollOnce threw', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        await sleep(ERROR_POLL_DELAY_MS, () => stopping);
+      }
+    }
+    log.info('action-executor main loop exited');
   },
   { shutdownTimeoutMs: 30_000 },
 );
+
+async function sleep(ms: number, cancel: () => boolean): Promise<void> {
+  const step = 100;
+  let remaining = ms;
+  while (remaining > 0 && !cancel()) {
+    await new Promise((r) => setTimeout(r, Math.min(step, remaining)));
+    remaining -= step;
+  }
+}
 
 process.exit(exitCode);
