@@ -95,32 +95,31 @@
 
 ## M6 — Food segment
 
-- [ ] Register first grocery provider in Nango — @integrations
-- [ ] `packages/providers/grocery` adapter — @integrations
-- [ ] Meal planner (week grid, drag-drop, dish resolution) — @frontend-chat
-- [ ] Pantry + expiration — @frontend-chat
-- [ ] `pantry-diff` worker — @memory-background
-- [ ] Grocery list drafting + placement flow — @integrations + @frontend-chat
-- [ ] Food summary + `pantry_expiring`, `meal_plan_gap`, `grocery_order_issue` alerts — @memory-background
-- [ ] Meal swap / grocery order / new-dish suggestions — @memory-background
-- [ ] Food draft-write tools in chat: `draft_meal_plan`, `propose_grocery_order` — @frontend-chat
+- [x] Grocery provider (stub + Instacart adapter gated on operator creds) — @integrations (273ee68)
+- [x] `packages/providers/grocery` adapter — @integrations (273ee68)
+- [x] Meal planner (week grid with dnd-kit drag-drop) — @frontend-chat (273ee68)
+- [x] Pantry + expiration UI — @frontend-chat (273ee68)
+- [x] `apps/workers/pantry-diff` worker with pgmq consumer + hourly cron — @memory-background (273ee68)
+- [x] Grocery list drafting + placement flow (approve/reject draft actions) — @integrations + @frontend-chat (273ee68)
+- [x] Food summary + 3 alert detectors (`pantry_expiring`, `meal_plan_gap`, `grocery_order_issue`) — @memory-background (273ee68)
+- [x] Meal-swap / grocery-order / new-dish suggestion generators — @memory-background (273ee68)
+- [x] Food draft-write tools (`draft_meal_plan`, `propose_grocery_order`) + direct-write meal/pantry tools — @frontend-chat (273ee68)
 
 ## M7 — Fun segment
 
-- [ ] Trip parent/child modeling — @memory-background
-- [ ] Fun calendar + timeline mode — @frontend-chat
-- [ ] `conflicting_rsvps` detector — @memory-background
-- [ ] Outing-idea + trip-prep + book-reservation suggestions — @memory-background
-- [ ] Trip planner UI — @frontend-chat
+- [x] Trip parent/child via `app.event.metadata.trip_id` + resolver in `@homehub/enrichment` — @memory-background (28a0da9)
+- [x] Fun calendar at `/fun/calendar` (reuses WeekGrid/MonthGrid with segment=['fun']) — @frontend-chat (28a0da9)
+- [x] `conflicting_rsvps` + `upcoming_trip_prep` + `ticket_reservation_reminder` detectors — @memory-background (28a0da9)
+- [x] Outing-idea + trip-prep + book-reservation suggestion generators — @memory-background (28a0da9)
+- [x] Trips list + trip detail + queue + dashboard UIs — @frontend-chat (28a0da9)
 
 ## M8 — Social segment
 
-- [ ] Person directory + person-node detail pages — @frontend-chat
-- [ ] Birthday / anniversary materializer — @memory-background
-- [ ] Absence + reciprocity detectors — @memory-background
-- [ ] Reach-out + gift-idea + host-back suggestions — @memory-background
-- [ ] Gift coordination (multi-member) — @frontend-chat + @memory-background
-- [ ] Group nodes (`mem.node type=group`) — @memory-background
+- [x] Person directory + person detail pages deep-linking to `/memory/person/[id]` — @frontend-chat (ae8aeaf)
+- [x] Birthday / anniversary materializer worker (`apps/workers/social-materializer` with daily cron) — @memory-background (ae8aeaf)
+- [x] Absence + reciprocity + `birthday_approaching` + `conflicting_birthday_without_plan` detectors — @memory-background (ae8aeaf)
+- [x] Reach-out + gift-idea + host-back suggestion generators — @memory-background (ae8aeaf)
+- [x] Group nodes (`mem.node type='group'`) + group CRUD UI (migration 0014 requested) — @memory-background + @frontend-chat (ae8aeaf)
 
 ## M9 — Suggestions, coordination, chat-driven actions
 

@@ -588,4 +588,30 @@ All three segments fan out with disjoint file trees. No specialist touches `apps
 
 Each dispatch is self-contained: its own `packages/alerts/<segment>/*`, `packages/suggestions/<segment>/*`, `apps/web/src/app/(app)/<segment>/*`, `apps/web/src/components/<segment>/*`, `apps/web/src/app/actions/<segment>.ts`. No shared writes to AppSidebar or root package.json (unless pnpm-lock.yaml needs an update — acceptable). Running all three in parallel.
 
+## 2026-04-20 — M6 / M7 / M8 all accepted (parallel landing)
+
+- **M7 Fun (28a0da9)**: first to commit. Trip modeling via `app.event.metadata.trip_id` (parent + children), `resolveTripParent` + `createTripFromEvents` in `@homehub/enrichment`, three alert detectors + three suggestion generators + fun summary, `/fun` route tree (dashboard + trips list + trip detail + queue + calendar + summaries + alerts) with dedicated RealtimeRefresher, server actions for queue items + trip attach + outing-idea approval. Kept trip modeling in jsonb metadata to avoid DB migration; `trip_parent_id` FK is a later optimization.
+- **M8 Social (ae8aeaf)**: second to commit. New `apps/workers/social-materializer` with daily cron (materializes birthday/anniversary events from `mem.fact`). Four alert detectors (birthday_approaching, absence_long, reciprocity_imbalance, conflicting_birthday_without_plan) + three suggestion generators (reach_out, gift_idea, host_back) + social summary. `/social` route tree (dashboard + people directory + person detail + groups + calendar + summaries + alerts). Group CRUD via new `mem.node type='group'` (migration 0014 requested).
+- **M6 Food (273ee68 + af2b194)**: last to commit. Two commits because initial land failed prettier on a subset of food files; `af2b194` is a follow-up prettier pass. `@homehub/providers-grocery` with stub + Instacart adapter, `apps/workers/pantry-diff` (new worker, pgmq consumer + hourly cron), real `sync-grocery` worker, three alert detectors + three suggestion generators + food summary, eight direct-write + two draft-write chat tools. `/food` route tree (dashboard + meal planner with dnd-kit drag-drop + pantry + groceries + dishes + calendar + summaries + alerts). Feature flag `HOMEHUB_GROCERY_INGESTION_ENABLED=false` until Instacart creds land.
+
+Standing decisions:
+
+1. **Trip modeling in jsonb (M7)** rather than a new FK column — avoids migration churn; promote to FK when query volume surfaces.
+2. **Materialized birthdays are soft-superseded** on fact change via `metadata.stale=true`; idempotent via migration-0014 partial unique index.
+3. **Grocery provider stubbed by default** — real Instacart integration requires operator credentials.
+4. **Prettier drift** on M6's first land — fixed in `af2b194`. Future parallel dispatches should add a local `format` pass before committing.
+5. **`apps/marketing/` untracked build output** trips repo-wide lint locally. Pre-existing; not from my dispatches. CI is unaffected (sees only tracked files).
+
+Follow-ups tracked, not blocking M9:
+
+- Migration 0014 (alert `kind` + `dedupe_key` columns + `mem.node type='group'` + materialized-event partial unique index) — @infra-platform. M8 requested it verbatim.
+- `approveOutingIdeaAction`, `approveGroceryDraftAction`, `approveReachOutAction` all currently flip suggestion status but don't execute. M9 approval flow wires execution via provider adapters + Gmail drafts + calendar mirror.
+- `RationaleWriter` injection into meal_swap / grocery_order / reach_out / gift_idea / host_back generators — M9 picks the budget-guarded writer.
+- `proposeWeekendWindows` in host_back generator is a naive placeholder — M9's free-time scanner replaces it.
+- Sidebar link flip landed in this close commit (Food/Fun/Social from disabled to active).
+
+## 2026-04-20 — **M6 / M7 / M8 COMPLETE**
+
+Four commits (`28a0da9`, `ae8aeaf`, `273ee68`, `af2b194`). All four segments now have dashboard + calendar + summaries + alerts + suggestions surfaces. 1263 tests passing repo-wide.
+
 

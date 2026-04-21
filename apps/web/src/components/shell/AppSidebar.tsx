@@ -40,24 +40,9 @@ const NAV: NavItem[] = [
     icon: <CircleDollarSign className="h-4 w-4" />,
     href: '/financial',
   },
-  {
-    label: 'Food',
-    icon: <Utensils className="h-4 w-4" />,
-    disabled: true,
-    disabledLabel: 'Available when M2+ lands',
-  },
-  {
-    label: 'Fun',
-    icon: <PartyPopper className="h-4 w-4" />,
-    disabled: true,
-    disabledLabel: 'Available when M2+ lands',
-  },
-  {
-    label: 'Social',
-    icon: <Users className="h-4 w-4" />,
-    disabled: true,
-    disabledLabel: 'Available when M2+ lands',
-  },
+  { label: 'Food', icon: <Utensils className="h-4 w-4" />, href: '/food' },
+  { label: 'Fun', icon: <PartyPopper className="h-4 w-4" />, href: '/fun' },
+  { label: 'Social', icon: <Users className="h-4 w-4" />, href: '/social' },
   { label: 'Memory', icon: <BookOpen className="h-4 w-4" />, href: '/memory' },
   { label: 'Settings', icon: <Cog className="h-4 w-4" />, href: '/settings/household' },
 ];
