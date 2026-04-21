@@ -95,3 +95,135 @@ export interface FinancialSummaryOutput {
   bodyMd: string;
   metrics: FinancialSummaryMetrics;
 }
+
+// ---- Food summary ---------------------------------------------------------
+
+/** Subset of `app.meal.Row` food summaries consume. */
+export interface MealSummaryRow {
+  id: string;
+  household_id: string;
+  /** ISO date (YYYY-MM-DD). */
+  planned_for: string;
+  slot: 'breakfast' | 'lunch' | 'dinner' | 'snack';
+  title: string;
+  dish_node_id: string | null;
+  cook_member_id: string | null;
+  status: 'planned' | 'cooking' | 'served' | 'skipped';
+}
+
+/** Subset of `app.pantry_item.Row`. */
+export interface PantryItemSummaryRow {
+  id: string;
+  household_id: string;
+  name: string;
+  /** ISO date (YYYY-MM-DD) or null. */
+  expires_on: string | null;
+}
+
+export interface FoodSummaryInput {
+  householdId: HouseholdId;
+  period: SummaryPeriod;
+  /** Period start (inclusive) ISO. */
+  coveredStart: string;
+  /** Period end (exclusive) ISO. */
+  coveredEnd: string;
+  meals: MealSummaryRow[];
+  pantryItems: PantryItemSummaryRow[];
+  /** Member display names keyed by `app.member.id`. */
+  memberNamesById: Map<string, string>;
+  /** Optional "now" for deterministic timestamps in tests. */
+  now?: Date;
+}
+
+export interface FoodSummaryMetrics {
+  mealCount: number;
+  /** Unique dishes (by dish_node_id if present, else normalized title). */
+  dishVariety: number;
+  /** Variety ratio in [0, 1]: dishVariety / mealCount. */
+  dishVarietyRatio: number;
+  /** Count of pantry items whose `expires_on` landed in-period. */
+  pantryItemsExpired: number;
+  cookingByMember: Array<{
+    memberId: string | null;
+    memberName: string;
+    mealCount: number;
+  }>;
+}
+
+export interface FoodSummaryOutput {
+  bodyMd: string;
+  metrics: FoodSummaryMetrics;
+}
+
+// ---- Social summary -------------------------------------------------------
+
+export interface SocialEpisodeRow {
+  id: string;
+  household_id: string;
+  occurred_at: string;
+  participants: string[];
+  place_node_id: string | null;
+  source_type: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface SocialPersonRow {
+  id: string;
+  household_id: string;
+  canonical_name: string;
+  created_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface SocialEventRow {
+  id: string;
+  household_id: string;
+  kind: string;
+  title: string;
+  starts_at: string;
+  metadata: Record<string, unknown>;
+}
+
+export interface SocialAbsentPerson {
+  id: string;
+  household_id: string;
+  canonical_name: string;
+  lastSeenAt: string | null;
+}
+
+export interface SocialSummaryInput {
+  householdId: HouseholdId;
+  period: SummaryPeriod;
+  coveredStart: string;
+  coveredEnd: string;
+  episodes: SocialEpisodeRow[];
+  people: SocialPersonRow[];
+  /**
+   * Upcoming social-segment events (birthdays, anniversaries) the
+   * summary reports in the "coming up" section. The caller passes the
+   * next 30 days of rows sourced from `app.event`.
+   */
+  upcomingEvents: SocialEventRow[];
+  /**
+   * Persons flagged by the alerts worker as in a long absence. The
+   * social summary surfaces these as "noticed gaps"; it does not
+   * recompute absence.
+   */
+  absentPersons: SocialAbsentPerson[];
+  /** `personNodeId -> canonical_name` lookup used to label top people. */
+  personNames: Map<string, string>;
+  now?: Date;
+}
+
+export interface SocialSummaryMetrics {
+  uniquePeopleCount: number;
+  topPeople: Array<{ personNodeId: string; canonicalName: string; episodeCount: number }>;
+  newPeople: Array<{ personNodeId: string; canonicalName: string }>;
+  upcomingEvents: Array<{ eventId: string; kind: string; title: string; startsAt: string }>;
+  absentPersons: Array<{ personNodeId: string; canonicalName: string; lastSeenAt: string | null }>;
+}
+
+export interface SocialSummaryOutput {
+  bodyMd: string;
+  metrics: SocialSummaryMetrics;
+}

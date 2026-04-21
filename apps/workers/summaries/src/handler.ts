@@ -29,6 +29,7 @@ import {
   renderFinancialSummary,
   renderFoodSummary,
   renderFunSummary,
+  renderSocialSummary,
   type AccountRow as SummaryAccountRow,
   type BudgetRow as SummaryBudgetRow,
   type FinancialSummaryInput,
@@ -40,6 +41,12 @@ import {
   type FunSummaryOutput,
   type MealSummaryRow,
   type PantryItemSummaryRow,
+  type SocialAbsentPerson,
+  type SocialEpisodeRow,
+  type SocialEventRow,
+  type SocialPersonRow,
+  type SocialSummaryInput,
+  type SocialSummaryOutput,
   type SummaryPeriod,
   type TransactionRow as SummaryTransactionRow,
 } from '@homehub/summaries';
@@ -784,6 +791,262 @@ async function insertFoodSummary(
     .single();
   if (error || !data) {
     throw new Error(`food summary insert failed: ${error?.message ?? 'no id'}`);
+  }
+  return data.id as string;
+}
+
+// ---- Social summaries ---------------------------------------------------
+
+export async function runSocialSummariesWorker(
+  deps: SummariesWorkerDeps,
+): Promise<SummariesRunResult[]> {
+  const now = (deps.now ?? (() => new Date()))();
+  const periods = deps.periods ?? ['weekly'];
+  const householdIds = deps.householdIds ?? (await listHouseholds(deps.supabase));
+  const results: SummariesRunResult[] = [];
+  for (const householdId of householdIds) {
+    for (const period of periods) {
+      try {
+        const result = await runOneSocialHouseholdPeriod(deps, householdId, period, now);
+        results.push(result);
+      } catch (err) {
+        deps.log.error('social summaries: household/period run failed', {
+          household_id: householdId,
+          period,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        results.push({
+          householdId,
+          period,
+          skipped: true,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+  deps.log.info('social summaries run complete', {
+    households: householdIds.length,
+    periods,
+    inserted: results.filter((r) => !r.skipped).length,
+    skipped: results.filter((r) => r.skipped).length,
+  });
+  return results;
+}
+
+async function runOneSocialHouseholdPeriod(
+  deps: SummariesWorkerDeps,
+  householdId: string,
+  period: SummaryPeriod,
+  now: Date,
+): Promise<SummariesRunResult> {
+  const { coveredStart, coveredEnd } = computePeriodWindow(period, now);
+
+  const existing = await findExistingSocialSummary(
+    deps.supabase,
+    householdId,
+    period,
+    coveredStart,
+  );
+  if (existing) {
+    return { householdId, period, skipped: true, reason: 'already_exists' };
+  }
+
+  const [episodes, people, upcomingEvents] = await Promise.all([
+    loadSocialEpisodesInWindow(deps.supabase, householdId, coveredStart, coveredEnd),
+    loadSocialPeople(deps.supabase, householdId),
+    loadUpcomingSocialEvents(deps.supabase, householdId, coveredEnd),
+  ]);
+
+  const personNames = new Map<string, string>();
+  for (const p of people) personNames.set(p.id, p.canonical_name);
+
+  // Absent persons — read from the alerts worker's live emissions
+  // (stashed in `app.alert` under `segment='social' and kind='absence_long'`)
+  // as a simple integration point. Empty when the alerts worker has
+  // not yet run.
+  const absentPersons = await loadRecentAbsenceFlags(deps.supabase, householdId, coveredStart);
+
+  const input: SocialSummaryInput = {
+    householdId: householdId as HouseholdId,
+    period,
+    coveredStart,
+    coveredEnd,
+    episodes,
+    people,
+    upcomingEvents,
+    absentPersons,
+    personNames,
+    now,
+  };
+  const rendered: SocialSummaryOutput = renderSocialSummary(input);
+
+  const insertedId = await insertSocialSummary(deps.supabase, {
+    householdId,
+    period,
+    coveredStart,
+    coveredEnd,
+    bodyMd: rendered.bodyMd,
+  });
+
+  await writeAudit(deps.supabase, {
+    household_id: householdId,
+    action: 'summary.social.generated',
+    resource_id: insertedId,
+    after: {
+      period,
+      covered_start: coveredStart,
+      covered_end: coveredEnd,
+      metrics: rendered.metrics,
+    },
+  });
+  return { householdId, period, skipped: false, insertedId };
+}
+
+async function findExistingSocialSummary(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  period: SummaryPeriod,
+  coveredStart: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('summary')
+    .select('id')
+    .eq('household_id', householdId)
+    .eq('segment', 'social')
+    .eq('period', period)
+    .eq('covered_start', coveredStart)
+    .limit(1);
+  if (error) throw new Error(`social summary lookup failed: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
+async function loadSocialEpisodesInWindow(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  startIso: string,
+  endIso: string,
+): Promise<SocialEpisodeRow[]> {
+  const { data, error } = await supabase
+    .schema('mem')
+    .from('episode')
+    .select('id, household_id, occurred_at, participants, place_node_id, source_type, metadata')
+    .eq('household_id', householdId)
+    .gte('occurred_at', startIso)
+    .lt('occurred_at', endIso);
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    occurred_at: r.occurred_at as string,
+    participants: (r.participants as string[] | null) ?? [],
+    place_node_id: (r.place_node_id as string | null) ?? null,
+    source_type: r.source_type as string,
+    metadata: (r.metadata as Record<string, unknown>) ?? {},
+  }));
+}
+
+async function loadSocialPeople(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+): Promise<SocialPersonRow[]> {
+  const { data, error } = await supabase
+    .schema('mem')
+    .from('node')
+    .select('id, household_id, canonical_name, metadata, created_at')
+    .eq('household_id', householdId)
+    .eq('type', 'person');
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    canonical_name: r.canonical_name as string,
+    metadata: (r.metadata as Record<string, unknown>) ?? {},
+    created_at: r.created_at as string,
+  }));
+}
+
+async function loadUpcomingSocialEvents(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  coveredEndIso: string,
+): Promise<SocialEventRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('event')
+    .select('id, household_id, kind, title, starts_at, metadata')
+    .eq('household_id', householdId)
+    .eq('segment', 'social')
+    .gte('starts_at', coveredEndIso);
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    kind: r.kind as string,
+    title: r.title as string,
+    starts_at: r.starts_at as string,
+    metadata: (r.metadata as Record<string, unknown>) ?? {},
+  }));
+}
+
+async function loadRecentAbsenceFlags(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  coveredStartIso: string,
+): Promise<SocialAbsentPerson[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('alert')
+    .select('context, generated_at')
+    .eq('household_id', householdId)
+    .eq('segment', 'social')
+    .gte('generated_at', coveredStartIso);
+  if (error) return [];
+  const out: SocialAbsentPerson[] = [];
+  const seen = new Set<string>();
+  for (const row of data ?? []) {
+    const ctx = (row.context as Record<string, unknown> | null) ?? {};
+    if (ctx['alert_kind'] !== 'absence_long') continue;
+    const pid = ctx['person_node_id'];
+    if (typeof pid !== 'string' || seen.has(pid)) continue;
+    seen.add(pid);
+    out.push({
+      id: pid,
+      household_id: householdId,
+      canonical_name: (ctx['person_name'] as string) ?? 'Unknown',
+      lastSeenAt: (ctx['last_seen_at'] as string | null) ?? null,
+    });
+  }
+  return out;
+}
+
+async function insertSocialSummary(
+  supabase: SupabaseClient<Database>,
+  args: {
+    householdId: string;
+    period: SummaryPeriod;
+    coveredStart: string;
+    coveredEnd: string;
+    bodyMd: string;
+  },
+): Promise<string> {
+  const insert: Database['app']['Tables']['summary']['Insert'] = {
+    household_id: args.householdId,
+    segment: 'social',
+    period: args.period,
+    covered_start: args.coveredStart,
+    covered_end: args.coveredEnd,
+    body_md: args.bodyMd,
+    model: SUMMARY_MODEL_LABEL,
+  };
+  const { data, error } = await supabase
+    .schema('app')
+    .from('summary')
+    .insert(insert)
+    .select('id')
+    .single();
+  if (error || !data) {
+    throw new Error(`social summary insert failed: ${error?.message ?? 'no id'}`);
   }
   return data.id as string;
 }

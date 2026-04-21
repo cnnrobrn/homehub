@@ -1,0 +1,14 @@
+# Railway service config for @homehub/worker-social-materializer.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "./Dockerfile"
+
+[build.args]
+SERVICE_NAME = "worker-social-materializer"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

@@ -1,0 +1,26 @@
+{
+  "name": "@homehub/worker-social-materializer",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Materializes birthday + anniversary facts into app.event rows on a rolling 12-month horizon. Idempotent via the (household_id, kind, starts_at, metadata->>subject_node_id) partial unique index.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "cron": "node dist/cron.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@homehub/db": "workspace:*",
+    "@homehub/shared": "workspace:*",
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.4"
+  }
+}
