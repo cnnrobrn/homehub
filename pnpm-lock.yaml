@@ -112,9 +112,15 @@ importers:
       '@homehub/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@homehub/query-memory':
+        specifier: workspace:*
+        version: link:../../packages/query-memory
       '@homehub/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@homehub/worker-runtime':
+        specifier: workspace:*
+        version: link:../../packages/worker-runtime
       '@hookform/resolvers':
         specifier: ^3.9.1
         version: 3.10.0(react-hook-form@7.73.1(react@19.2.5))

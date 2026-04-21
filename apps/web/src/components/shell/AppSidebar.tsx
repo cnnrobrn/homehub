@@ -57,12 +57,7 @@ const NAV: NavItem[] = [
     disabled: true,
     disabledLabel: 'Available when M2+ lands',
   },
-  {
-    label: 'Memory',
-    icon: <BookOpen className="h-4 w-4" />,
-    disabled: true,
-    disabledLabel: 'Available in M3',
-  },
+  { label: 'Memory', icon: <BookOpen className="h-4 w-4" />, href: '/memory' },
   { label: 'Settings', icon: <Cog className="h-4 w-4" />, href: '/settings/household' },
 ];
 

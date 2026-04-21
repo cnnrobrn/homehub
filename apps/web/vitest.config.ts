@@ -22,6 +22,12 @@ const dbSrc = fileURLToPath(new URL('../../packages/db/src/index.ts', import.met
 const authServerSrc = fileURLToPath(
   new URL('../../packages/auth-server/src/index.ts', import.meta.url),
 );
+const queryMemorySrc = fileURLToPath(
+  new URL('../../packages/query-memory/src/index.ts', import.meta.url),
+);
+const workerRuntimeSrc = fileURLToPath(
+  new URL('../../packages/worker-runtime/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   plugins: [react()],
@@ -31,6 +37,8 @@ export default defineConfig({
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
       '@homehub/auth-server': authServerSrc,
+      '@homehub/query-memory': queryMemorySrc,
+      '@homehub/worker-runtime': workerRuntimeSrc,
     },
   },
   test: {
