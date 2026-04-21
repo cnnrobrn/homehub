@@ -1,22 +1,28 @@
 /**
  * Unit tests for the webhook-ingest handler.
  *
- * Three categories:
+ * Four categories:
  *   1. Google Calendar push — valid channel, unknown channel, missing headers.
- *   2. Nango webhook — connection.created happy path, bad signature, missing tags.
- *   3. HMAC helper — basic correctness.
+ *   2. Google Mail Pub/Sub push — auth, unknown account, happy path.
+ *   3. Nango webhook — gcal + gmail connection.created / deleted.
+ *   4. HMAC helper — basic correctness.
  */
 
 import { createHmac } from 'node:crypto';
 
 import { type CalendarProvider } from '@homehub/providers-calendar';
+import { type EmailProvider } from '@homehub/providers-email';
 import { type Logger, type QueueClient, queueNames } from '@homehub/worker-runtime';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   GCAL_CHANNEL_KIND,
   GCAL_PROVIDER,
+  GMAIL_HISTORY_ID_KIND,
+  GMAIL_PROVIDER,
+  GMAIL_WATCH_KIND,
   handleGoogleCalendarWebhook,
+  handleGoogleMailPubsubWebhook,
   handleNangoWebhook,
   type WebhookIngestDeps,
 } from './handler.js';
@@ -48,6 +54,21 @@ function makeCalendar(): CalendarProvider {
   } as unknown as CalendarProvider;
 }
 
+function makeEmail(): EmailProvider {
+  return {
+    listRecentMessages: vi.fn(),
+    fetchMessage: vi.fn(),
+    fetchAttachment: vi.fn(),
+    watch: vi.fn().mockResolvedValue({
+      historyId: '5555',
+      expiration: '2026-04-27T00:00:00.000Z',
+    }),
+    unwatch: vi.fn().mockResolvedValue(undefined),
+    addLabel: vi.fn().mockResolvedValue(undefined),
+    ensureLabel: vi.fn().mockResolvedValue({ labelId: 'Label_Ingested' }),
+  } as unknown as EmailProvider;
+}
+
 function makeQueues() {
   const sends: Array<{ queue: string; payload: unknown }> = [];
   const queues: QueueClient = {
@@ -72,6 +93,7 @@ interface ConnectionRow {
   id: string;
   household_id: string;
   status: string;
+  [k: string]: unknown;
 }
 
 interface CursorRow {
@@ -155,9 +177,6 @@ function makeSupabase(seed: {
             return { data: hit ?? null, error: null };
           },
           then(resolve: (v: unknown) => void) {
-            // Some callers don't call `maybeSingle` — they `await` the
-            // builder directly (multi-row select). Return all filtered
-            // rows for that path.
             const rows = state.cursors.filter((c) => {
               for (const [k, v] of Object.entries(filters)) {
                 if ((c as unknown as Record<string, unknown>)[k] !== v) return false;
@@ -214,6 +233,7 @@ function baseDeps(): WebhookIngestDeps {
     supabase: {} as never,
     queues: {} as never,
     calendar: makeCalendar(),
+    email: makeEmail(),
     log: makeLog(),
     env: {},
     now: () => new Date('2026-04-20T12:00:00.000Z'),
@@ -316,36 +336,137 @@ describe('handleGoogleCalendarWebhook', () => {
       kind: 'sync.gcal.delta',
     });
   });
+});
 
-  it('ignores webhooks for revoked connections', async () => {
-    const cursorValue = JSON.stringify({
-      channel_id: 'hh-gcal-rev',
-      resource_id: 'res-rev',
-      expiration: '2026-04-27T00:00:00Z',
+// --- /webhooks/google-mail/pubsub --------------------------------------
+
+describe('handleGoogleMailPubsubWebhook', () => {
+  function pubsubBody(emailAddress: string, historyId: string | number): Buffer {
+    const data = Buffer.from(JSON.stringify({ emailAddress, historyId })).toString('base64');
+    return Buffer.from(JSON.stringify({ message: { data, messageId: 'm-1' } }));
+  }
+
+  it('returns 503 when neither token nor audience is configured', async () => {
+    const { supabase } = makeSupabase({});
+    const { queues } = makeQueues();
+    const res = await handleGoogleMailPubsubWebhook(
+      { ...baseDeps(), supabase: supabase as never, queues, env: {} },
+      { headers: {}, rawBody: pubsubBody('a@x', 1), query: {} },
+    );
+    expect(res.status).toBe(503);
+  });
+
+  it('returns 401 when the token query param is missing or wrong', async () => {
+    const { supabase } = makeSupabase({});
+    const { queues } = makeQueues();
+    const deps = {
+      ...baseDeps(),
+      supabase: supabase as never,
+      queues,
+      env: { HOMEHUB_GMAIL_WEBHOOK_TOKEN: 'shhh' },
+    };
+    const miss = await handleGoogleMailPubsubWebhook(deps, {
+      headers: {},
+      rawBody: pubsubBody('a@x', 1),
+      query: {},
     });
+    expect(miss.status).toBe(401);
+    const wrong = await handleGoogleMailPubsubWebhook(deps, {
+      headers: {},
+      rawBody: pubsubBody('a@x', 1),
+      query: { token: 'nope' },
+    });
+    expect(wrong.status).toBe(401);
+  });
+
+  it('returns 404 when no connection matches the emailAddress', async () => {
+    const { supabase } = makeSupabase({ connections: [] });
+    const { queues, sends } = makeQueues();
+    const res = await handleGoogleMailPubsubWebhook(
+      {
+        ...baseDeps(),
+        supabase: supabase as never,
+        queues,
+        env: { HOMEHUB_GMAIL_WEBHOOK_TOKEN: 'shhh' },
+      },
+      { headers: {}, rawBody: pubsubBody('missing@example.com', 1), query: { token: 'shhh' } },
+    );
+    expect(res.status).toBe(404);
+    expect(sends).toEqual([]);
+  });
+
+  it('enqueues sync_delta:gmail when the account is known', async () => {
     const { supabase } = makeSupabase({
-      connections: [{ id: CONNECTION_ID, household_id: HOUSEHOLD_ID, status: 'revoked' }],
-      cursors: [{ connection_id: CONNECTION_ID, kind: GCAL_CHANNEL_KIND, value: cursorValue }],
+      connections: [
+        {
+          id: CONNECTION_ID,
+          household_id: HOUSEHOLD_ID,
+          status: 'active',
+          provider: GMAIL_PROVIDER,
+
+          'metadata->>email_address': 'alice@example.com',
+        },
+      ],
     });
     const { queues, sends } = makeQueues();
-    const result = await handleGoogleCalendarWebhook(
-      { ...baseDeps(), supabase: supabase as never, queues },
+    const res = await handleGoogleMailPubsubWebhook(
       {
-        headers: {
-          'x-goog-channel-id': 'hh-gcal-rev',
-          'x-goog-resource-id': 'res-rev',
-          'x-goog-resource-state': 'exists',
-        },
+        ...baseDeps(),
+        supabase: supabase as never,
+        queues,
+        env: { HOMEHUB_GMAIL_WEBHOOK_TOKEN: 'shhh' },
+      },
+      {
+        headers: {},
+        rawBody: pubsubBody('alice@example.com', 9001),
+        query: { token: 'shhh' },
       },
     );
-    expect(result.status).toBe(204);
+    expect(res.status).toBe(204);
+    expect(sends).toHaveLength(1);
+    expect(sends[0]?.queue).toBe(queueNames.syncDelta(GMAIL_PROVIDER));
+    expect(sends[0]?.payload).toMatchObject({
+      household_id: HOUSEHOLD_ID,
+      entity_id: CONNECTION_ID,
+      kind: 'sync.gmail.delta',
+    });
+  });
+
+  it('honors revoked connections (204 without enqueue)', async () => {
+    const { supabase } = makeSupabase({
+      connections: [
+        {
+          id: CONNECTION_ID,
+          household_id: HOUSEHOLD_ID,
+          status: 'revoked',
+          provider: GMAIL_PROVIDER,
+
+          'metadata->>email_address': 'alice@example.com',
+        },
+      ],
+    });
+    const { queues, sends } = makeQueues();
+    const res = await handleGoogleMailPubsubWebhook(
+      {
+        ...baseDeps(),
+        supabase: supabase as never,
+        queues,
+        env: { HOMEHUB_GMAIL_WEBHOOK_TOKEN: 'shhh' },
+      },
+      {
+        headers: {},
+        rawBody: pubsubBody('alice@example.com', 9001),
+        query: { token: 'shhh' },
+      },
+    );
+    expect(res.status).toBe(204);
     expect(sends).toEqual([]);
   });
 });
 
 // --- /webhooks/nango ----------------------------------------------------
 
-describe('handleNangoWebhook', () => {
+describe('handleNangoWebhook — gcal', () => {
   const SECRET = 'nango-secret';
 
   function signed(body: unknown): { rawBody: Buffer; headers: Record<string, string> } {
@@ -414,12 +535,153 @@ describe('handleNangoWebhook', () => {
     expect(cursorUpserts[0]?.kind).toBe(GCAL_CHANNEL_KIND);
     expect(sends[0]?.queue).toBe(queueNames.syncFull(GCAL_PROVIDER));
   });
+});
+
+describe('handleNangoWebhook — gmail', () => {
+  const SECRET = 'nango-secret';
+
+  function signed(body: unknown): { rawBody: Buffer; headers: Record<string, string> } {
+    const rawBody = Buffer.from(JSON.stringify(body));
+    const signature = createHmac('sha256', SECRET).update(rawBody).digest('hex');
+    return { rawBody, headers: { 'x-nango-signature': signature } };
+  }
+
+  it('on connection.created: upserts with email_categories metadata, watches, enqueues full', async () => {
+    const payload = {
+      type: 'connection.created',
+      providerConfigKey: 'google-mail',
+      connectionId: 'nango-gm-1',
+      endUser: {
+        tags: {
+          household_id: HOUSEHOLD_ID,
+          member_id: 'm1',
+          email_categories: 'receipt,shipping,bogus',
+          email_address: 'alice@example.com',
+        },
+      },
+    };
+    const { rawBody, headers } = signed(payload);
+    const { supabase, cursorUpserts, connectionUpserts } = makeSupabase({
+      upsertConnectionReturns: {
+        id: CONNECTION_ID,
+        household_id: HOUSEHOLD_ID,
+        nango_connection_id: 'nango-gm-1',
+      },
+    });
+    const { queues, sends } = makeQueues();
+    const email = makeEmail();
+    const res = await handleNangoWebhook(
+      {
+        ...baseDeps(),
+        supabase: supabase as never,
+        queues,
+        email,
+        env: {
+          NANGO_WEBHOOK_SECRET: SECRET,
+          NANGO_GMAIL_PUBSUB_TOPIC: 'projects/p/topics/gmail-push',
+        },
+      },
+      { headers, rawBody },
+    );
+    expect(res.status).toBe(204);
+    expect(connectionUpserts).toHaveLength(1);
+    expect(connectionUpserts[0]).toMatchObject({
+      provider: GMAIL_PROVIDER,
+      nango_connection_id: 'nango-gm-1',
+      status: 'active',
+    });
+    // 'bogus' category dropped.
+    expect(connectionUpserts[0]?.metadata).toEqual({
+      email_categories: ['receipt', 'shipping'],
+      email_address: 'alice@example.com',
+    });
+    // Both watch + history_id cursors seeded.
+    const kinds = cursorUpserts.map((c) => c.kind).sort();
+    expect(kinds).toEqual([GMAIL_HISTORY_ID_KIND, GMAIL_WATCH_KIND].sort());
+    expect(sends[0]?.queue).toBe(queueNames.syncFull(GMAIL_PROVIDER));
+    expect(email.watch).toHaveBeenCalledWith(
+      expect.objectContaining({
+        connectionId: 'nango-gm-1',
+        topicName: 'projects/p/topics/gmail-push',
+      }),
+    );
+    expect(email.ensureLabel).toHaveBeenCalledTimes(1);
+  });
+
+  it('on connection.created: skips watch when topic is not configured', async () => {
+    const payload = {
+      type: 'connection.created',
+      providerConfigKey: 'google-mail',
+      connectionId: 'nango-gm-2',
+      endUser: {
+        tags: { household_id: HOUSEHOLD_ID, email_categories: 'receipt' },
+      },
+    };
+    const { rawBody, headers } = signed(payload);
+    const { supabase, cursorUpserts } = makeSupabase({
+      upsertConnectionReturns: {
+        id: CONNECTION_ID,
+        household_id: HOUSEHOLD_ID,
+        nango_connection_id: 'nango-gm-2',
+      },
+    });
+    const { queues } = makeQueues();
+    const email = makeEmail();
+    const res = await handleNangoWebhook(
+      {
+        ...baseDeps(),
+        supabase: supabase as never,
+        queues,
+        email,
+        env: { NANGO_WEBHOOK_SECRET: SECRET },
+      },
+      { headers, rawBody },
+    );
+    expect(res.status).toBe(204);
+    expect(cursorUpserts).toHaveLength(0);
+    expect(email.watch).not.toHaveBeenCalled();
+  });
+
+  it('on connection.deleted: marks revoked and unwatches', async () => {
+    const payload = {
+      type: 'connection.deleted',
+      providerConfigKey: 'google-mail',
+      connectionId: 'nango-gm-del',
+    };
+    const { rawBody, headers } = signed(payload);
+    const seeded = makeSupabase({
+      connections: [
+        {
+          id: CONNECTION_ID,
+          household_id: HOUSEHOLD_ID,
+          status: 'active',
+          provider: GMAIL_PROVIDER,
+          nango_connection_id: 'nango-gm-del',
+        } as unknown as ConnectionRow,
+      ],
+    });
+    const email = makeEmail();
+    const { queues } = makeQueues();
+    const res = await handleNangoWebhook(
+      {
+        ...baseDeps(),
+        supabase: seeded.supabase as never,
+        queues,
+        email,
+        env: { NANGO_WEBHOOK_SECRET: SECRET },
+      },
+      { headers, rawBody },
+    );
+    expect(res.status).toBe(204);
+    expect(email.unwatch).toHaveBeenCalledWith({ connectionId: 'nango-gm-del' });
+    expect(seeded.connectionUpdates[0]).toMatchObject({ status: 'revoked' });
+  });
 
   it('on connection.created: rejects when household_id tag missing', async () => {
     const payload = {
       type: 'connection.created',
-      providerConfigKey: 'google-calendar',
-      connectionId: 'nango-2',
+      providerConfigKey: 'google-mail',
+      connectionId: 'nango-bad',
       endUser: { tags: {} },
     };
     const { rawBody, headers } = signed(payload);
@@ -435,69 +697,5 @@ describe('handleNangoWebhook', () => {
       { headers, rawBody },
     );
     expect(res.status).toBe(400);
-  });
-
-  it('on connection.deleted: marks revoked and unwatches', async () => {
-    const cursorValue = JSON.stringify({
-      channel_id: 'hh-gcal-del',
-      resource_id: 'res-del',
-      expiration: '2026-04-27T00:00:00Z',
-    });
-    const payload = {
-      type: 'connection.deleted',
-      providerConfigKey: 'google-calendar',
-      connectionId: 'nango-del',
-    };
-    const { rawBody, headers } = signed(payload);
-    const { supabase, connectionUpdates } = makeSupabase({
-      connections: [
-        {
-          id: CONNECTION_ID,
-          household_id: HOUSEHOLD_ID,
-          status: 'active',
-          // extra columns ignored by the stub
-        } as ConnectionRow,
-      ],
-      cursors: [{ connection_id: CONNECTION_ID, kind: GCAL_CHANNEL_KIND, value: cursorValue }],
-    });
-    // Inject the provider field into the connection row for lookup.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    (supabase as any).schema('sync').from('provider_connection').__patch = (() => {})();
-    const { queues } = makeQueues();
-    // Patch: re-seed with provider + nango_connection_id fields so the
-    // handler's lookup filter matches.
-    const seeded = makeSupabase({
-      connections: [
-        {
-          id: CONNECTION_ID,
-          household_id: HOUSEHOLD_ID,
-          status: 'active',
-          // these extra fields are used by `.eq` filters
-          provider: GCAL_PROVIDER,
-          nango_connection_id: 'nango-del',
-        } as unknown as ConnectionRow,
-      ],
-      cursors: [{ connection_id: CONNECTION_ID, kind: GCAL_CHANNEL_KIND, value: cursorValue }],
-    });
-    const calendar = makeCalendar();
-    const res = await handleNangoWebhook(
-      {
-        ...baseDeps(),
-        supabase: seeded.supabase as never,
-        queues,
-        calendar,
-        env: { NANGO_WEBHOOK_SECRET: SECRET },
-      },
-      { headers, rawBody },
-    );
-    expect(res.status).toBe(204);
-    expect(calendar.unwatch).toHaveBeenCalledWith({
-      connectionId: 'nango-del',
-      channelId: 'hh-gcal-del',
-      resourceId: 'res-del',
-    });
-    expect(seeded.connectionUpdates[0]).toMatchObject({ status: 'revoked' });
-    // Silence unused-var lint.
-    void connectionUpdates;
   });
 });

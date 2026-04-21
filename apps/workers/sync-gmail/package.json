@@ -2,7 +2,7 @@
   "name": "@homehub/worker-sync-gmail",
   "version": "0.0.0",
   "private": true,
-  "description": "Ingests labeled Gmail messages via Pub/Sub + hourly poll and writes memory events. Owned by @integrations; fleshed out in M4.",
+  "description": "Ingests labeled Gmail messages via Pub/Sub + hourly poll and writes app.email + app.email_attachment. Owned by @integrations.",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -13,8 +13,11 @@
   },
   "dependencies": {
     "@homehub/db": "workspace:*",
+    "@homehub/providers-email": "workspace:*",
     "@homehub/shared": "workspace:*",
-    "@homehub/worker-runtime": "workspace:*"
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

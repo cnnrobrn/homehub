@@ -1,25 +1,32 @@
 /**
  * GET /api/integrations/connect?provider=google-calendar
+ * GET /api/integrations/connect?provider=google-mail&categories=receipt,shipping
  *
  * Mints a Nango Connect session scoped to `(household_id, member_id,
  * provider)` and redirects the browser to Nango's hosted-auth URL.
  *
  * Flow:
  *   1. Verify the current user has a household context.
- *   2. Call Nango `POST /connect/sessions` with:
+ *   2. For `google-mail`, validate that `categories` is a non-empty
+ *      subset of the allowed set. The privacy-preview dialog in
+ *      `/settings/connections` always sends the member-confirmed list,
+ *      so a missing param means the caller hit the route directly; we
+ *      404 in that case.
+ *   3. Call Nango `POST /connect/sessions` with:
  *        - `end_user.id` = `member:<member_id>` (stable HomeHub id).
- *        - `tags` = { household_id, member_id, provider } so the Nango
- *          webhook (handled by `apps/workers/webhook-ingest`) can route
- *          `connection.created` back to the right row.
+ *        - `tags` = { household_id, member_id, provider, email_categories? }
+ *          so the Nango webhook (handled by `apps/workers/webhook-ingest`)
+ *          can route `connection.created` back to the right row and
+ *          write the opt-in set into `sync.provider_connection.metadata`.
  *        - `allowed_integrations` = [provider]
- *   3. 302 to the `connect_link` returned by Nango.
+ *   4. 302 to the `connect_link` returned by Nango.
  *
  * Error shape: anything that fails resolution returns a 4xx JSON body
- * rather than redirecting — browsers render the JSON in the tab, which
- * is loud enough for a first-time member to report the issue.
+ * rather than redirecting.
  */
 
 import { UnauthorizedError, getUser } from '@homehub/auth-server';
+import { ALL_EMAIL_CATEGORIES, isEmailCategory } from '@homehub/providers-email/client';
 import { NextResponse, type NextRequest } from 'next/server';
 
 import { getHouseholdContext } from '@/lib/auth/context';
@@ -30,11 +37,11 @@ import { NangoNotConfiguredError, createWebNangoClient } from '@/lib/nango/clien
 export const dynamic = 'force-dynamic';
 
 /**
- * The providers the connect route accepts. Keep this tight — each entry
- * here must correspond to a Nango integration configured in the admin UI
- * (see `infra/nango/providers/<provider>.md`).
+ * Providers the connect route accepts. Each entry must correspond to a
+ * Nango integration configured in the admin UI (see
+ * `infra/nango/providers/<provider>.md`).
  */
-const ALLOWED_PROVIDERS = new Set(['google-calendar']);
+const ALLOWED_PROVIDERS = new Set(['google-calendar', 'google-mail']);
 
 export async function GET(request: NextRequest): Promise<Response> {
   const provider = request.nextUrl.searchParams.get('provider') ?? '';
@@ -43,6 +50,37 @@ export async function GET(request: NextRequest): Promise<Response> {
       { error: `unsupported provider: ${provider || '<missing>'}` },
       { status: 400 },
     );
+  }
+
+  // Gmail-specific: require a confirmed category opt-in from the
+  // privacy-preview dialog.
+  let emailCategoriesCsv: string | undefined;
+  if (provider === 'google-mail') {
+    const raw = request.nextUrl.searchParams.get('categories');
+    if (!raw) {
+      return NextResponse.json(
+        {
+          error:
+            'google-mail requires a `categories` opt-in list; use the Connect dialog in /settings/connections',
+        },
+        { status: 400 },
+      );
+    }
+    const requested = raw
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const valid = requested.filter(isEmailCategory);
+    if (valid.length === 0) {
+      return NextResponse.json(
+        {
+          error: 'no valid email categories opted in',
+          allowed: ALL_EMAIL_CATEGORIES,
+        },
+        { status: 400 },
+      );
+    }
+    emailCategoriesCsv = valid.join(',');
   }
 
   let env;
@@ -66,12 +104,25 @@ export async function GET(request: NextRequest): Promise<Response> {
 
   const ctx = await getHouseholdContext();
   if (!ctx) {
-    // A signed-in user with no household drifts to onboarding; from an
-    // API-route perspective, we return 409 so the UI can decide.
     return NextResponse.json(
       { error: 'no household context; complete onboarding first' },
       { status: 409 },
     );
+  }
+
+  const tags: Record<string, string> = {
+    household_id: ctx.household.id,
+    member_id: ctx.member.id,
+    provider,
+  };
+  if (emailCategoriesCsv) {
+    tags.email_categories = emailCategoriesCsv;
+  }
+  // Gmail needs the email address for later Pub/Sub routing. We pass the
+  // authenticated user's email as a hint; the Nango webhook can override
+  // it from the actual OAuth response if desired.
+  if (provider === 'google-mail' && user.email) {
+    tags.email_address = user.email;
   }
 
   try {
@@ -80,18 +131,10 @@ export async function GET(request: NextRequest): Promise<Response> {
       endUser: {
         id: `member:${ctx.member.id}`,
         ...(user.email ? { email: user.email } : {}),
-        tags: {
-          household_id: ctx.household.id,
-          member_id: ctx.member.id,
-          provider,
-        },
+        tags,
       },
       allowedIntegrations: [provider],
-      tags: {
-        household_id: ctx.household.id,
-        member_id: ctx.member.id,
-        provider,
-      },
+      tags,
     });
     return NextResponse.redirect(session.connectLink, { status: 302 });
   } catch (err) {

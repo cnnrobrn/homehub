@@ -2,7 +2,7 @@
   "name": "@homehub/worker-webhook-ingest",
   "version": "0.0.0",
   "private": true,
-  "description": "Single public HTTP ingress for all provider webhooks. Owned by @integrations; routes filled in M2 onward.",
+  "description": "Single public HTTP ingress for all provider webhooks. Owned by @integrations.",
   "type": "module",
   "scripts": {
     "build": "tsc",
@@ -14,6 +14,7 @@
   "dependencies": {
     "@homehub/db": "workspace:*",
     "@homehub/providers-calendar": "workspace:*",
+    "@homehub/providers-email": "workspace:*",
     "@homehub/shared": "workspace:*",
     "@homehub/worker-runtime": "workspace:*",
     "@supabase/supabase-js": "^2.104.0",

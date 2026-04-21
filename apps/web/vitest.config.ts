@@ -32,6 +32,12 @@ const foregroundAgentSrc = fileURLToPath(
 const workerRuntimeSrc = fileURLToPath(
   new URL('../../packages/worker-runtime/src/index.ts', import.meta.url),
 );
+const providersEmailSrc = fileURLToPath(
+  new URL('../../packages/providers/email/src/index.ts', import.meta.url),
+);
+const providersEmailClientSrc = fileURLToPath(
+  new URL('../../packages/providers/email/src/client.ts', import.meta.url),
+);
 
 export default defineConfig({
   plugins: [react()],
@@ -45,6 +51,8 @@ export default defineConfig({
       '@homehub/tools': toolsSrc,
       '@homehub/worker-foreground-agent': foregroundAgentSrc,
       '@homehub/worker-runtime': workerRuntimeSrc,
+      '@homehub/providers-email': providersEmailSrc,
+      '@homehub/providers-email/client': providersEmailClientSrc,
     },
   },
   test: {

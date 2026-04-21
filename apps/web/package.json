@@ -16,6 +16,7 @@
   "dependencies": {
     "@homehub/auth-server": "workspace:*",
     "@homehub/db": "workspace:*",
+    "@homehub/providers-email": "workspace:*",
     "@homehub/query-memory": "workspace:*",
     "@homehub/shared": "workspace:*",
     "@homehub/tools": "workspace:*",

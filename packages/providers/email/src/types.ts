@@ -1,0 +1,152 @@
+/**
+ * Canonical email-message shape HomeHub stores in `app.email`.
+ *
+ * Provider-agnostic by design: Gmail today, Outlook / IMAP post-v1.
+ * Fields below map directly to columns on `app.email` plus `metadata`
+ * for provider-specific extras.
+ *
+ * Privacy rules (see `specs/03-integrations/google-workspace.md` and
+ * `specs/09-security/data-retention.md`):
+ *   - `bodyPreview` is capped at the provider's snippet (~2KB). We do
+ *     NOT fetch the full body at sync time; the M4-B extraction worker
+ *     pulls the full body on demand if it needs richer context.
+ *   - Attachments are listed here (metadata only); the worker downloads
+ *     and persists them into Supabase Storage with household RLS.
+ *   - The ingestion worker only touches messages that match the
+ *     member-opt-in category query. Everything else stays in Gmail
+ *     untouched.
+ */
+
+export type EmailCategory = 'receipt' | 'reservation' | 'bill' | 'invite' | 'shipping';
+
+export const ALL_EMAIL_CATEGORIES: readonly EmailCategory[] = [
+  'receipt',
+  'reservation',
+  'bill',
+  'invite',
+  'shipping',
+] as const;
+
+export interface EmailAttachmentMeta {
+  /** Gmail MIME part id; stable within the message. */
+  partId: string;
+  filename: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+export interface EmailMessage {
+  /** Gmail message id. Stable across history ids. */
+  sourceId: string;
+  /** Gmail thread id. */
+  threadId: string;
+  /** Snapshot of the Gmail mailbox historyId at fetch time. */
+  historyId: string;
+  subject: string;
+  fromEmail: string;
+  fromName?: string;
+  /** All envelope recipients we can observe. */
+  toEmails: string[];
+  /** ISO-8601 with offset. Always populated; falls back to Date.now() if the Gmail header is malformed. */
+  receivedAt: string;
+  /** Provider labels applied to this message (Gmail label ids). */
+  labels: string[];
+  /** First ~2KB of the body (Gmail snippet + header scraps). Never the full body. */
+  bodyPreview: string;
+  /** Raw headers we care about (Subject, From, To, Date, Message-Id, List-Unsubscribe, …). */
+  headers: Record<string, string>;
+  attachments: EmailAttachmentMeta[];
+}
+
+export interface ListRecentMessagesArgs {
+  connectionId: string;
+  /**
+   * When present: use Gmail's history.list for incremental delta. When
+   * absent: use messages.list with `query`.
+   */
+  afterHistoryId?: string;
+  /**
+   * Gmail search syntax (e.g. `subject:(receipt OR order) newer_than:180d`).
+   * Composed from the member's opt-in categories.
+   */
+  query: string;
+  /** Cap per page; Gmail max is 500. Default 100. */
+  maxResults?: number;
+}
+
+export interface ListRecentMessagesPage {
+  messages: EmailMessage[];
+  /** Present on the terminal page; store as the cursor for next delta. */
+  nextHistoryId?: string;
+}
+
+export interface FetchMessageArgs {
+  connectionId: string;
+  messageId: string;
+}
+
+export interface FetchAttachmentArgs {
+  connectionId: string;
+  messageId: string;
+  /** Gmail attachmentId from the message's part.body.attachmentId. */
+  attachmentId: string;
+}
+
+export interface FetchAttachmentResult {
+  /** base64url-decoded into standard base64. */
+  contentBase64: string;
+  contentType: string;
+  sizeBytes: number;
+}
+
+export interface WatchArgs {
+  connectionId: string;
+  /**
+   * Google Cloud Pub/Sub topic name Gmail pushes to.
+   * Shape: `projects/<gcp-project>/topics/<topic>`.
+   */
+  topicName: string;
+  /** Optional label ids; default: INBOX only (matches spec filter posture). */
+  labelIds?: string[];
+}
+
+export interface WatchResult {
+  historyId: string;
+  /** ISO-8601. Gmail watch expires after ~7 days. */
+  expiration: string;
+}
+
+export interface UnwatchArgs {
+  connectionId: string;
+}
+
+export interface AddLabelArgs {
+  connectionId: string;
+  messageId: string;
+  labelId: string;
+}
+
+export interface EnsureLabelArgs {
+  connectionId: string;
+  /** Human-readable name. Gmail auto-maps `HomeHub/Ingested` to a nested label. */
+  name: string;
+}
+
+export interface EnsureLabelResult {
+  labelId: string;
+}
+
+/**
+ * The narrow surface every mail-provider adapter must implement.
+ * Workers depend on this interface, not on a concrete provider — so a
+ * future Outlook adapter drops in without touching sync code.
+ */
+export interface EmailProvider {
+  listRecentMessages(args: ListRecentMessagesArgs): AsyncIterable<ListRecentMessagesPage>;
+  fetchMessage(args: FetchMessageArgs): Promise<EmailMessage>;
+  fetchAttachment(args: FetchAttachmentArgs): Promise<FetchAttachmentResult>;
+  watch(args: WatchArgs): Promise<WatchResult>;
+  unwatch(args: UnwatchArgs): Promise<void>;
+  addLabel(args: AddLabelArgs): Promise<void>;
+  ensureLabel(args: EnsureLabelArgs): Promise<EnsureLabelResult>;
+}

@@ -4,21 +4,22 @@
  * Server Component. Loads the household's connection rows via
  * `listConnectionsAction` and renders them as a simple table. The
  * "Connect Google Calendar" button is a plain anchor to the route
- * handler that kicks off the Nango hosted-auth flow; the "Disconnect"
- * button is a client-island form that calls
- * `disconnectConnectionAction`.
- *
- * Intentionally unpolished UI — M2-A lands the wiring; M2-C polishes.
+ * handler that kicks off the Nango hosted-auth flow. "Connect Gmail"
+ * opens the `EmailConnectDialog` client island first for category
+ * opt-in + privacy preview before redirecting.
  */
 
 import { listConnectionsAction } from '@/app/actions/integrations';
 import { DisconnectButton } from '@/components/settings/ConnectionsTable';
+import { EmailConnectDialog } from '@/components/settings/EmailConnectDialog';
 import { Button } from '@/components/ui/button';
 import { getHouseholdContext } from '@/lib/auth/context';
 
 const PROVIDER_LABELS: Record<string, string> = {
   'google-calendar': 'Google Calendar',
   gcal: 'Google Calendar',
+  'google-mail': 'Gmail',
+  gmail: 'Gmail',
 };
 
 function formatRelative(iso: string | null): string {
@@ -65,7 +66,8 @@ export default async function ConnectionsPage() {
         <h1 className="text-2xl font-semibold tracking-tight">Connections</h1>
         <p className="text-sm text-fg-muted">
           Third-party accounts HomeHub is currently reading from. Connect your Google Calendar to
-          sync events into the unified household calendar.
+          sync events into the unified household calendar, or Gmail to pull in receipts,
+          reservations, bills, invites, and shipping updates.
         </p>
       </header>
 
@@ -79,12 +81,13 @@ export default async function ConnectionsPage() {
         <h2 id="connect-heading" className="text-lg font-medium">
           Available providers
         </h2>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Button asChild>
             <a href="/api/integrations/connect?provider=google-calendar">Connect Google Calendar</a>
           </Button>
+          <EmailConnectDialog />
           <span className="text-sm text-fg-muted" aria-live="polite">
-            Other providers (Gmail, Monarch, YNAB) ship in later milestones.
+            Monarch / YNAB ship in later milestones.
           </span>
         </div>
       </section>

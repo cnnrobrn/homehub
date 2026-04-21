@@ -78,6 +78,23 @@ const disconnectSchema = z.object({
   connectionId: z.string().uuid(),
 });
 
+/**
+ * Map a stored `sync.provider_connection.provider` label to the Nango
+ * `providerConfigKey` configured in the admin UI. Unknown providers
+ * pass through untouched — Nango will 404 and we'll surface that
+ * through the catch.
+ */
+function toNangoProviderKey(provider: string): string {
+  switch (provider) {
+    case 'gcal':
+      return 'google-calendar';
+    case 'gmail':
+      return 'google-mail';
+    default:
+      return provider;
+  }
+}
+
 export async function disconnectConnectionAction(
   input: z.input<typeof disconnectSchema>,
 ): Promise<ActionResult<{ ok: true }>> {
@@ -115,9 +132,14 @@ export async function disconnectConnectionAction(
     // Delete in Nango first; if that fails, we keep the row active so
     // the retry path is obvious. Swallowing a 404 from Nango (already
     // deleted upstream) is fine — we still flip the row.
+    //
+    // Nango identifies providers by `providerConfigKey` (e.g.
+    // `google-calendar`), but the row stores HomeHub's short provider
+    // label (`gcal`, `gmail`). Translate here.
     try {
       const nango = createWebNangoClient();
-      await nango.deleteConnection(connection.provider, connection.nango_connection_id);
+      const providerConfigKey = toNangoProviderKey(connection.provider);
+      await nango.deleteConnection(providerConfigKey, connection.nango_connection_id);
     } catch (err) {
       // Log via console because server actions have no logger injected
       // and the operator will see this in Vercel logs.

@@ -8,8 +8,9 @@
  * Routes:
  *   - GET  /health                         → 200 liveness
  *   - GET  /ready                          → 200/503 readiness
- *   - POST /webhooks/google-calendar       → delegated to `handleGoogleCalendarWebhook`
- *   - POST /webhooks/nango                 → delegated to `handleNangoWebhook`
+ *   - POST /webhooks/google-calendar       → `handleGoogleCalendarWebhook`
+ *   - POST /webhooks/google-mail/pubsub    → `handleGoogleMailPubsubWebhook`
+ *   - POST /webhooks/nango                 → `handleNangoWebhook`
  *
  * Everything else falls through to 404.
  */
@@ -17,6 +18,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 
 import { createGoogleCalendarProvider } from '@homehub/providers-calendar';
+import { createGoogleMailProvider } from '@homehub/providers-email';
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
@@ -32,19 +34,34 @@ import { z } from 'zod';
 
 import {
   handleGoogleCalendarWebhook,
+  handleGoogleMailPubsubWebhook,
   handleNangoWebhook,
   type WebhookIngestDeps,
 } from './handler.js';
 
 const SERVICE_NAME = 'worker-webhook-ingest';
 
-// Extend the runtime schema with our provider-webhook secrets. We keep
-// them optional so the service can boot in environments where only some
-// providers are wired up; per-route handlers fail-loud if a secret they
-// need is missing.
 const envSchema = workerRuntimeEnvSchema.extend({
   NANGO_WEBHOOK_SECRET: z.string().min(1).optional(),
   WEBHOOK_PUBLIC_URL: z.string().url().optional(),
+  /**
+   * Pub/Sub topic for Gmail push (`projects/<project>/topics/<topic>`).
+   * When unset, `connection.created` skips users.watch and the sync
+   * worker falls back to polling only.
+   */
+  NANGO_GMAIL_PUBSUB_TOPIC: z.string().min(1).optional(),
+  /**
+   * Shared-secret token required on `/webhooks/google-mail/pubsub` when
+   * configured. Matches the `?token=` query attached to the Pub/Sub push
+   * subscription URL.
+   */
+  HOMEHUB_GMAIL_WEBHOOK_TOKEN: z.string().min(1).optional(),
+  /**
+   * When set, the Gmail webhook additionally requires an `Authorization:
+   * Bearer <jwt>` header (JWT audience match). Full signature verification
+   * against Google's JWKS is deferred — see `handler.ts`.
+   */
+  HOMEHUB_GMAIL_WEBHOOK_JWT_AUDIENCE: z.string().min(1).optional(),
 });
 
 const env = loadEnv(envSchema);
@@ -70,15 +87,26 @@ const exitCode = await runWorker(
     const queues = createQueueClient(supabase);
     const nango = createNangoClient(env);
     const calendar = createGoogleCalendarProvider({ nango });
+    const email = createGoogleMailProvider({ nango });
 
     const deps: WebhookIngestDeps = {
       supabase,
       queues,
       calendar,
+      email,
       log,
       env: {
         ...(env.NANGO_WEBHOOK_SECRET ? { NANGO_WEBHOOK_SECRET: env.NANGO_WEBHOOK_SECRET } : {}),
         ...(env.WEBHOOK_PUBLIC_URL ? { WEBHOOK_PUBLIC_URL: env.WEBHOOK_PUBLIC_URL } : {}),
+        ...(env.NANGO_GMAIL_PUBSUB_TOPIC
+          ? { NANGO_GMAIL_PUBSUB_TOPIC: env.NANGO_GMAIL_PUBSUB_TOPIC }
+          : {}),
+        ...(env.HOMEHUB_GMAIL_WEBHOOK_TOKEN
+          ? { HOMEHUB_GMAIL_WEBHOOK_TOKEN: env.HOMEHUB_GMAIL_WEBHOOK_TOKEN }
+          : {}),
+        ...(env.HOMEHUB_GMAIL_WEBHOOK_JWT_AUDIENCE
+          ? { HOMEHUB_GMAIL_WEBHOOK_JWT_AUDIENCE: env.HOMEHUB_GMAIL_WEBHOOK_JWT_AUDIENCE }
+          : {}),
       },
     };
 
@@ -99,11 +127,12 @@ const exitCode = await runWorker(
 
     async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
       const url = req.url ?? '/';
-      if (url === '/health') {
+      const pathOnly = url.split('?', 1)[0] ?? '/';
+      if (pathOnly === '/health') {
         writeJson(res, 200, { status: 'ok', service: SERVICE_NAME });
         return;
       }
-      if (url === '/ready') {
+      if (pathOnly === '/ready') {
         writeJson(res, ready ? 200 : 503, {
           status: ready ? 'ready' : 'starting',
           service: SERVICE_NAME,
@@ -114,9 +143,8 @@ const exitCode = await runWorker(
         writeJson(res, 404, { error: 'not found' });
         return;
       }
-      if (url === '/webhooks/google-calendar' || url.startsWith('/webhooks/google-calendar?')) {
+      if (pathOnly === '/webhooks/google-calendar') {
         // Google sends a 0-byte body on most notifications. Don't parse.
-        // Drain anyway so the connection closes cleanly.
         await readRawBody(req);
         const result = await handleGoogleCalendarWebhook(deps, {
           headers: req.headers,
@@ -124,7 +152,18 @@ const exitCode = await runWorker(
         writeJson(res, result.status, result.body);
         return;
       }
-      if (url === '/webhooks/nango' || url.startsWith('/webhooks/nango?')) {
+      if (pathOnly === '/webhooks/google-mail/pubsub') {
+        const rawBody = await readRawBody(req);
+        const query = parseQuery(url);
+        const result = await handleGoogleMailPubsubWebhook(deps, {
+          headers: req.headers,
+          rawBody,
+          query,
+        });
+        writeJson(res, result.status, result.body);
+        return;
+      }
+      if (pathOnly === '/webhooks/nango') {
         const rawBody = await readRawBody(req);
         const result = await handleNangoWebhook(deps, { headers: req.headers, rawBody });
         writeJson(res, result.status, result.body);
@@ -146,7 +185,6 @@ const exitCode = await runWorker(
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    // Readiness: verify Supabase reachability.
     try {
       const { error } = await supabase
         .schema('sync')
@@ -161,7 +199,6 @@ const exitCode = await runWorker(
       });
     }
 
-    // Wait for shutdown signal — the server callbacks keep the loop busy.
     await new Promise<void>((resolve) => {
       const onSig = (): void => resolve();
       process.once('SIGTERM', onSig);
@@ -170,5 +207,21 @@ const exitCode = await runWorker(
   },
   { shutdownTimeoutMs: 30_000 },
 );
+
+/**
+ * Parse a request URL's query string into a flat record. We intentionally
+ * avoid `node:url.URL` here so relative URLs (Node gives us only the path
+ * + query, not an origin) parse correctly.
+ */
+function parseQuery(url: string): Record<string, string | undefined> {
+  const qIndex = url.indexOf('?');
+  if (qIndex < 0) return {};
+  const params = new URLSearchParams(url.slice(qIndex + 1));
+  const out: Record<string, string | undefined> = {};
+  for (const [k, v] of params) {
+    out[k] = v;
+  }
+  return out;
+}
 
 process.exit(exitCode);
