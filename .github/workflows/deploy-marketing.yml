@@ -81,6 +81,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: pnpm
           workingDirectory: apps/marketing
           command: deploy
 
@@ -90,6 +91,7 @@ jobs:
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: pnpm
           workingDirectory: apps/marketing
           # `versions upload` stages a new version without routing
           # traffic to it — returns a preview URL of the form
