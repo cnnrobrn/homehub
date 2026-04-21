@@ -47,9 +47,23 @@ end
 $$;
 
 -- Grant service_role read access to auth.users so test files (running
--- under `act_as_service`) can reference the fixture users. INSERT isn't
--- grantable through a plain GRANT because auth.users has FORCE ROW
--- LEVEL SECURITY in Supabase CLI 2.90.0's bundled Postgres — the
--- fixture seeds users by briefly `SET ROLE supabase_auth_admin` in
--- `_setup.sql` (the role that owns auth.users) instead.
+-- under `act_as_service`) can reference the fixture users. INSERT on
+-- auth.users isn't grantable from this role, so `_setup.sql` seeds
+-- auth.users as the postgres connection role before calling
+-- `act_as_service`.
 grant select on auth.users to service_role;
+
+-- Grant service_role table-level privileges on every application schema.
+-- Supabase's hosted Postgres sets these up via default privileges, but
+-- the CLI 2.90.0 local Postgres 17 does not — without these grants
+-- every `act_as_service` insert on app.*/mem.*/sync.*/audit.* fails
+-- with "permission denied for table <name>". postgres (the migration
+-- role) owns these tables so the grants land fully.
+grant select, insert, update, delete on all tables in schema app to service_role;
+grant select, insert, update, delete on all tables in schema mem to service_role;
+grant select, insert, update, delete on all tables in schema sync to service_role;
+grant select, insert, update, delete on all tables in schema audit to service_role;
+grant usage, select on all sequences in schema app to service_role;
+grant usage, select on all sequences in schema mem to service_role;
+grant usage, select on all sequences in schema sync to service_role;
+grant usage, select on all sequences in schema audit to service_role;
