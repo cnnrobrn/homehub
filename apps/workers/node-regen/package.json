@@ -1,0 +1,24 @@
+{
+  "name": "@homehub/worker-node-regen",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Regenerates memory node documents when the underlying facts change. Owned by @memory-background; fleshed out in M3.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@homehub/db": "workspace:*",
+    "@homehub/shared": "workspace:*",
+    "@homehub/worker-runtime": "workspace:*"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.4"
+  }
+}

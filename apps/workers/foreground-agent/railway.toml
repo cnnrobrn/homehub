@@ -1,0 +1,16 @@
+# Railway service config for @homehub/worker-foreground-agent.
+# If the edge-vs-worker decision lands on Edge in M3.5, this service
+# becomes a long-turn fallback host rather than the primary loop runner.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "./Dockerfile"
+
+[build.args]
+SERVICE_NAME = "worker-foreground-agent"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

@@ -1,0 +1,16 @@
+# Railway service config for @homehub/worker-webhook-ingest.
+# Unlike the pgmq-consuming workers this one is HTTP-only; it needs a
+# public domain once @integrations wires the first provider.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "./Dockerfile"
+
+[build.args]
+SERVICE_NAME = "worker-webhook-ingest"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

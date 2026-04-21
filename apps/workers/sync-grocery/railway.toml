@@ -1,0 +1,14 @@
+# Railway service config for @homehub/worker-sync-grocery.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "./Dockerfile"
+
+[build.args]
+SERVICE_NAME = "worker-sync-grocery"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

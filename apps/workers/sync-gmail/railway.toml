@@ -1,0 +1,14 @@
+# Railway service config for @homehub/worker-sync-gmail.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "./Dockerfile"
+
+[build.args]
+SERVICE_NAME = "worker-sync-gmail"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

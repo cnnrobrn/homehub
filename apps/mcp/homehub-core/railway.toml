@@ -1,0 +1,15 @@
+# Railway service config for @homehub/mcp-homehub-core.
+# Streamable-HTTP MCP server; needs a public domain once tools ship in M3.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "./Dockerfile"
+
+[build.args]
+SERVICE_NAME = "mcp-homehub-core"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

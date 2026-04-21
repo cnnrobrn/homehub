@@ -1,0 +1,16 @@
+# Railway service config for @homehub/worker-sync-gcal.
+# One file per service so Railway's monorepo detection picks them up
+# individually. Health probe hits the Node HTTP server inside src/main.ts.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "./Dockerfile"
+
+[build.args]
+SERVICE_NAME = "worker-sync-gcal"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10

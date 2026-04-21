@@ -1,0 +1,25 @@
+{
+  "name": "@homehub/mcp-ingest",
+  "version": "0.0.0",
+  "private": true,
+  "description": "HomeHub Ingest MCP server. Streamable-HTTP transport; exposes ingest-oriented tools (push events, upsert entities, trigger re-enrichment). Owned by @integrations; fleshed out M4+.",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/main.ts",
+    "start": "node dist/main.js",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@homehub/db": "workspace:*",
+    "@homehub/shared": "workspace:*",
+    "@homehub/worker-runtime": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.4"
+  }
+}
