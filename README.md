@@ -11,7 +11,7 @@ This is a pnpm monorepo. The workspace globs are already configured; the package
 - `apps/web/` — Next.js control panel (coming in M0-D).
 - `apps/workers/*` — Railway worker services, one per worker class (coming in M0-E).
 - `apps/mcp/*` — MCP servers (coming in M0-E).
-- `packages/db/` — Supabase migrations and generated types (coming in M0-B).
+- `packages/db/` — Supabase migrations, local stack config, and generated types. See [`packages/db/README.md`](./packages/db/README.md).
 - `packages/worker-runtime/` — shared worker runtime: Supabase client, `pgmq` wrapper, Nango client, OpenRouter helper, logger, tracer (coming in M0-C).
 - `packages/shared/`, `packages/providers/`, `packages/prompts/`, `packages/tools/` — domain primitives and provider/prompt/tool catalogs.
 - `specs/` — design specs. Source of truth for what to build.
@@ -33,9 +33,16 @@ pnpm typecheck
 pnpm format:check
 ```
 
-Additional commands (Supabase local stack, Nango docker-compose, seed data, dev servers) arrive with later M0 chunks:
+Boot the local Supabase stack (requires Docker running):
 
-- Supabase local dev + schema migrations: coming in M0-B.
+```bash
+pnpm --filter @homehub/db db:start    # Postgres + PostgREST + Studio
+pnpm --filter @homehub/db db:status   # URLs + service keys
+pnpm --filter @homehub/db db:stop
+```
+
+Additional commands (Nango docker-compose, seed data, dev servers) arrive with later M0 chunks:
+
 - Worker runtime + queue wiring: coming in M0-C.
 - Next.js app shell: coming in M0-D.
 - Worker + MCP service stubs: coming in M0-E.

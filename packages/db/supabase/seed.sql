@@ -1,0 +1,10 @@
+-- HomeHub local dev seed.
+--
+-- Owner: @infra-platform.
+-- Purpose: seed data for local development only. Runs after migrations on
+-- `supabase db reset` (local only — never run against staging/prod).
+-- Real seed data (demo household, demo members, demo transactions) lands in
+-- a later M0 chunk once the M1 `app.*` tables exist.
+--
+-- Keep this file idempotent: use `on conflict do nothing` or `where not exists`
+-- so rerunning after a partial apply is safe.

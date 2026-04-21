@@ -12,6 +12,9 @@ concurrency:
 env:
   NODE_VERSION: '20.18.0'
   PNPM_VERSION: '9.15.9'
+  # Pinned Supabase CLI version. Bump deliberately; a bump can change
+  # migration linter behavior or bundled Postgres extension versions.
+  SUPABASE_CLI_VERSION: '2.90.0'
 
 jobs:
   lint:
@@ -93,5 +96,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: No migrations yet
-        run: echo "no migrations yet"
+      - name: Install Supabase CLI
+        # Pinned via SUPABASE_CLI_VERSION above. The official .deb lives at
+        # github.com/supabase/cli releases; install via curl + dpkg to avoid
+        # a third-party action in the supply chain.
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/supabase.deb \
+            "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/supabase_${SUPABASE_CLI_VERSION}_linux_amd64.deb"
+          sudo dpkg -i /tmp/supabase.deb
+          rm /tmp/supabase.deb
+          supabase --version
+
+      - name: Start local Supabase stack
+        working-directory: packages/db
+        # Docker is preinstalled on GitHub-hosted ubuntu-latest runners, so
+        # `supabase start` can boot the full stack. Takes ~60-90s on an empty
+        # schema; if this grows past ~2 minutes we fall back to a static
+        # migration linter (squawk) — see packages/db/README.md.
+        run: supabase start --ignore-health-check
+
+      - name: Lint migrations
+        working-directory: packages/db
+        run: supabase db lint --local --level warning --fail-on warning
+
+      - name: Stop local Supabase stack
+        if: always()
+        working-directory: packages/db
+        run: supabase stop --no-backup || true
