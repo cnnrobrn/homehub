@@ -34,17 +34,36 @@ import {
   type AccountRow as AlertAccountRow,
   type AlertEmission,
   type BudgetRow as AlertBudgetRow,
+  type FoodGroceryListRow,
+  type FoodMealRow,
+  type FunEventRow as AlertFunEventRow,
   type HouseholdAlertSettings,
+  type HomePlaceSet as SocialHomePlaceSet,
+  type PantryItemRow,
+  type SocialEpisode,
+  type SocialEvent,
+  type SocialPersonNode,
+  type SocialSuggestionSnapshot,
   type SubscriptionNode,
   type TransactionRow as AlertTransactionRow,
+  detectAbsenceLong,
   detectAccountStale,
+  detectBirthdayApproaching,
   detectBudgetOverThreshold,
+  detectConflictingBirthdayNoPlan,
+  detectConflictingRsvps,
   detectDuplicateCharge,
+  detectGroceryOrderIssue,
   detectLargeTransaction,
+  detectMealPlanGap,
   detectNewRecurringCharge,
+  detectPantryExpiring,
   detectPaymentFailed,
+  detectReciprocityImbalance,
   detectSubscriptionPriceIncrease,
   detectSubscriptions,
+  detectTicketReservationReminder,
+  detectUpcomingTripPrep,
   type SubscriptionCandidate,
 } from '@homehub/alerts';
 import { type Database, type Json } from '@homehub/db';
@@ -53,6 +72,16 @@ import { type SupabaseClient } from '@supabase/supabase-js';
 
 export const ALERT_DEDUPE_WINDOW_HOURS = 24;
 export const ALERTS_LOOKBACK_DAYS = 90;
+/** How far ahead the fun-segment detectors look for events. */
+export const FUN_LOOKAHEAD_DAYS = 30;
+/**
+ * How far ahead the social detectors look for birthday + anniversary
+ * events. The `birthday_approaching` detector only fires within 7
+ * days; 30 gives a bit of slack for date-math rounding.
+ */
+export const SOCIAL_LOOKAHEAD_DAYS = 30;
+/** How far back social episodes are pulled for absence + reciprocity. */
+export const SOCIAL_EPISODE_LOOKBACK_DAYS = 180;
 
 export interface AlertsWorkerDeps {
   supabase: SupabaseClient<Database>;
@@ -105,13 +134,45 @@ async function runForHousehold(
 ): Promise<AlertsRunSummary> {
   const lookbackStart = new Date(now.getTime() - ALERTS_LOOKBACK_DAYS * 24 * 60 * 60 * 1000);
 
-  const [transactions, accounts, budgets, subscriptions, settings] = await Promise.all([
+  const funLookaheadEnd = new Date(now.getTime() + FUN_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000);
+  const socialLookaheadEnd = new Date(now.getTime() + SOCIAL_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000);
+  const socialEpisodeStart = new Date(
+    now.getTime() - SOCIAL_EPISODE_LOOKBACK_DAYS * 24 * 60 * 60 * 1000,
+  );
+  const [
+    transactions,
+    accounts,
+    budgets,
+    subscriptions,
+    settings,
+    funEvents,
+    socialPeople,
+    socialEvents,
+    socialEpisodes,
+    socialSuggestions,
+    homePlaces,
+    pantryItems,
+    upcomingMeals,
+    recentGroceryLists,
+  ] = await Promise.all([
     loadTransactions(deps.supabase, householdId, lookbackStart),
     loadAccounts(deps.supabase, householdId),
     loadBudgets(deps.supabase, householdId),
     loadSubscriptions(deps.supabase, householdId),
     loadHouseholdSettings(deps.supabase, householdId),
+    loadFunEvents(deps.supabase, householdId, now, funLookaheadEnd),
+    loadSocialPeople(deps.supabase, householdId),
+    loadSocialEvents(deps.supabase, householdId, now, socialLookaheadEnd),
+    loadSocialEpisodes(deps.supabase, householdId, socialEpisodeStart),
+    loadPendingSocialSuggestions(deps.supabase, householdId),
+    loadHomePlaces(deps.supabase, householdId),
+    loadPantryItems(deps.supabase, householdId),
+    loadUpcomingMeals(deps.supabase, householdId, now),
+    loadRecentGroceryLists(deps.supabase, householdId),
   ]);
+  const funTrips = funEvents.filter((e) => e.kind === 'trip');
+  const socialPersonNames = new Map<string, string>();
+  for (const p of socialPeople) socialPersonNames.set(p.id, p.canonical_name);
 
   // --- Subscription detector pre-step ---------------------------------
   const { upserted, created, txUpdates } = await upsertSubscriptions(deps, {
@@ -158,6 +219,38 @@ async function runForHousehold(
     ...detectAccountStale({ householdId, accounts, now }),
     ...detectDuplicateCharge({ householdId, transactions, now }),
     ...detectNewRecurringCharge({ householdId, newlyCreated: created }),
+    ...detectConflictingRsvps({ householdId, events: funEvents, now }),
+    ...detectUpcomingTripPrep({ householdId, trips: funTrips, now }),
+    ...detectTicketReservationReminder({ householdId, events: funEvents, now }),
+    ...detectBirthdayApproaching({
+      householdId,
+      events: socialEvents,
+      existingSuggestions: socialSuggestions,
+      now,
+    }),
+    ...detectAbsenceLong({
+      householdId,
+      people: socialPeople,
+      episodes: socialEpisodes,
+      now,
+    }),
+    ...detectReciprocityImbalance({
+      householdId,
+      people: socialPeople,
+      episodes: socialEpisodes,
+      homePlaces,
+      now,
+    }),
+    ...detectConflictingBirthdayNoPlan({
+      householdId,
+      events: socialEvents,
+      personNames: socialPersonNames,
+      now,
+    }),
+    // Food detectors (M6).
+    ...detectPantryExpiring({ householdId, items: pantryItems, now }),
+    ...detectMealPlanGap({ householdId, meals: upcomingMeals, pantryItems, now }),
+    ...detectGroceryOrderIssue({ householdId, lists: recentGroceryLists, now }),
   ];
 
   // --- Dedupe + insert -------------------------------------------------
@@ -513,6 +606,155 @@ async function loadBudgets(
   }));
 }
 
+async function loadFunEvents(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  windowStart: Date,
+  windowEnd: Date,
+): Promise<AlertFunEventRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('event')
+    .select(
+      'id, household_id, segment, kind, title, starts_at, ends_at, all_day, location, owner_member_id, metadata',
+    )
+    .eq('household_id', householdId)
+    .eq('segment', 'fun')
+    .gte('starts_at', windowStart.toISOString())
+    .lt('starts_at', windowEnd.toISOString());
+  if (error) {
+    // Non-fatal: fun detectors just skip.
+    return [];
+  }
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    segment: r.segment as string,
+    kind: r.kind as string,
+    title: r.title as string,
+    starts_at: r.starts_at as string,
+    ends_at: (r.ends_at as string | null) ?? null,
+    all_day: Boolean(r.all_day),
+    location: (r.location as string | null) ?? null,
+    owner_member_id: (r.owner_member_id as string | null) ?? null,
+    metadata: (r.metadata as Record<string, unknown>) ?? {},
+  }));
+}
+
+async function loadSocialPeople(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+): Promise<SocialPersonNode[]> {
+  const { data, error } = await supabase
+    .schema('mem')
+    .from('node')
+    .select('id, household_id, canonical_name, metadata, needs_review, created_at')
+    .eq('household_id', householdId)
+    .eq('type', 'person');
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    canonical_name: r.canonical_name as string,
+    metadata: (r.metadata as Record<string, unknown>) ?? {},
+    needs_review: Boolean(r.needs_review),
+    created_at: r.created_at as string,
+  }));
+}
+
+async function loadSocialEvents(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  windowStart: Date,
+  windowEnd: Date,
+): Promise<SocialEvent[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('event')
+    .select('id, household_id, kind, title, starts_at, all_day, metadata')
+    .eq('household_id', householdId)
+    .eq('segment', 'social')
+    .gte('starts_at', windowStart.toISOString())
+    .lt('starts_at', windowEnd.toISOString());
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    kind: r.kind as string,
+    title: r.title as string,
+    starts_at: r.starts_at as string,
+    all_day: Boolean(r.all_day),
+    metadata: (r.metadata as Record<string, unknown>) ?? {},
+  }));
+}
+
+async function loadSocialEpisodes(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  windowStart: Date,
+): Promise<SocialEpisode[]> {
+  const { data, error } = await supabase
+    .schema('mem')
+    .from('episode')
+    .select('id, household_id, occurred_at, participants, place_node_id, source_type, metadata')
+    .eq('household_id', householdId)
+    .gte('occurred_at', windowStart.toISOString());
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    occurred_at: r.occurred_at as string,
+    participants: (r.participants as string[] | null) ?? [],
+    place_node_id: (r.place_node_id as string | null) ?? null,
+    source_type: r.source_type as string,
+    metadata: (r.metadata as Record<string, unknown>) ?? {},
+  }));
+}
+
+async function loadPendingSocialSuggestions(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+): Promise<SocialSuggestionSnapshot[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('suggestion')
+    .select('id, household_id, segment, kind, status, created_at, preview')
+    .eq('household_id', householdId)
+    .eq('segment', 'social')
+    .eq('status', 'pending');
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    segment: r.segment as string,
+    kind: r.kind as string,
+    status: r.status as string,
+    created_at: r.created_at as string,
+    preview: (r.preview as Record<string, unknown>) ?? {},
+  }));
+}
+
+async function loadHomePlaces(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+): Promise<SocialHomePlaceSet> {
+  // Primary: explicit `mem.node type='place'` rows tagged as home
+  // via `metadata.is_home === true`.
+  const { data, error } = await supabase
+    .schema('mem')
+    .from('node')
+    .select('id, metadata')
+    .eq('household_id', householdId)
+    .eq('type', 'place');
+  const set = new Set<string>();
+  if (error) return set;
+  for (const row of data ?? []) {
+    const meta = (row.metadata as Record<string, unknown> | null) ?? {};
+    if (meta['is_home'] === true) set.add(row.id as string);
+  }
+  return set;
+}
+
 async function loadSubscriptions(
   supabase: SupabaseClient<Database>,
   householdId: string,
@@ -576,6 +818,86 @@ async function writeAudit(
   if (error) {
     console.warn(`[worker-alerts] audit write failed: ${error.message}`);
   }
+}
+
+// ---- Food loaders ----------------------------------------------------------
+
+async function loadPantryItems(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+): Promise<PantryItemRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('pantry_item')
+    .select('id, household_id, name, quantity, unit, expires_on, location, last_seen_at')
+    .eq('household_id', householdId)
+    .limit(500);
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    name: r.name as string,
+    quantity: (r.quantity as number | null) ?? null,
+    unit: (r.unit as string | null) ?? null,
+    expires_on: (r.expires_on as string | null) ?? null,
+    location: (r.location as string | null) ?? null,
+    last_seen_at: (r.last_seen_at as string | null) ?? null,
+  }));
+}
+
+async function loadUpcomingMeals(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  now: Date,
+): Promise<FoodMealRow[]> {
+  const horizon = new Date(now.getTime() + 8 * 24 * 60 * 60 * 1000);
+  const { data, error } = await supabase
+    .schema('app')
+    .from('meal')
+    .select(
+      'id, household_id, planned_for, slot, title, dish_node_id, status, servings, cook_member_id',
+    )
+    .eq('household_id', householdId)
+    .gte('planned_for', now.toISOString().slice(0, 10))
+    .lte('planned_for', horizon.toISOString().slice(0, 10));
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    planned_for: r.planned_for as string,
+    slot: r.slot as FoodMealRow['slot'],
+    title: r.title as string,
+    dish_node_id: (r.dish_node_id as string | null) ?? null,
+    status: r.status as FoodMealRow['status'],
+    servings: (r.servings as number | null) ?? null,
+    cook_member_id: (r.cook_member_id as string | null) ?? null,
+  }));
+}
+
+async function loadRecentGroceryLists(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+): Promise<FoodGroceryListRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('grocery_list')
+    .select(
+      'id, household_id, planned_for, status, provider, external_order_id, updated_at, created_at',
+    )
+    .eq('household_id', householdId)
+    .order('updated_at', { ascending: false })
+    .limit(50);
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    planned_for: (r.planned_for as string | null) ?? null,
+    status: r.status as FoodGroceryListRow['status'],
+    provider: (r.provider as string | null) ?? null,
+    external_order_id: (r.external_order_id as string | null) ?? null,
+    updated_at: r.updated_at as string,
+    created_at: r.created_at as string,
+  }));
 }
 
 // Legacy stub — kept to break cleanly if something imports the old shape.

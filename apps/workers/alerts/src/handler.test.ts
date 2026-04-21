@@ -47,6 +47,12 @@ interface State {
   alerts: Row[];
   nodes: Row[];
   audits: Row[];
+  events: Row[];
+  episodes: Row[];
+  suggestions: Row[];
+  pantryItems: Row[];
+  meals: Row[];
+  groceryLists: Row[];
 }
 
 function makeSupabase(initial: Partial<State> = {}) {
@@ -58,6 +64,12 @@ function makeSupabase(initial: Partial<State> = {}) {
     alerts: initial.alerts ?? [],
     nodes: initial.nodes ?? [],
     audits: initial.audits ?? [],
+    events: initial.events ?? [],
+    episodes: initial.episodes ?? [],
+    suggestions: initial.suggestions ?? [],
+    pantryItems: initial.pantryItems ?? [],
+    meals: initial.meals ?? [],
+    groceryLists: initial.groceryLists ?? [],
   };
   let alertId = 1;
   let nodeId = 1;
@@ -67,8 +79,11 @@ function makeSupabase(initial: Partial<State> = {}) {
     opts: { mutatorKey?: 'alerts' | 'nodes' | 'transactions' } = {},
   ) {
     const filters: Record<string, unknown> = {};
+    const neqFilters: Record<string, unknown> = {};
+    const inFilters: Record<string, unknown[]> = {};
     const gteConds: Array<{ col: string; value: string }> = [];
     const ltConds: Array<{ col: string; value: string }> = [];
+    const lteConds: Array<{ col: string; value: string }> = [];
     let limit: number | undefined;
     let selectCols: string | undefined;
     let selectHead = false;
@@ -84,12 +99,36 @@ function makeSupabase(initial: Partial<State> = {}) {
         filters[col] = val;
         return chain;
       },
+      in(col: string, vals: unknown[]) {
+        inFilters[col] = vals;
+        return chain;
+      },
+      is(_col: string, _val: unknown) {
+        // null-check filter — stub treats it as a no-op because the
+        // existing fixtures never store explicit null columns.
+        return chain;
+      },
       gte(col: string, value: string) {
         gteConds.push({ col, value });
         return chain;
       },
       lt(col: string, value: string) {
         ltConds.push({ col, value });
+        return chain;
+      },
+      lte(col: string, value: string) {
+        lteConds.push({ col, value });
+        return chain;
+      },
+      neq(col: string, val: unknown) {
+        neqFilters[col] = val;
+        return chain;
+      },
+      or(_expr: string) {
+        // Basic stub — pass-through, real RLS-filter stays in handler.
+        return chain;
+      },
+      order(_col: string, _opts?: unknown) {
         return chain;
       },
       limit(n: number) {
@@ -153,11 +192,20 @@ function makeSupabase(initial: Partial<State> = {}) {
       for (const [k, v] of Object.entries(filters)) {
         out = out.filter((r) => r[k] === v);
       }
+      for (const [k, v] of Object.entries(neqFilters)) {
+        out = out.filter((r) => r[k] !== v);
+      }
+      for (const [k, vs] of Object.entries(inFilters)) {
+        out = out.filter((r) => vs.includes(r[k]));
+      }
       for (const cond of gteConds) {
         out = out.filter((r) => String(r[cond.col]) >= cond.value);
       }
       for (const cond of ltConds) {
         out = out.filter((r) => String(r[cond.col]) < cond.value);
+      }
+      for (const cond of lteConds) {
+        out = out.filter((r) => String(r[cond.col]) <= cond.value);
       }
       if (limit != null) out = out.slice(0, limit);
       return out;
@@ -178,6 +226,16 @@ function makeSupabase(initial: Partial<State> = {}) {
         return buildQuery(state.budgets);
       case 'alert':
         return buildQuery(state.alerts, { mutatorKey: 'alerts' });
+      case 'event':
+        return buildQuery(state.events);
+      case 'suggestion':
+        return buildQuery(state.suggestions);
+      case 'pantry_item':
+        return buildQuery(state.pantryItems);
+      case 'meal':
+        return buildQuery(state.meals);
+      case 'grocery_list':
+        return buildQuery(state.groceryLists);
       default:
         throw new Error(`unexpected app.${table}`);
     }
@@ -185,6 +243,7 @@ function makeSupabase(initial: Partial<State> = {}) {
 
   function memSchema(table: string) {
     if (table === 'node') return buildQuery(state.nodes, { mutatorKey: 'nodes' });
+    if (table === 'episode') return buildQuery(state.episodes);
     throw new Error(`unexpected mem.${table}`);
   }
 
@@ -362,6 +421,37 @@ describe('runAlertsWorker', () => {
     expect(state.nodes[0]!.id).toBe('member-created');
     const meta = state.nodes[0]!.metadata as Record<string, unknown>;
     expect(meta.custom_note).toBe('keep me');
+  });
+
+  it('runs fun detectors for fun-segment events', async () => {
+    const memberId = 'm-alice';
+    const { supabase, state } = makeSupabase({
+      households: [{ id: HOUSEHOLD_ID, settings: {} }],
+      events: [
+        {
+          id: 'trip-1',
+          household_id: HOUSEHOLD_ID,
+          segment: 'fun',
+          kind: 'trip',
+          title: 'Weekend in Montreal',
+          starts_at: '2026-04-26T08:00:00Z',
+          ends_at: '2026-04-28T22:00:00Z',
+          all_day: false,
+          location: 'Montreal',
+          owner_member_id: memberId,
+          metadata: { trip_id: 'trip-1' },
+        },
+      ],
+    });
+    const { queues } = makeQueues();
+    await runAlertsWorker({
+      supabase: supabase as never,
+      queues,
+      log: makeLog(),
+      now: () => now,
+    });
+    const kinds = state.alerts.map((a) => (a.context as Record<string, unknown>).alert_kind);
+    expect(kinds).toContain('upcoming_trip_prep');
   });
 
   it('respects household-configured large_transaction threshold', async () => {

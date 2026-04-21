@@ -1,0 +1,31 @@
+{
+  "name": "@homehub/suggestions",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deterministic-first suggestion generators. Each generator picks candidates via SQL-derived inputs and (optionally) drafts a rationale via modelClient.generate through a budget guard. Returns SuggestionEmission objects the suggestions worker upserts into app.suggestion.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@homehub/shared": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.4"
+  }
+}

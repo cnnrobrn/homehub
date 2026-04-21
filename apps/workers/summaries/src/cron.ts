@@ -21,7 +21,7 @@ import {
   workerRuntimeEnvSchema,
 } from '@homehub/worker-runtime';
 
-import { runSummariesWorker } from './handler.js';
+import { runFoodSummariesWorker, runFunSummariesWorker, runSummariesWorker } from './handler.js';
 
 import type { SummaryPeriod } from '@homehub/summaries';
 
@@ -61,10 +61,26 @@ const exitCode = await runWorker(
       periods,
       ...(householdIds ? { householdIds } : {}),
     });
+    const funResults = await runFunSummariesWorker({
+      supabase,
+      log,
+      periods,
+      ...(householdIds ? { householdIds } : {}),
+    });
+    const foodResults = await runFoodSummariesWorker({
+      supabase,
+      log,
+      periods,
+      ...(householdIds ? { householdIds } : {}),
+    });
     log.info('summaries cron run finished', {
       periods,
       inserted: results.filter((r) => !r.skipped).length,
       skipped: results.filter((r) => r.skipped).length,
+      fun_inserted: funResults.filter((r) => !r.skipped).length,
+      fun_skipped: funResults.filter((r) => r.skipped).length,
+      food_inserted: foodResults.filter((r) => !r.skipped).length,
+      food_skipped: foodResults.filter((r) => r.skipped).length,
     });
   },
   { shutdownTimeoutMs: 10_000 },

@@ -27,10 +27,19 @@ import { type Database, type Json } from '@homehub/db';
 import { type HouseholdId } from '@homehub/shared';
 import {
   renderFinancialSummary,
+  renderFoodSummary,
+  renderFunSummary,
   type AccountRow as SummaryAccountRow,
   type BudgetRow as SummaryBudgetRow,
   type FinancialSummaryInput,
   type FinancialSummaryOutput,
+  type FoodSummaryInput,
+  type FoodSummaryOutput,
+  type FunEventRow as SummaryFunEventRow,
+  type FunSummaryInput,
+  type FunSummaryOutput,
+  type MealSummaryRow,
+  type PantryItemSummaryRow,
   type SummaryPeriod,
   type TransactionRow as SummaryTransactionRow,
 } from '@homehub/summaries';
@@ -385,6 +394,398 @@ async function writeAudit(
   if (error) {
     console.warn(`[worker-summaries] audit write failed: ${error.message}`);
   }
+}
+
+// ---- Fun summaries ----------------------------------------------------
+
+/**
+ * Run fun-segment summaries per household × period. Mirrors the
+ * financial runner but reads `app.event where segment='fun'` and writes
+ * rows with `segment='fun'`.
+ */
+export async function runFunSummariesWorker(
+  deps: SummariesWorkerDeps,
+): Promise<SummariesRunResult[]> {
+  const now = (deps.now ?? (() => new Date()))();
+  const periods = deps.periods ?? ['weekly'];
+  const householdIds = deps.householdIds ?? (await listHouseholds(deps.supabase));
+  const results: SummariesRunResult[] = [];
+
+  for (const householdId of householdIds) {
+    for (const period of periods) {
+      try {
+        const result = await runOneFunHouseholdPeriod(deps, householdId, period, now);
+        results.push(result);
+      } catch (err) {
+        deps.log.error('fun summaries: household/period run failed', {
+          household_id: householdId,
+          period,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        results.push({
+          householdId,
+          period,
+          skipped: true,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  deps.log.info('fun summaries run complete', {
+    households: householdIds.length,
+    periods,
+    inserted: results.filter((r) => !r.skipped).length,
+    skipped: results.filter((r) => r.skipped).length,
+  });
+
+  return results;
+}
+
+async function runOneFunHouseholdPeriod(
+  deps: SummariesWorkerDeps,
+  householdId: string,
+  period: SummaryPeriod,
+  now: Date,
+): Promise<SummariesRunResult> {
+  const { coveredStart, coveredEnd } = computePeriodWindow(period, now);
+
+  const existing = await findExistingFunSummary(deps.supabase, householdId, period, coveredStart);
+  if (existing) {
+    return { householdId, period, skipped: true, reason: 'already_exists' };
+  }
+
+  const [events, upcoming] = await Promise.all([
+    loadFunEvents(deps.supabase, householdId, coveredStart, coveredEnd),
+    loadFunEvents(
+      deps.supabase,
+      householdId,
+      now.toISOString(),
+      new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+    ),
+  ]);
+
+  const input: FunSummaryInput = {
+    householdId: householdId as HouseholdId,
+    period,
+    coveredStart,
+    coveredEnd,
+    events,
+    upcomingEvents: upcoming,
+    now,
+  };
+  const rendered: FunSummaryOutput = renderFunSummary(input);
+
+  const insertedId = await insertFunSummary(deps.supabase, {
+    householdId,
+    period,
+    coveredStart,
+    coveredEnd,
+    bodyMd: rendered.bodyMd,
+  });
+
+  await writeAudit(deps.supabase, {
+    household_id: householdId,
+    action: 'summary.fun.generated',
+    resource_id: insertedId,
+    after: {
+      period,
+      covered_start: coveredStart,
+      covered_end: coveredEnd,
+      metrics: rendered.metrics,
+    },
+  });
+
+  return { householdId, period, skipped: false, insertedId };
+}
+
+async function findExistingFunSummary(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  period: SummaryPeriod,
+  coveredStart: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('summary')
+    .select('id')
+    .eq('household_id', householdId)
+    .eq('segment', 'fun')
+    .eq('period', period)
+    .eq('covered_start', coveredStart)
+    .limit(1);
+  if (error) throw new Error(`fun summary lookup failed: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
+async function loadFunEvents(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  startIso: string,
+  endIso: string,
+): Promise<SummaryFunEventRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('event')
+    .select('id, household_id, segment, kind, title, starts_at, ends_at, location, metadata')
+    .eq('household_id', householdId)
+    .eq('segment', 'fun')
+    .gte('starts_at', startIso)
+    .lt('starts_at', endIso);
+  if (error) throw new Error(`fun event lookup failed: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    segment: r.segment as string,
+    kind: r.kind as string,
+    title: r.title as string,
+    starts_at: r.starts_at as string,
+    ends_at: (r.ends_at as string | null) ?? null,
+    location: (r.location as string | null) ?? null,
+    metadata: (r.metadata as Record<string, unknown>) ?? {},
+  }));
+}
+
+async function insertFunSummary(
+  supabase: SupabaseClient<Database>,
+  args: {
+    householdId: string;
+    period: SummaryPeriod;
+    coveredStart: string;
+    coveredEnd: string;
+    bodyMd: string;
+  },
+): Promise<string> {
+  const insert: Database['app']['Tables']['summary']['Insert'] = {
+    household_id: args.householdId,
+    segment: 'fun',
+    period: args.period,
+    covered_start: args.coveredStart,
+    covered_end: args.coveredEnd,
+    body_md: args.bodyMd,
+    model: SUMMARY_MODEL_LABEL,
+  };
+  const { data, error } = await supabase
+    .schema('app')
+    .from('summary')
+    .insert(insert)
+    .select('id')
+    .single();
+  if (error || !data) {
+    throw new Error(`fun summary insert failed: ${error?.message ?? 'no id'}`);
+  }
+  return data.id as string;
+}
+
+// ---- Food summaries --------------------------------------------------------
+
+/**
+ * Run food summaries for the given households + periods. Mirrors the
+ * financial/fun pattern: dedupe on `(household_id, segment='food', period,
+ * covered_start)` and write `app.summary` with `model='deterministic'`.
+ */
+export async function runFoodSummariesWorker(
+  deps: SummariesWorkerDeps,
+): Promise<SummariesRunResult[]> {
+  const now = (deps.now ?? (() => new Date()))();
+  const periods = deps.periods ?? ['weekly'];
+  const householdIds = deps.householdIds ?? (await listHouseholds(deps.supabase));
+  const results: SummariesRunResult[] = [];
+  for (const householdId of householdIds) {
+    for (const period of periods) {
+      try {
+        const result = await runOneFoodHouseholdPeriod(deps, householdId, period, now);
+        results.push(result);
+      } catch (err) {
+        deps.log.error('food summaries: household/period run failed', {
+          household_id: householdId,
+          period,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        results.push({
+          householdId,
+          period,
+          skipped: true,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+  deps.log.info('food summaries run complete', {
+    households: householdIds.length,
+    periods,
+    inserted: results.filter((r) => !r.skipped).length,
+    skipped: results.filter((r) => r.skipped).length,
+  });
+  return results;
+}
+
+async function runOneFoodHouseholdPeriod(
+  deps: SummariesWorkerDeps,
+  householdId: string,
+  period: SummaryPeriod,
+  now: Date,
+): Promise<SummariesRunResult> {
+  const { coveredStart, coveredEnd } = computePeriodWindow(period, now);
+
+  const existing = await findExistingFoodSummary(deps.supabase, householdId, period, coveredStart);
+  if (existing) {
+    return { householdId, period, skipped: true, reason: 'already_exists' };
+  }
+
+  const [meals, pantryItems, memberNamesById] = await Promise.all([
+    loadMealsInWindow(deps.supabase, householdId, coveredStart, coveredEnd),
+    loadPantryItemsInWindow(deps.supabase, householdId, coveredStart, coveredEnd),
+    loadMemberNames(deps.supabase, householdId),
+  ]);
+
+  const input: FoodSummaryInput = {
+    householdId: householdId as HouseholdId,
+    period,
+    coveredStart,
+    coveredEnd,
+    meals,
+    pantryItems,
+    memberNamesById,
+    now,
+  };
+  const rendered: FoodSummaryOutput = renderFoodSummary(input);
+
+  const insertedId = await insertFoodSummary(deps.supabase, {
+    householdId,
+    period,
+    coveredStart,
+    coveredEnd,
+    bodyMd: rendered.bodyMd,
+  });
+
+  await writeAudit(deps.supabase, {
+    household_id: householdId,
+    action: 'summary.food.generated',
+    resource_id: insertedId,
+    after: {
+      period,
+      covered_start: coveredStart,
+      covered_end: coveredEnd,
+      metrics: rendered.metrics,
+    },
+  });
+  return { householdId, period, skipped: false, insertedId };
+}
+
+async function findExistingFoodSummary(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  period: SummaryPeriod,
+  coveredStart: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('summary')
+    .select('id')
+    .eq('household_id', householdId)
+    .eq('segment', 'food')
+    .eq('period', period)
+    .eq('covered_start', coveredStart)
+    .limit(1);
+  if (error) throw new Error(`food summary lookup failed: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
+async function loadMealsInWindow(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  startIso: string,
+  endIso: string,
+): Promise<MealSummaryRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('meal')
+    .select('id, household_id, planned_for, slot, title, dish_node_id, cook_member_id, status')
+    .eq('household_id', householdId)
+    .gte('planned_for', startIso.slice(0, 10))
+    .lt('planned_for', endIso.slice(0, 10));
+  if (error) throw new Error(`food meal lookup failed: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    planned_for: r.planned_for as string,
+    slot: r.slot as MealSummaryRow['slot'],
+    title: r.title as string,
+    dish_node_id: (r.dish_node_id as string | null) ?? null,
+    cook_member_id: (r.cook_member_id as string | null) ?? null,
+    status: r.status as MealSummaryRow['status'],
+  }));
+}
+
+async function loadPantryItemsInWindow(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  startIso: string,
+  endIso: string,
+): Promise<PantryItemSummaryRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('pantry_item')
+    .select('id, household_id, name, expires_on')
+    .eq('household_id', householdId)
+    .gte('expires_on', startIso.slice(0, 10))
+    .lt('expires_on', endIso.slice(0, 10));
+  if (error) return [];
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    name: r.name as string,
+    expires_on: (r.expires_on as string | null) ?? null,
+  }));
+}
+
+async function loadMemberNames(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+): Promise<Map<string, string>> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('member')
+    .select('id, display_name')
+    .eq('household_id', householdId);
+  const out = new Map<string, string>();
+  if (error || !data) return out;
+  for (const row of data) {
+    out.set(row.id as string, (row.display_name as string | null) ?? 'Unknown');
+  }
+  return out;
+}
+
+async function insertFoodSummary(
+  supabase: SupabaseClient<Database>,
+  args: {
+    householdId: string;
+    period: SummaryPeriod;
+    coveredStart: string;
+    coveredEnd: string;
+    bodyMd: string;
+  },
+): Promise<string> {
+  const insert: Database['app']['Tables']['summary']['Insert'] = {
+    household_id: args.householdId,
+    segment: 'food',
+    period: args.period,
+    covered_start: args.coveredStart,
+    covered_end: args.coveredEnd,
+    body_md: args.bodyMd,
+    model: SUMMARY_MODEL_LABEL,
+  };
+  const { data, error } = await supabase
+    .schema('app')
+    .from('summary')
+    .insert(insert)
+    .select('id')
+    .single();
+  if (error || !data) {
+    throw new Error(`food summary insert failed: ${error?.message ?? 'no id'}`);
+  }
+  return data.id as string;
 }
 
 // Legacy stub kept for the old handler.test.ts entry which only checked

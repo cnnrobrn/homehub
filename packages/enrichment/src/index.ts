@@ -131,5 +131,16 @@ export {
   type EmbedNodeResult,
 } from './embed-node.js';
 
+// --- Fun segment (M7) ---------------------------------------------------
+export {
+  createTripFromEvents,
+  resolveTripParent,
+  TRIP_RESOLVER_KINDS,
+  TRIP_RESOLVER_MIN_EVENTS,
+  TRIP_RESOLVER_WINDOW_DAYS,
+  type TripCandidate,
+  type TripResolverEvent,
+} from './fun/trip-resolver.js';
+
 // --- Errors (M3) --------------------------------------------------------
 export { ModelClassifierError, ModelExtractorError } from './errors.js';

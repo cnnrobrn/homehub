@@ -8,13 +8,17 @@
     "build": "tsc",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
+    "cron": "node dist/cron.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@homehub/alerts": "workspace:*",
     "@homehub/db": "workspace:*",
     "@homehub/shared": "workspace:*",
-    "@homehub/worker-runtime": "workspace:*"
+    "@homehub/suggestions": "workspace:*",
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

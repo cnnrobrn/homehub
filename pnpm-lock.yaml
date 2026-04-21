@@ -466,6 +466,31 @@ importers:
         specifier: ^4.1.4
         version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
+  apps/workers/pantry-diff:
+    dependencies:
+      '@homehub/db':
+        specifier: workspace:*
+        version: link:../../../packages/db
+      '@homehub/shared':
+        specifier: workspace:*
+        version: link:../../../packages/shared
+      '@homehub/worker-runtime':
+        specifier: workspace:*
+        version: link:../../../packages/worker-runtime
+      '@supabase/supabase-js':
+        specifier: ^2.104.0
+        version: 2.104.0
+    devDependencies:
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
   apps/workers/reconciler:
     dependencies:
       '@homehub/db':
@@ -519,7 +544,7 @@ importers:
         specifier: ^4.1.4
         version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
-  apps/workers/suggestions:
+  apps/workers/social-materializer:
     dependencies:
       '@homehub/db':
         specifier: workspace:*
@@ -530,6 +555,40 @@ importers:
       '@homehub/worker-runtime':
         specifier: workspace:*
         version: link:../../../packages/worker-runtime
+      '@supabase/supabase-js':
+        specifier: ^2.104.0
+        version: 2.104.0
+    devDependencies:
+      tsx:
+        specifier: ^4.19.2
+        version: 4.21.0
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
+  apps/workers/suggestions:
+    dependencies:
+      '@homehub/alerts':
+        specifier: workspace:*
+        version: link:../../../packages/alerts
+      '@homehub/db':
+        specifier: workspace:*
+        version: link:../../../packages/db
+      '@homehub/shared':
+        specifier: workspace:*
+        version: link:../../../packages/shared
+      '@homehub/suggestions':
+        specifier: workspace:*
+        version: link:../../../packages/suggestions
+      '@homehub/worker-runtime':
+        specifier: workspace:*
+        version: link:../../../packages/worker-runtime
+      '@supabase/supabase-js':
+        specifier: ^2.104.0
+        version: 2.104.0
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -664,12 +723,21 @@ importers:
       '@homehub/db':
         specifier: workspace:*
         version: link:../../../packages/db
+      '@homehub/providers-grocery':
+        specifier: workspace:*
+        version: link:../../../packages/providers/grocery
       '@homehub/shared':
         specifier: workspace:*
         version: link:../../../packages/shared
       '@homehub/worker-runtime':
         specifier: workspace:*
         version: link:../../../packages/worker-runtime
+      '@supabase/supabase-js':
+        specifier: ^2.104.0
+        version: 2.104.0
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -845,6 +913,19 @@ importers:
         specifier: ^4.1.4
         version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
+  packages/providers/grocery:
+    dependencies:
+      '@homehub/worker-runtime':
+        specifier: workspace:*
+        version: link:../../worker-runtime
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
   packages/query-memory:
     dependencies:
       '@homehub/db':
@@ -875,6 +956,19 @@ importers:
       zod:
         specifier: ^4.3.6
         version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
+  packages/suggestions:
+    dependencies:
+      '@homehub/shared':
+        specifier: workspace:*
+        version: link:../shared
     devDependencies:
       typescript:
         specifier: ^5.6.3

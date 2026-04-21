@@ -51,11 +51,13 @@ import {
   EVENT_EXTRACTOR_PROMPT_VERSION,
   MODEL_CLASSIFIER_VERSION,
   reconcileCandidate,
+  resolveTripParent,
   type EnrichmentPipeline,
   type EventClassification,
   type EventInput,
   type ExtractionResult,
   type HouseholdContext,
+  type TripResolverEvent,
 } from '@homehub/enrichment';
 import { type HouseholdId, type NodeType } from '@homehub/shared';
 import {
@@ -181,17 +183,33 @@ export async function enrichOne(
     metadata_enrichment: getMetadataEnrichment(row.metadata),
   };
 
-  const nextMetadata: Json = {
+  const nextMetadata: Record<string, unknown> = {
     ...(isJsonObject(row.metadata) ? row.metadata : {}),
     enrichment: enrichment as unknown as Json,
   };
+
+  // If the classifier routes this to `fun`, check whether it should be
+  // attached to an existing trip parent. Purely metadata side-effect;
+  // cheap enough to run per-event.
+  if (classifyOutcome.classification.segment === 'fun') {
+    try {
+      const tripParentId = await resolveTripForEvent(supabase, row, nextMetadata);
+      if (tripParentId) {
+        nextMetadata.trip_id = tripParentId;
+      }
+    } catch (err) {
+      log.warn('enrichment: trip resolver failed (non-fatal)', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
 
   const { error: updateError } = await supabase
     .schema('app')
     .from('event')
     .update({
       segment: classifyOutcome.classification.segment,
-      metadata: nextMetadata,
+      metadata: nextMetadata as unknown as Json,
       updated_at: now.toISOString(),
     })
     .eq('id', row.id);
@@ -467,6 +485,61 @@ function buildEnrichmentMetadata(
 }
 
 // ---- Helpers ----------------------------------------------------------
+
+/**
+ * Look up any parent trip event whose window covers this event's start.
+ * Returns the trip id if a match exists, else null. Only runs for
+ * fun-segment events.
+ */
+async function resolveTripForEvent(
+  supabase: SupabaseClient<Database>,
+  row: EventRow,
+  nextMetadata: Record<string, unknown>,
+): Promise<string | null> {
+  // If metadata already has a trip id, trust it.
+  const existing = nextMetadata.trip_id;
+  if (typeof existing === 'string' && existing.length > 0) return existing;
+
+  const eventStart = new Date(row.starts_at).getTime();
+  if (!Number.isFinite(eventStart)) return null;
+
+  // Fetch any parent trip in this household whose window covers the
+  // event's start. Cheap query — fun trips are rare.
+  const { data, error } = await supabase
+    .schema('app')
+    .from('event')
+    .select('id, household_id, segment, kind, title, starts_at, ends_at, location, metadata')
+    .eq('household_id', row.household_id)
+    .eq('segment', 'fun')
+    .eq('kind', 'trip')
+    .lte('starts_at', row.starts_at);
+  if (error || !data) return null;
+
+  const trips: TripResolverEvent[] = (data ?? []).map((t) => ({
+    id: t.id as string,
+    household_id: t.household_id as string,
+    segment: t.segment as string,
+    kind: t.kind as string,
+    title: t.title as string,
+    starts_at: t.starts_at as string,
+    ends_at: (t.ends_at as string | null) ?? null,
+    location: (t.location as string | null) ?? null,
+    metadata: (t.metadata as Record<string, unknown>) ?? {},
+  }));
+
+  const candidate: TripResolverEvent = {
+    id: row.id as string,
+    household_id: row.household_id as string,
+    segment: 'fun',
+    kind: row.kind as string,
+    title: row.title as string,
+    starts_at: row.starts_at as string,
+    ends_at: (row.ends_at as string | null) ?? null,
+    location: (row.location as string | null) ?? null,
+    metadata: nextMetadata,
+  };
+  return resolveTripParent({ event: candidate, existingTrips: trips });
+}
 
 async function loadEvent(
   supabase: SupabaseClient<Database>,
