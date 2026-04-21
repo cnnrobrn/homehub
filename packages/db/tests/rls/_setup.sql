@@ -19,17 +19,13 @@
 -- -------- auth.users ----------------------------------------------------
 -- Alice = owner of A; Adam = adult in A; Bob = owner of B.
 --
--- auth.users has FORCE ROW LEVEL SECURITY in Supabase CLI 2.90.0,
--- which blocks INSERT even from service_role (and even with an
--- explicit GRANT INSERT). Insert these fixture users as
--- `supabase_auth_admin` — the role that owns the table and bypasses
--- that policy — then switch to `service_role` for the remaining
--- fixtures so app.* RLS is bypassed as before. `postgres` (the
--- session role driving this script) has membership in
--- supabase_auth_admin in Supabase's default role graph, so the SET
--- ROLE succeeds without GRANT OPTION plumbing.
-set role supabase_auth_admin;
-
+-- Seed these fixture users as the postgres connection role (the role
+-- rls-test.sh connects as). Supabase CLI 2.90.0 runs local Postgres 17
+-- with `postgres` as a non-superuser, so we can't SET ROLE to
+-- supabase_auth_admin or GRANT INSERT on auth.users to service_role.
+-- But `postgres` still holds INSERT on auth.users directly (just not
+-- GRANT OPTION on it). Insert first, *then* switch to service_role for
+-- the rest of the fixture so app.* RLS is bypassed as before.
 insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111', 'alice@test'),
   ('22222222-2222-2222-2222-222222222222', 'adam@test'),
