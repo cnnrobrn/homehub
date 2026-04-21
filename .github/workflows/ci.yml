@@ -11,7 +11,6 @@ concurrency:
 
 env:
   NODE_VERSION: '20.18.0'
-  PNPM_VERSION: '9.15.9'
   # Pinned Supabase CLI version. Bump deliberately; a bump can change
   # migration linter behavior or bundled Postgres extension versions.
   SUPABASE_CLI_VERSION: '2.90.0'
@@ -25,9 +24,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        # `packageManager` in root package.json is the single source of
+        # truth for the pnpm version. pnpm/action-setup reads it
+        # automatically and errors if `version:` is also passed here.
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -49,9 +49,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        # `packageManager` in root package.json is the single source of
+        # truth for the pnpm version. pnpm/action-setup reads it
+        # automatically and errors if `version:` is also passed here.
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -73,9 +74,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        # `packageManager` in root package.json is the single source of
+        # truth for the pnpm version. pnpm/action-setup reads it
+        # automatically and errors if `version:` is also passed here.
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -97,9 +99,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        # `packageManager` in root package.json is the single source of
+        # truth for the pnpm version. pnpm/action-setup reads it
+        # automatically and errors if `version:` is also passed here.
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -123,9 +126,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        # `packageManager` in root package.json is the single source of
+        # truth for the pnpm version. pnpm/action-setup reads it
+        # automatically and errors if `version:` is also passed here.
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -162,9 +166,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        # `packageManager` in root package.json is the single source of
+        # truth for the pnpm version. pnpm/action-setup reads it
+        # automatically and errors if `version:` is also passed here.
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -251,9 +256,10 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
+        # `packageManager` in root package.json is the single source of
+        # truth for the pnpm version. pnpm/action-setup reads it
+        # automatically and errors if `version:` is also passed here.
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
