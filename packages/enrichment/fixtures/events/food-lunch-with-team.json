@@ -1,0 +1,22 @@
+{
+  "name": "food-lunch-with-team",
+  "description": "Lunch with colleagues. Title has 'lunch' keyword.",
+  "input": {
+    "title": "Lunch with the team",
+    "startsAt": "2026-04-22T16:30:00.000Z",
+    "endsAt": "2026-04-22T17:30:00.000Z",
+    "allDay": false,
+    "attendees": [
+      { "email": "owner@example.com" },
+      { "email": "teammate1@corp.example.com" },
+      { "email": "teammate2@corp.example.com" }
+    ],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "food",
+    "kind": "unknown",
+    "confidence": 0.9,
+    "signals": ["food.keyword.strong"]
+  }
+}

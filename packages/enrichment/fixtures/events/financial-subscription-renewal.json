@@ -1,0 +1,17 @@
+{
+  "name": "financial-subscription-renewal",
+  "description": "Streaming subscription renewal.",
+  "input": {
+    "title": "Netflix subscription renewal",
+    "startsAt": "2026-05-15T00:00:00.000Z",
+    "allDay": true,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "financial",
+    "kind": "subscription",
+    "confidence": 0.9,
+    "signals": ["financial.keyword.strong"]
+  }
+}

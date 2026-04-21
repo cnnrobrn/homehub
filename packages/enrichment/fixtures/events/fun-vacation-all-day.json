@@ -1,0 +1,18 @@
+{
+  "name": "fun-vacation-all-day",
+  "description": "Multi-day vacation block.",
+  "input": {
+    "title": "Vacation — Maine",
+    "startsAt": "2026-07-20T00:00:00.000Z",
+    "endsAt": "2026-07-27T00:00:00.000Z",
+    "allDay": true,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "fun",
+    "kind": "travel",
+    "confidence": 0.9,
+    "signals": ["fun.keyword.strong"]
+  }
+}

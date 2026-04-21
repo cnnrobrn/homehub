@@ -1,0 +1,17 @@
+{
+  "name": "financial-rent-payment",
+  "description": "Monthly rent reminder.",
+  "input": {
+    "title": "Rent due — May",
+    "startsAt": "2026-05-01T00:00:00.000Z",
+    "allDay": true,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "financial",
+    "kind": "bill",
+    "confidence": 0.9,
+    "signals": ["financial.keyword.strong"]
+  }
+}

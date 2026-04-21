@@ -1,0 +1,19 @@
+{
+  "name": "fun-flight-to-denver",
+  "description": "Flight keyword → travel kind.",
+  "input": {
+    "title": "Flight BOS → DEN",
+    "description": "United 1234. Terminal C.",
+    "startsAt": "2026-06-12T15:00:00.000Z",
+    "endsAt": "2026-06-12T18:30:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "fun",
+    "kind": "travel",
+    "confidence": 0.9,
+    "signals": ["fun.keyword.strong"]
+  }
+}

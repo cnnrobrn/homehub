@@ -1,0 +1,17 @@
+{
+  "name": "social-anniversary",
+  "description": "All-day anniversary reminder.",
+  "input": {
+    "title": "Our anniversary",
+    "startsAt": "2026-09-14T00:00:00.000Z",
+    "allDay": true,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "social",
+    "kind": "anniversary",
+    "confidence": 0.9,
+    "signals": ["social.keyword.strong"]
+  }
+}

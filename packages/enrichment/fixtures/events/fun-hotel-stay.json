@@ -1,0 +1,17 @@
+{
+  "name": "fun-hotel-stay",
+  "description": "Hotel check-in. Strong fun keyword + travel kind.",
+  "input": {
+    "title": "Hotel check-in — Aspen",
+    "startsAt": "2026-06-13T22:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "fun",
+    "kind": "travel",
+    "confidence": 0.9,
+    "signals": ["fun.keyword.strong"]
+  }
+}

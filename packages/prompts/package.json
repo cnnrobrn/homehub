@@ -1,0 +1,15 @@
+{
+  "name": "@homehub/prompts",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Workspace slot for HomeHub extraction / consolidation / summary / suggestion prompts. M2 ships the first draft of `extraction/event.md` — a spec-faithful staging document that is read by humans only. M3 adds a tiny `generate()`-style loader so workers can import prompt strings by name.",
+  "type": "module",
+  "files": [
+    "extraction"
+  ],
+  "scripts": {
+    "build": "echo 'no ts'",
+    "typecheck": "echo 'no ts'",
+    "test": "echo 'no tests'"
+  }
+}

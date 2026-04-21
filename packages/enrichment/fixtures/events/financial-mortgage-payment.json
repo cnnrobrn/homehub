@@ -1,0 +1,17 @@
+{
+  "name": "financial-mortgage-payment",
+  "description": "Monthly mortgage reminder.",
+  "input": {
+    "title": "Mortgage payment",
+    "startsAt": "2026-05-01T00:00:00.000Z",
+    "allDay": true,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "financial",
+    "kind": "bill",
+    "confidence": 0.9,
+    "signals": ["financial.keyword.strong"]
+  }
+}

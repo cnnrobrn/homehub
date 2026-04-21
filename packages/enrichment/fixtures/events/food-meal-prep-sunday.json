@@ -1,0 +1,18 @@
+{
+  "name": "food-meal-prep-sunday",
+  "description": "Recurring weekend meal-prep block.",
+  "input": {
+    "title": "Meal prep",
+    "startsAt": "2026-05-03T14:00:00.000Z",
+    "endsAt": "2026-05-03T16:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "food",
+    "kind": "unknown",
+    "confidence": 0.9,
+    "signals": ["food.keyword.strong"]
+  }
+}

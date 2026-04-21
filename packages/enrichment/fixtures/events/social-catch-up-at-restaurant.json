@@ -1,0 +1,19 @@
+{
+  "name": "social-catch-up-at-restaurant",
+  "description": "Social-first ordering: the weak 'catch up' keyword fires before the food-location rule, so segment is social even though the venue is a restaurant.",
+  "input": {
+    "title": "Catch up with Ana",
+    "location": "Trattoria Bella, North End",
+    "startsAt": "2026-04-28T23:30:00.000Z",
+    "endsAt": "2026-04-29T01:00:00.000Z",
+    "allDay": false,
+    "attendees": [{ "email": "owner@example.com" }, { "email": "friend@external.example.com" }],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "social",
+    "kind": "unknown",
+    "confidence": 0.6,
+    "signals": ["social.keyword.weak"]
+  }
+}

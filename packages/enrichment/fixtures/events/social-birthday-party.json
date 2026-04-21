@@ -1,0 +1,23 @@
+{
+  "name": "social-birthday-party",
+  "description": "Social-vs-fun ordering: 'birthday party' matches both 'birthday' (social strong) and 'party' (fun strong). Social runs first, so this lands in social with kind=birthday.",
+  "input": {
+    "title": "Lila's 5th birthday party",
+    "location": "Our place",
+    "startsAt": "2026-05-16T20:00:00.000Z",
+    "endsAt": "2026-05-16T23:00:00.000Z",
+    "allDay": false,
+    "attendees": [
+      { "email": "owner@example.com" },
+      { "email": "partner@example.com" },
+      { "email": "friend@external.example.com" }
+    ],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "social",
+    "kind": "birthday",
+    "confidence": 0.9,
+    "signals": ["social.keyword.strong"]
+  }
+}

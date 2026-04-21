@@ -1,0 +1,18 @@
+{
+  "name": "financial-bill-due",
+  "description": "Obvious bill-pay reminder. Strong keyword match on 'bill'.",
+  "input": {
+    "title": "Electric bill due",
+    "description": "Auto-pay runs tonight.",
+    "startsAt": "2026-05-01T09:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "financial",
+    "kind": "bill",
+    "confidence": 0.9,
+    "signals": ["financial.keyword.strong"]
+  }
+}

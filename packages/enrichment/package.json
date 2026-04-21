@@ -1,0 +1,32 @@
+{
+  "name": "@homehub/enrichment",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Deterministic event classifier + extraction helpers used by the enrichment worker. M2 ships a regex/keyword classifier; M3 swaps in the Kimi K2 extraction path.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@homehub/shared": "workspace:*",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3",
+    "vitest": "^4.1.4"
+  }
+}

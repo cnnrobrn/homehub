@@ -1,0 +1,20 @@
+{
+  "name": "food-opentable-reservation",
+  "description": "Restaurant reservation via OpenTable.",
+  "input": {
+    "title": "Dinner reservation — Giulia's",
+    "description": "Booked via OpenTable. Party of 4.",
+    "location": "Giulia's Restaurant, Cambridge MA",
+    "startsAt": "2026-04-25T23:00:00.000Z",
+    "endsAt": "2026-04-26T01:00:00.000Z",
+    "allDay": false,
+    "attendees": [{ "email": "owner@example.com" }, { "email": "partner@example.com" }],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "food",
+    "kind": "reservation",
+    "confidence": 0.9,
+    "signals": ["food.keyword.strong", "food.location"]
+  }
+}

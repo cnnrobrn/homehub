@@ -1,0 +1,19 @@
+{
+  "name": "system-focus-block",
+  "description": "Work focus block — nothing to classify into a household segment.",
+  "input": {
+    "title": "Focus time",
+    "description": "Deep work. Do not interrupt.",
+    "startsAt": "2026-04-22T14:00:00.000Z",
+    "endsAt": "2026-04-22T16:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "system",
+    "kind": "unknown",
+    "confidence": 0.2,
+    "signals": ["system.fallthrough"]
+  }
+}

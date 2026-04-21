@@ -1,0 +1,18 @@
+{
+  "name": "food-grocery-run",
+  "description": "Weekly grocery errand, no attendees.",
+  "input": {
+    "title": "Grocery run",
+    "startsAt": "2026-04-27T19:00:00.000Z",
+    "endsAt": "2026-04-27T20:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "food",
+    "kind": "unknown",
+    "confidence": 0.9,
+    "signals": ["food.keyword.strong"]
+  }
+}

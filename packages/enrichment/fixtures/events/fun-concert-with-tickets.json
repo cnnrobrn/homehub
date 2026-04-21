@@ -1,0 +1,20 @@
+{
+  "name": "fun-concert-with-tickets",
+  "description": "Concert night; multiple strong fun keywords.",
+  "input": {
+    "title": "Concert — Vampire Weekend",
+    "description": "Tickets in inbox. Doors 7pm.",
+    "location": "The Wang Theater",
+    "startsAt": "2026-05-10T23:30:00.000Z",
+    "endsAt": "2026-05-11T02:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "fun",
+    "kind": "unknown",
+    "confidence": 0.9,
+    "signals": ["fun.keyword.strong"]
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "social-birthday-not-fun",
+  "description": "Bare birthday reminder (no 'party') — still social, kind=birthday.",
+  "input": {
+    "title": "Mom's birthday",
+    "startsAt": "2026-10-03T00:00:00.000Z",
+    "allDay": true,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "social",
+    "kind": "birthday",
+    "confidence": 0.9,
+    "signals": ["social.keyword.strong"]
+  }
+}

@@ -1,9 +1,16 @@
 /**
  * `enrichment` worker entrypoint.
  *
- * M0 scaffold. The runtime wires up env, tracing, Supabase, and the queue
- * client; the handler body is still a stub. This file mirrors the
- * template in sibling worker services under apps/workers/*.
+ * Composes the runtime (env, Supabase, queue client, tracing, logger)
+ * and runs a polling loop against `enrich_event`. Each iteration claims
+ * one message and hands it to `pollOnce` from `./handler.ts`.
+ *
+ * Readiness flips green after a cheap Supabase round-trip against
+ * `app.event` confirms the connection; otherwise the /ready probe stays
+ * 503 and Railway drains the instance.
+ *
+ * M3 replaces the classifier with a Kimi K2 call; the polling shape
+ * here does not change.
  */
 
 import { createServer } from 'node:http';
@@ -19,10 +26,15 @@ import {
   workerRuntimeEnvSchema,
 } from '@homehub/worker-runtime';
 
+import { pollOnce } from './handler.js';
+
 const SERVICE_NAME = 'worker-enrichment';
 
 const env = loadEnv(workerRuntimeEnvSchema);
 const log = createLogger(env, { service: SERVICE_NAME, component: 'main' });
+
+const IDLE_POLL_DELAY_MS = 2_000;
+const ERROR_POLL_DELAY_MS = 5_000;
 
 const exitCode = await runWorker(
   async () => {
@@ -30,8 +42,8 @@ const exitCode = await runWorker(
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
 
-    // Health/ready HTTP server per specs/05-agents/workers.md.
     let ready = false;
+    let stopping = false;
     const port = Number.parseInt(process.env.PORT ?? '8080', 10);
     const server = createServer((req, res) => {
       if (req.url === '/health') {
@@ -58,23 +70,51 @@ const exitCode = await runWorker(
     log.info('health server listening', { port });
 
     onShutdown(async () => {
+      stopping = true;
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    // The queue client is constructed so readiness reflects a working
-    // Supabase connection. The real consumer loop lands later.
-    void queues;
-    ready = true;
+    // Readiness: a cheap head-count against app.event. If this fails
+    // we stay un-ready and Railway drains us.
+    try {
+      const { error } = await supabase
+        .schema('app')
+        .from('event')
+        .select('id', { count: 'exact', head: true });
+      if (error) throw error;
+      ready = true;
+      log.info('readiness ok; entering poll loop');
+    } catch (err) {
+      log.error('readiness probe failed; worker will not claim jobs', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
-    log.info('worker started (no-op loop)');
-    // TODO(@memory-background, M3): replace with pgmq consumer for the enrich_* queues.
-    await new Promise<void>((resolve) => {
-      const onSig = (): void => resolve();
-      process.once('SIGTERM', onSig);
-      process.once('SIGINT', onSig);
-    });
+    while (!stopping) {
+      try {
+        const outcome = await pollOnce({ supabase, queues, log });
+        if (outcome === 'idle') {
+          await sleep(IDLE_POLL_DELAY_MS, () => stopping);
+        }
+      } catch (err) {
+        log.error('enrichment pollOnce threw', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        await sleep(ERROR_POLL_DELAY_MS, () => stopping);
+      }
+    }
+    log.info('enrichment main loop exited');
   },
   { shutdownTimeoutMs: 30_000 },
 );
+
+async function sleep(ms: number, cancel: () => boolean): Promise<void> {
+  const step = 100;
+  let remaining = ms;
+  while (remaining > 0 && !cancel()) {
+    await new Promise((r) => setTimeout(r, Math.min(step, remaining)));
+    remaining -= step;
+  }
+}
 
 process.exit(exitCode);

@@ -1,0 +1,17 @@
+{
+  "name": "system-empty-title",
+  "description": "Degenerate event with an empty-ish title. Should drop straight to system at the floor confidence.",
+  "input": {
+    "title": "(no title)",
+    "startsAt": "2026-04-22T15:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "system",
+    "kind": "unknown",
+    "confidence": 0.2,
+    "signals": ["system.fallthrough"]
+  }
+}

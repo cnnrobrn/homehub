@@ -1,0 +1,18 @@
+{
+  "name": "fun-movie-night",
+  "description": "Movie keyword fires the fun.keyword.strong rule.",
+  "input": {
+    "title": "Movie — Oppenheimer rewatch",
+    "startsAt": "2026-05-02T01:00:00.000Z",
+    "endsAt": "2026-05-02T04:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "fun",
+    "kind": "unknown",
+    "confidence": 0.9,
+    "signals": ["fun.keyword.strong"]
+  }
+}

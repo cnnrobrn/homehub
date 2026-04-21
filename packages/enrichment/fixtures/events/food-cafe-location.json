@@ -1,0 +1,19 @@
+{
+  "name": "food-cafe-location",
+  "description": "Location-only food match. No social/fun/financial keywords.",
+  "input": {
+    "title": "Meet Priya",
+    "location": "Tatte Cafe",
+    "startsAt": "2026-04-23T14:00:00.000Z",
+    "endsAt": "2026-04-23T15:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "food",
+    "kind": "unknown",
+    "confidence": 0.9,
+    "signals": ["food.location"]
+  }
+}

@@ -293,12 +293,18 @@ importers:
       '@homehub/db':
         specifier: workspace:*
         version: link:../../../packages/db
+      '@homehub/enrichment':
+        specifier: workspace:*
+        version: link:../../../packages/enrichment
       '@homehub/shared':
         specifier: workspace:*
         version: link:../../../packages/shared
       '@homehub/worker-runtime':
         specifier: workspace:*
         version: link:../../../packages/worker-runtime
+      '@supabase/supabase-js':
+        specifier: ^2.104.0
+        version: 2.104.0
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -597,6 +603,24 @@ importers:
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
+
+  packages/enrichment:
+    dependencies:
+      '@homehub/shared':
+        specifier: workspace:*
+        version: link:../shared
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
+  packages/prompts: {}
 
   packages/providers/calendar:
     dependencies:

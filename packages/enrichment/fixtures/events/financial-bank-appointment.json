@@ -1,0 +1,19 @@
+{
+  "name": "financial-bank-appointment",
+  "description": "Appointment whose title gives nothing away but the location does.",
+  "input": {
+    "title": "Appt w/ Maria",
+    "location": "Wells Fargo — Main St Branch",
+    "startsAt": "2026-05-03T17:00:00.000Z",
+    "endsAt": "2026-05-03T17:30:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "financial",
+    "kind": "unknown",
+    "confidence": 0.9,
+    "signals": ["financial.location"]
+  }
+}

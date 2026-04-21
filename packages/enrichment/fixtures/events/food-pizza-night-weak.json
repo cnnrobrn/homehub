@@ -1,0 +1,17 @@
+{
+  "name": "food-pizza-night-weak",
+  "description": "Pizza is a weak signal — on its own it still flags food, but at 0.6 confidence.",
+  "input": {
+    "title": "Pizza night",
+    "startsAt": "2026-05-01T23:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "food",
+    "kind": "unknown",
+    "confidence": 0.6,
+    "signals": ["food.keyword.weak"]
+  }
+}

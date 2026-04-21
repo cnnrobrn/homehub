@@ -1,0 +1,18 @@
+{
+  "name": "social-playdate",
+  "description": "Playdate keyword is strong social.",
+  "input": {
+    "title": "Playdate at the park",
+    "startsAt": "2026-05-02T15:00:00.000Z",
+    "endsAt": "2026-05-02T17:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "social",
+    "kind": "unknown",
+    "confidence": 0.9,
+    "signals": ["social.keyword.strong"]
+  }
+}

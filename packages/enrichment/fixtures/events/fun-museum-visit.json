@@ -1,0 +1,18 @@
+{
+  "name": "fun-museum-visit",
+  "description": "Weekend museum outing. 'Visit' is a social weak, but 'museum' is a fun strong — and social rules run first, so social weak wins unless we're careful. Keep wording that avoids 'visit'.",
+  "input": {
+    "title": "Museum — ICA exhibit",
+    "startsAt": "2026-05-09T18:00:00.000Z",
+    "endsAt": "2026-05-09T21:00:00.000Z",
+    "allDay": false,
+    "attendees": [],
+    "ownerEmail": "owner@example.com"
+  },
+  "expected": {
+    "segment": "fun",
+    "kind": "unknown",
+    "confidence": 0.9,
+    "signals": ["fun.keyword.strong"]
+  }
+}
