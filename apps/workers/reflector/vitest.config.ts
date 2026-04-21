@@ -15,6 +15,9 @@ const runtimeSrc = fileURLToPath(
 );
 const sharedSrc = fileURLToPath(new URL('../../../packages/shared/src/index.ts', import.meta.url));
 const dbSrc = fileURLToPath(new URL('../../../packages/db/src/index.ts', import.meta.url));
+const promptsSrc = fileURLToPath(
+  new URL('../../../packages/prompts/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   resolve: {
@@ -22,6 +25,10 @@ export default defineConfig({
       '@homehub/worker-runtime': runtimeSrc,
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
+      // handler.ts imports from @homehub/prompts; without this alias
+      // Vite falls through to prompts/package.json → dist/index.js,
+      // which CI doesn't build before `pnpm -r run test`.
+      '@homehub/prompts': promptsSrc,
     },
   },
 });
