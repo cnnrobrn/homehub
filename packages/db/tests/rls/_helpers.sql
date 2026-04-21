@@ -46,11 +46,10 @@ begin
 end
 $$;
 
--- Grant service_role direct access to auth.users so `_setup.sql` can
--- seed fixture users (alice/adam/bob) under `act_as_service`. Supabase
--- CLI 2.90.0's bundled Postgres locks auth.users down to the `supabase_auth_admin`
--- role by default; prior versions left service_role with implicit
--- access. Without this grant, the seed insert fails with "permission
--- denied for table users". Runs as the postgres superuser (this script
--- is loaded before any role switch) so it always succeeds.
-grant select, insert, update, delete on auth.users to service_role;
+-- Grant service_role read access to auth.users so test files (running
+-- under `act_as_service`) can reference the fixture users. INSERT isn't
+-- grantable through a plain GRANT because auth.users has FORCE ROW
+-- LEVEL SECURITY in Supabase CLI 2.90.0's bundled Postgres — the
+-- fixture seeds users by briefly `SET ROLE supabase_auth_admin` in
+-- `_setup.sql` (the role that owns auth.users) instead.
+grant select on auth.users to service_role;

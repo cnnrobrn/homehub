@@ -16,15 +16,27 @@
 -- insert uses `on conflict do nothing` so re-running after a partial
 -- apply just updates nothing.
 
-select public.act_as_service();
-
 -- -------- auth.users ----------------------------------------------------
 -- Alice = owner of A; Adam = adult in A; Bob = owner of B.
+--
+-- auth.users has FORCE ROW LEVEL SECURITY in Supabase CLI 2.90.0,
+-- which blocks INSERT even from service_role (and even with an
+-- explicit GRANT INSERT). Insert these fixture users as
+-- `supabase_auth_admin` — the role that owns the table and bypasses
+-- that policy — then switch to `service_role` for the remaining
+-- fixtures so app.* RLS is bypassed as before. `postgres` (the
+-- session role driving this script) has membership in
+-- supabase_auth_admin in Supabase's default role graph, so the SET
+-- ROLE succeeds without GRANT OPTION plumbing.
+set role supabase_auth_admin;
+
 insert into auth.users (id, email) values
   ('11111111-1111-1111-1111-111111111111', 'alice@test'),
   ('22222222-2222-2222-2222-222222222222', 'adam@test'),
   ('33333333-3333-3333-3333-333333333333', 'bob@test')
 on conflict (id) do nothing;
+
+select public.act_as_service();
 
 -- -------- households ---------------------------------------------------
 insert into app.household (id, name, created_by) values
