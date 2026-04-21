@@ -53,17 +53,19 @@ $$;
 -- `act_as_service`.
 grant select on auth.users to service_role;
 
--- Grant service_role table-level privileges on every application schema.
--- Supabase's hosted Postgres sets these up via default privileges, but
--- the CLI 2.90.0 local Postgres 17 does not — without these grants
--- every `act_as_service` insert on app.*/mem.*/sync.*/audit.* fails
--- with "permission denied for table <name>". postgres (the migration
--- role) owns these tables so the grants land fully.
-grant select, insert, update, delete on all tables in schema app to service_role;
-grant select, insert, update, delete on all tables in schema mem to service_role;
-grant select, insert, update, delete on all tables in schema sync to service_role;
-grant select, insert, update, delete on all tables in schema audit to service_role;
-grant usage, select on all sequences in schema app to service_role;
-grant usage, select on all sequences in schema mem to service_role;
-grant usage, select on all sequences in schema sync to service_role;
-grant usage, select on all sequences in schema audit to service_role;
+-- Grant table-level privileges on every application schema to both
+-- service_role (for `act_as_service` fixture inserts) and authenticated
+-- (for `act_as(uuid)` test reads, which are then gated by RLS
+-- policies). Supabase's hosted Postgres sets these up via default
+-- privileges; the CLI 2.90.0 local Postgres 17 does not — without
+-- these grants every test fails with "permission denied for table
+-- <name>" before RLS even runs. postgres (the migration role) owns
+-- these tables so the grants land fully.
+grant select, insert, update, delete on all tables in schema app to service_role, authenticated;
+grant select, insert, update, delete on all tables in schema mem to service_role, authenticated;
+grant select, insert, update, delete on all tables in schema sync to service_role, authenticated;
+grant select, insert, update, delete on all tables in schema audit to service_role, authenticated;
+grant usage, select on all sequences in schema app to service_role, authenticated;
+grant usage, select on all sequences in schema mem to service_role, authenticated;
+grant usage, select on all sequences in schema sync to service_role, authenticated;
+grant usage, select on all sequences in schema audit to service_role, authenticated;
