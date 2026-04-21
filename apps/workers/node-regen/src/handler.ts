@@ -152,6 +152,24 @@ export async function regenerateOne(
     },
   });
 
+  // Document changed → its embedding is stale. Enqueue the embed-node
+  // worker to recompute. Best-effort; a queue failure doesn't fail the
+  // regeneration (the member already saw the new document).
+  try {
+    await deps.queues.send(queueNames.embedNode, {
+      household_id: householdId,
+      kind: 'node.embed',
+      entity_id: node.id,
+      version: 1,
+      enqueued_at: now.toISOString(),
+    });
+  } catch (err) {
+    log.warn('node-regen: embed_node enqueue failed', {
+      node_id: node.id,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   log.info('node-regen: document regenerated', {
     node_id: node.id,
     facts: facts.length,

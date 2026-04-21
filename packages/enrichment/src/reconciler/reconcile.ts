@@ -13,6 +13,9 @@
  *   - `parked`        — candidate stays pending (low confidence, no
  *                       canonical to compare to).
  *   - `rejected`      — candidate declared invalid (missing subject).
+ *   - `deleted`       — member-requested soft-delete (M3.5). The
+ *                       candidate was member-sourced, object_value=null,
+ *                       valid_to set; the canonical's interval closed.
  *
  * Each reconcile call is a single Supabase transaction-analog: we
  * issue the sequence of mutations ourselves and fail loudly on any
@@ -41,7 +44,24 @@ import {
   policyFor,
 } from './policy.js';
 
-export type ReconcileOutcome = 'promoted' | 'reinforced' | 'conflict' | 'parked' | 'rejected';
+/**
+ * Audit actions the reconciler writes. Namespaced under `mem.fact.*`
+ * so the audit browser can filter. New actions get added here rather
+ * than as free-form strings so callers can pattern-match.
+ */
+export const AuditAction = {
+  /** Member-requested fact deletion (soft-delete via valid_to + superseded_at). */
+  MemberFactDeleted: 'mem.fact.deleted_by_member',
+} as const;
+export type AuditActionValue = (typeof AuditAction)[keyof typeof AuditAction];
+
+export type ReconcileOutcome =
+  | 'promoted'
+  | 'reinforced'
+  | 'conflict'
+  | 'parked'
+  | 'rejected'
+  | 'deleted';
 
 type CandidateRow = Database['mem']['Tables']['fact_candidate']['Row'];
 type FactRow = Database['mem']['Tables']['fact']['Row'];
@@ -125,6 +145,128 @@ export async function reconcileCandidate(
   const touched = new Set<string>();
   touched.add(candidate.subject_node_id);
   if (candidate.object_node_id) touched.add(candidate.object_node_id);
+
+  // -------------------------------------------------------------------
+  // Case 0 — member-requested soft-delete.
+  //
+  // The chat surface's "forget this fact" path writes a candidate with
+  // `source='member'`, `object_value=null`, and a non-null `valid_to`.
+  // The reconciler treats this as a deletion of the canonical fact for
+  // `(household_id, subject_node_id, predicate)`:
+  //
+  //   - Close the canonical's validity interval at `valid_to` and set
+  //     `superseded_at = valid_to` with a null `superseded_by` (there's
+  //     no successor — this is a deletion, not a supersession).
+  //   - Mark the candidate `promoted` with `promoted_fact_id` pointing
+  //     at the now-closed canonical row, so audit trails can trace the
+  //     deletion back to the member request.
+  //
+  // If there is no canonical to delete, the candidate is rejected with
+  // `no_canonical_to_delete` — the deletion request was a no-op.
+  //
+  // Only `source='member'` candidates trigger this branch. Non-member
+  // soft-delete semantics exist in the tool surface (`supersede_fact`
+  // in the model's tool catalog) and do NOT collapse into this path;
+  // worker-authored deletions with `object_value=null` are rejected to
+  // prevent an errant extractor from nuking canonical facts.
+  // -------------------------------------------------------------------
+  if (candidate.object_value === null && candidate.valid_to != null) {
+    if (candidate.source !== 'member') {
+      await updateCandidate(supabase, candidateId, {
+        status: 'rejected',
+        reason: 'non_member_soft_delete_rejected',
+      });
+      return {
+        outcome: 'rejected',
+        candidateId,
+        reason: 'non_member_soft_delete_rejected',
+        touchedNodeIds: [],
+      };
+    }
+
+    const { data: delCanonicalRows, error: delLookupErr } = await supabase
+      .schema('mem')
+      .from('fact')
+      .select('*')
+      .eq('household_id', candidate.household_id)
+      .eq('subject_node_id', candidate.subject_node_id)
+      .eq('predicate', predicate)
+      .is('valid_to', null)
+      .is('superseded_at', null)
+      .limit(1);
+    if (delLookupErr) {
+      throw new Error(`reconcile: deletion lookup failed: ${delLookupErr.message}`);
+    }
+    const delCanonical = (delCanonicalRows ?? [])[0];
+
+    if (!delCanonical) {
+      await updateCandidate(supabase, candidateId, {
+        status: 'rejected',
+        reason: 'no_canonical_to_delete',
+      });
+      return {
+        outcome: 'rejected',
+        candidateId,
+        reason: 'no_canonical_to_delete',
+        touchedNodeIds: [],
+      };
+    }
+
+    const closeAt = candidate.valid_to;
+    const { error: closeErr } = await supabase
+      .schema('mem')
+      .from('fact')
+      .update({
+        valid_to: closeAt,
+        superseded_at: closeAt,
+        superseded_by: null,
+      })
+      .eq('id', delCanonical.id);
+    if (closeErr) {
+      throw new Error(`reconcile: deletion close failed: ${closeErr.message}`);
+    }
+
+    await updateCandidate(supabase, candidateId, {
+      status: 'promoted',
+      promoted_fact_id: delCanonical.id,
+      reason: 'member_requested_deletion',
+    });
+
+    await writeReconcilerAudit(supabase, {
+      household_id: candidate.household_id,
+      action: AuditAction.MemberFactDeleted,
+      resource_id: delCanonical.id,
+      before: {
+        fact_id: delCanonical.id,
+        predicate,
+        valid_to: null,
+        superseded_at: null,
+      },
+      after: {
+        fact_id: delCanonical.id,
+        predicate,
+        valid_to: closeAt,
+        superseded_at: closeAt,
+        superseded_by: null,
+        candidate_id: candidateId,
+        reason: 'member_requested_deletion',
+      },
+    });
+
+    log.info('reconcile: member-requested deletion applied', {
+      candidate_id: candidateId,
+      fact_id: delCanonical.id,
+      predicate,
+    });
+
+    return {
+      outcome: 'deleted',
+      factId: delCanonical.id,
+      candidateId,
+      reason: 'member_requested_deletion',
+      touchedNodeIds: Array.from(touched),
+    };
+  }
 
   // Look up the current canonical fact for this (household, subject,
   // predicate) — the partial index `mem_fact_current_idx` makes this
@@ -397,6 +539,39 @@ async function markNodeNeedsReview(
     // Not fatal — the candidate still promoted. Log via throwing here
     // would roll back the worker's pass; log at worker level instead.
     throw new Error(`reconcile: node needs_review flag failed (${nodeId}): ${error.message}`);
+  }
+}
+
+/**
+ * Write a reconciler-authored audit row. Swallows DB errors with a
+ * `console.warn` so the reconcile transaction-analog is not rolled
+ * back by a telemetry hiccup — mirrors the enrichment worker's
+ * `writeAudit` stance.
+ */
+async function writeReconcilerAudit(
+  supabase: SupabaseClient<Database>,
+  input: {
+    household_id: string;
+    action: string;
+    resource_id: string;
+    before: unknown;
+    after: unknown;
+  },
+): Promise<void> {
+  const { error } = await supabase
+    .schema('audit')
+    .from('event')
+    .insert({
+      household_id: input.household_id,
+      actor_user_id: null,
+      action: input.action,
+      resource_type: 'mem.fact',
+      resource_id: input.resource_id,
+      before: input.before as Json,
+      after: input.after as Json,
+    });
+  if (error) {
+    console.warn(`[reconciler] audit write failed: ${error.message}`);
   }
 }
 

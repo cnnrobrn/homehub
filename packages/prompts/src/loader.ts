@@ -36,7 +36,14 @@ import { PromptLoadError, PromptRenderError } from './errors.js';
 const ALLOWED_NAME = /^[a-z0-9-]+(?:\/[a-z0-9-]+)*$/;
 
 /** Subfolders we look in, in priority order. */
-const KIND_DIRS = ['extraction', 'node-doc', 'consolidation', 'summary', 'suggestion'] as const;
+const KIND_DIRS = [
+  'extraction',
+  'rollup',
+  'node-doc',
+  'consolidation',
+  'summary',
+  'suggestion',
+] as const;
 
 /**
  * Typed representation of a prompt file after parsing. Downstream code

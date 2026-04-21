@@ -282,12 +282,25 @@ function makeFakeSupabase() {
 
   const supabase = {
     schema(name: string) {
-      if (name !== 'mem') throw new Error(`unexpected schema ${name}`);
-      return {
-        from(table: string) {
-          return memFrom(table);
-        },
-      };
+      if (name === 'mem') {
+        return {
+          from(table: string) {
+            return memFrom(table);
+          },
+        };
+      }
+      if (name === 'audit') {
+        return {
+          from(_table: string) {
+            return {
+              insert(_row: Record<string, unknown>) {
+                return Promise.resolve({ data: null, error: null });
+              },
+            };
+          },
+        };
+      }
+      throw new Error(`unexpected schema ${name}`);
     },
   };
   return { supabase, state };
@@ -535,5 +548,89 @@ describe('reconcileCandidate', () => {
 
     expect(result.outcome).toBe('promoted');
     expect(state.nodes.get(SUBJECT_NODE_ID)?.needs_review).toBe(true);
+  });
+
+  // --- Member-requested soft-delete -----------------------------------
+
+  it('soft-deletes a canonical fact for a member-sourced null-object candidate', async () => {
+    const { supabase, state } = makeFakeSupabase();
+    seedNode(state);
+    seedFact(state, 'f1', {
+      predicate: 'is',
+      object_value: 'vegetarian',
+    });
+    seedCandidate(state, 'c1', {
+      source: 'member',
+      object_value: null,
+      valid_to: '2026-04-20T12:00:00Z',
+      confidence: 0,
+    });
+
+    const result = await reconcileCandidate(
+      { supabase: supabase as never, log: makeLog(), now: () => now },
+      'c1',
+    );
+
+    expect(result.outcome).toBe('deleted');
+    expect(result.factId).toBe('f1');
+    expect(result.reason).toBe('member_requested_deletion');
+
+    const closed = state.facts.get('f1');
+    expect(closed?.valid_to).toBe('2026-04-20T12:00:00Z');
+    expect(closed?.superseded_at).toBe('2026-04-20T12:00:00Z');
+    // No successor — deletion, not supersession.
+    expect(closed?.superseded_by).toBeNull();
+
+    const cand = state.candidates.get('c1');
+    expect(cand?.status).toBe('promoted');
+    expect(cand?.promoted_fact_id).toBe('f1');
+    expect(cand?.reason).toBe('member_requested_deletion');
+  });
+
+  it('rejects a member-sourced deletion candidate when no canonical exists', async () => {
+    const { supabase, state } = makeFakeSupabase();
+    seedNode(state);
+    seedCandidate(state, 'c1', {
+      source: 'member',
+      object_value: null,
+      valid_to: '2026-04-20T12:00:00Z',
+      confidence: 0,
+    });
+
+    const result = await reconcileCandidate(
+      { supabase: supabase as never, log: makeLog(), now: () => now },
+      'c1',
+    );
+
+    expect(result.outcome).toBe('rejected');
+    expect(result.reason).toBe('no_canonical_to_delete');
+    expect(state.candidates.get('c1')?.status).toBe('rejected');
+  });
+
+  it('rejects a non-member soft-delete candidate (deletion branch is member-only)', async () => {
+    const { supabase, state } = makeFakeSupabase();
+    seedNode(state);
+    seedFact(state, 'f1', {
+      predicate: 'is',
+      object_value: 'vegetarian',
+    });
+    seedCandidate(state, 'c1', {
+      source: 'extraction',
+      object_value: null,
+      valid_to: '2026-04-20T12:00:00Z',
+      confidence: 0.5,
+    });
+
+    const result = await reconcileCandidate(
+      { supabase: supabase as never, log: makeLog(), now: () => now },
+      'c1',
+    );
+
+    expect(result.outcome).toBe('rejected');
+    expect(result.reason).toBe('non_member_soft_delete_rejected');
+    // Canonical must remain untouched.
+    const canonical = state.facts.get('f1');
+    expect(canonical?.valid_to).toBeNull();
+    expect(canonical?.superseded_at).toBeNull();
   });
 });

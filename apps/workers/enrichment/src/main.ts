@@ -1,16 +1,29 @@
 /**
  * `enrichment` worker entrypoint.
  *
- * Composes the runtime (env, Supabase, queue client, tracing, logger)
- * and runs a polling loop against `enrich_event`. Each iteration claims
- * one message and hands it to `pollOnce` from `./handler.ts`.
+ * Composes the runtime (env, Supabase, queue client, tracing, logger,
+ * model client) and runs a polling loop across the enrichment-owned
+ * queues:
+ *
+ *   - `enrich_event`         (M3-B) — calendar event → classification,
+ *                              episode, fact candidates.
+ *   - `enrich_conversation`  (M3.5-B) — member chat turn → fact
+ *                              candidates + rules.
+ *   - `rollup_conversation`  (M3.5-B) — substantive assistant turn →
+ *                              `mem.episode` summarizing the window.
+ *   - `embed_node`           (M3.5-B) — populates
+ *                              `mem.node.embedding` after create /
+ *                              regen.
+ *
+ * The model client is optional at process boot: when
+ * `OPENROUTER_API_KEY` is unset the worker still runs the deterministic
+ * classifier path on `enrich_event`, but dead-letters every message on
+ * the three model-required queues so operators notice an unusable
+ * config.
  *
  * Readiness flips green after a cheap Supabase round-trip against
  * `app.event` confirms the connection; otherwise the /ready probe stays
  * 503 and Railway drains the instance.
- *
- * M3 replaces the classifier with a Kimi K2 call; the polling shape
- * here does not change.
  */
 
 import { createServer } from 'node:http';
@@ -18,15 +31,20 @@ import { createServer } from 'node:http';
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
+  createModelClient,
   createQueueClient,
   createServiceClient,
   initTracing,
   onShutdown,
   runWorker,
   workerRuntimeEnvSchema,
+  type ModelClient,
 } from '@homehub/worker-runtime';
 
-import { pollOnce } from './handler.js';
+import { pollOnceConversation } from './conversation-handler.js';
+import { pollOnceEmbed } from './embed-handler.js';
+import { pollOnce as pollOnceEvent } from './handler.js';
+import { pollOnceRollup } from './rollup-handler.js';
 
 const SERVICE_NAME = 'worker-enrichment';
 
@@ -41,6 +59,16 @@ const exitCode = await runWorker(
     initTracing(env);
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
+
+    let modelClient: ModelClient | undefined;
+    if (env.OPENROUTER_API_KEY) {
+      modelClient = createModelClient(env, { logger: log, supabase });
+    } else {
+      log.warn(
+        'OPENROUTER_API_KEY is not set; enrich_event falls back to deterministic classification only. ' +
+          'enrich_conversation / rollup_conversation / embed_node messages will be dead-lettered.',
+      );
+    }
 
     let ready = false;
     let stopping = false;
@@ -90,10 +118,25 @@ const exitCode = await runWorker(
       });
     }
 
+    // Dispatch order matters for fairness: we claim one message per
+    // cycle from each queue in turn. If every queue is idle we back
+    // off; if any queue had work we loop immediately. This keeps one
+    // chatty queue from starving the others.
     while (!stopping) {
       try {
-        const outcome = await pollOnce({ supabase, queues, log });
-        if (outcome === 'idle') {
+        const outcomes = await Promise.all([
+          pollOnceEvent({ supabase, queues, log, ...(modelClient ? { modelClient } : {}) }),
+          pollOnceConversation({
+            supabase,
+            queues,
+            log,
+            ...(modelClient ? { modelClient } : {}),
+          }),
+          pollOnceRollup({ supabase, queues, log, ...(modelClient ? { modelClient } : {}) }),
+          pollOnceEmbed({ supabase, queues, log, ...(modelClient ? { modelClient } : {}) }),
+        ]);
+        const anyClaimed = outcomes.some((o) => o === 'claimed');
+        if (!anyClaimed) {
           await sleep(IDLE_POLL_DELAY_MS, () => stopping);
         }
       } catch (err) {

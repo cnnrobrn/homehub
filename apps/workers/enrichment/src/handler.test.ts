@@ -600,9 +600,15 @@ describe('enrichOne — model path with extraction', () => {
     // Reconciler promoted the candidate to a canonical fact.
     // (Our fake supabase uses `is` predicate with no existing canonical,
     // so the candidate promotes when confidence >= threshold.)
-    // node_regen enqueued for at least the subject.
+    // node_regen enqueued for at least the subject; embed_node enqueued
+    // for any newly-created nodes.
     expect(sent.length).toBeGreaterThan(0);
-    expect(sent.every((s) => s.queue === queueNames.nodeRegen)).toBe(true);
+    expect(sent.some((s) => s.queue === queueNames.nodeRegen)).toBe(true);
+    expect(
+      sent.every((s) => s.queue === queueNames.nodeRegen || s.queue === queueNames.embedNode),
+    ).toBe(true);
+    // The newly-created place node (Giulia) must be enqueued for embedding.
+    expect(sent.some((s) => s.queue === queueNames.embedNode)).toBe(true);
 
     // Audit action upgraded to mem.event.enriched.
     expect(state.auditInserts).toHaveLength(1);

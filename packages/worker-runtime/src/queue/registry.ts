@@ -29,6 +29,12 @@ export const queueNames = {
    */
   rollupConversation: 'rollup_conversation',
   nodeRegen: 'node_regen',
+  /**
+   * `embed_node` — fired after a `mem.node` is created or its
+   * `document_md` is regenerated. Populates `mem.node.embedding` so
+   * semantic retrieval works. Owned by @memory-background (M3.5-B).
+   */
+  embedNode: 'embed_node',
   reconcileTransaction: 'reconcile_transaction',
   pantryDiff: 'pantry_diff',
   generateSummary: 'generate_summary',
@@ -67,6 +73,7 @@ export const staticQueueNames: readonly string[] = [
   queueNames.enrichConversation,
   queueNames.rollupConversation,
   queueNames.nodeRegen,
+  queueNames.embedNode,
   queueNames.reconcileTransaction,
   queueNames.pantryDiff,
   queueNames.generateSummary,

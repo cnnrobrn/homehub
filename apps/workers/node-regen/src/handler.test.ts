@@ -167,13 +167,18 @@ function makeQueues(opts?: { claim?: unknown }) {
     return claim.msg;
   });
 
+  const sent: Array<{ queue: string; payload: MessageEnvelope }> = [];
+
   const queues: QueueClient = {
     claim: claimFn,
     ack: vi.fn(async (queue, id) => {
       acks.push({ queue, id });
     }),
     nack: vi.fn(),
-    send: vi.fn(),
+    send: vi.fn(async (queue, payload) => {
+      sent.push({ queue, payload });
+      return 1;
+    }),
     sendBatch: vi.fn(),
     deadLetter: vi.fn(async (queue, id, reason) => {
       deadLetters.push({ queue, id, reason });
@@ -181,7 +186,7 @@ function makeQueues(opts?: { claim?: unknown }) {
     depth: vi.fn(),
     ageOfOldestSec: vi.fn(),
   } as unknown as QueueClient;
-  return { queues, acks, deadLetters };
+  return { queues, acks, deadLetters, sent };
 }
 
 const HOUSEHOLD_ID = 'a0000000-0000-4000-8000-000000000001';

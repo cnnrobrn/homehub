@@ -66,8 +66,10 @@ export {
 // --- Reconciler (M3) ----------------------------------------------------
 export {
   reconcileCandidate,
+  AuditAction,
   type ReconcileResult,
   type ReconcileOutcome,
+  type AuditActionValue,
 } from './reconciler/reconcile.js';
 export {
   DESTRUCTIVE_PREDICATES,
@@ -82,6 +84,40 @@ export {
   type ConflictDecisionInput,
   type ConflictWinner,
 } from './reconciler/policy.js';
+
+// --- Conversation extraction + rollup (M3.5) ----------------------------
+export {
+  createConversationExtractor,
+  CONVERSATION_EXTRACTOR_PROMPT_VERSION,
+  MEMBER_SOURCED_CONFIDENCE_CEILING,
+  type ConversationExtractor,
+  type ConversationExtractorInput,
+  type ConversationExtractionResult,
+  type ConversationTailTurn,
+  type KnownPerson,
+  type CreateConversationExtractorOptions,
+} from './conversation-extractor.js';
+export {
+  createConversationRollup,
+  isConversationSubstantive,
+  CONVERSATION_ROLLUP_PROMPT_VERSION,
+  ROLLUP_MIN_TURNS,
+  ROLLUP_MIN_WORDS,
+  type ConversationRollup,
+  type ConversationRollupInput,
+  type ConversationRollupResult,
+  type RollupTurn,
+  type CreateConversationRollupOptions,
+} from './conversation-rollup.js';
+
+// --- Embed-node (M3.5) --------------------------------------------------
+export {
+  embedNodeOne,
+  composeEmbeddingText,
+  EMBED_DOCUMENT_MD_MAX_CHARS,
+  type EmbedNodeDeps,
+  type EmbedNodeResult,
+} from './embed-node.js';
 
 // --- Errors (M3) --------------------------------------------------------
 export { ModelClassifierError, ModelExtractorError } from './errors.js';

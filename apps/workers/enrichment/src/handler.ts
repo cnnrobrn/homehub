@@ -364,6 +364,28 @@ export async function enrichOne(
     }
   }
 
+  // --- Enqueue embed_node for any newly created nodes ----------------
+  // Embedding reflects (canonical_name + document_md + aliases). The
+  // node-regen handler enqueues `embed_node` after it rewrites
+  // document_md, so we only enqueue here for the very first creation
+  // (the resolver adds an id to `newlyCreatedNodeIds` when it inserts).
+  for (const nodeId of newlyCreatedNodeIds) {
+    try {
+      await deps.queues.send(queueNames.embedNode, {
+        household_id: householdId,
+        kind: 'node.embed',
+        entity_id: nodeId,
+        version: 1,
+        enqueued_at: now.toISOString(),
+      });
+    } catch (err) {
+      log.warn('enrichment: embed_node enqueue failed', {
+        node_id: nodeId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
   // --- Audit ----------------------------------------------------------
   const after = {
     segment: classifyOutcome.classification.segment,
