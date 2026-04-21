@@ -33,7 +33,7 @@ import { type Logger, type ModelClient } from '@homehub/worker-runtime';
 import { ModelExtractorError } from './errors.js';
 
 /** Version tag stamped on `mem.fact_candidate.evidence[].prompt_version`. */
-export const EMAIL_EXTRACTOR_PROMPT_VERSION = '2026-04-20-email-v1';
+export const EMAIL_EXTRACTOR_PROMPT_VERSION = '2026-04-20-email-v2';
 
 /**
  * Max body bytes we pass to the model. The prompt caps at 2KB (see

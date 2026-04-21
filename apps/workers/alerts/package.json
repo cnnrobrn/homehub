@@ -2,19 +2,22 @@
   "name": "@homehub/worker-alerts",
   "version": "0.0.0",
   "private": true,
-  "description": "Emits alerts into app.alert from events and crons. Owned by @memory-background; fleshed out in M5+.",
+  "description": "Emits alerts into app.alert. M5-B ships seven financial detectors + a subscription detector; other segments follow in their milestones.",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
+    "cron": "node dist/cron.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
+    "@homehub/alerts": "workspace:*",
     "@homehub/db": "workspace:*",
     "@homehub/shared": "workspace:*",
-    "@homehub/worker-runtime": "workspace:*"
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

@@ -19,7 +19,7 @@ atomic facts implied by the message, and (3) at most one member-visible
 
 ## Version
 
-2026-04-20-email-v1
+2026-04-20-email-v2
 
 ## Schema Name
 
@@ -56,7 +56,13 @@ Per category:
 - **RECEIPTS** — extract merchant, transaction amount + currency,
   occurred-at timestamp, category. Episode `kind = 'receipt'`. Merchant
   fact when named: `(merchant:<name>, sells_category, <category>)`.
-  No suggestion.
+  No suggestion. The receipt's `attributes` MUST include
+  `amount_cents` (integer, cents) and `currency` (ISO 4217) — the
+  enrichment handler needs them to write a shadow `app.transaction`
+  row. Include `merchant` as a plain string. If the email clearly
+  describes a refund or credit (copy like "refund", "refunded",
+  "credit to your account"), set `attributes.refund = true` so the
+  handler signs the amount positive.
 - **RESERVATIONS** — extract venue, starts_at, ends_at (when the email
   names a window; otherwise omit), party_size, reservation_id. Episode
   `kind = 'reservation'`. Place fact when the location is explicit:

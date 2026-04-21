@@ -1,17 +1,394 @@
 /**
- * `summaries` handler.
+ * `summaries` handler — financial weekly / monthly digest generator.
  *
- * M0 stub. The real implementation lands in M5+ under @memory-background;
- * see `specs/05-agents/workers.md` and the owner briefing.
+ * Spec anchors:
+ *   - `specs/05-agents/summaries.md` (cadence, inputs, outputs).
+ *   - `specs/06-segments/financial/summaries-alerts.md` (section list).
+ *
+ * Cron-driven. `runSummariesWorker` is invoked by a Railway cron trigger
+ * (see README + `src/main.ts`). One invocation per period:
+ *   - weekly: Monday 04:00 UTC.
+ *   - monthly: 1st of month, 05:00 UTC.
+ *
+ * Algorithm per household × period:
+ *   1. Compute `coveredStart` / `coveredEnd` from the run date + period.
+ *   2. Dedupe: skip if `app.summary` row exists for
+ *      `(household_id, segment='financial', period, covered_start)`.
+ *   3. Load transactions / accounts / budgets + prior-period spend.
+ *   4. Call `renderFinancialSummary`.
+ *   5. Insert `app.summary` with `model='deterministic'`.
+ *   6. Audit `summary.financial.generated`.
+ *
+ * Empty households still get a "no activity" summary — the UI shows a
+ * placeholder row rather than leaving the digest timeline bare.
  */
 
-import { NotYetImplementedError } from '@homehub/worker-runtime';
+import { type Database, type Json } from '@homehub/db';
+import { type HouseholdId } from '@homehub/shared';
+import {
+  renderFinancialSummary,
+  type AccountRow as SummaryAccountRow,
+  type BudgetRow as SummaryBudgetRow,
+  type FinancialSummaryInput,
+  type FinancialSummaryOutput,
+  type SummaryPeriod,
+  type TransactionRow as SummaryTransactionRow,
+} from '@homehub/summaries';
+import { type Logger } from '@homehub/worker-runtime';
+import { type SupabaseClient } from '@supabase/supabase-js';
+
+export const SUMMARY_MODEL_LABEL = 'deterministic';
+export const SUMMARY_SEGMENT = 'financial';
+
+export interface SummariesWorkerDeps {
+  supabase: SupabaseClient<Database>;
+  log: Logger;
+  now?: () => Date;
+  /**
+   * Scope the run to a specific household set. When omitted, we iterate
+   * every household with at least one `app.member` row (every active
+   * household).
+   */
+  householdIds?: string[];
+  /** Which periods to run. Defaults to `['weekly']`. */
+  periods?: SummaryPeriod[];
+}
+
+export interface SummariesRunResult {
+  householdId: string;
+  period: SummaryPeriod;
+  skipped: boolean;
+  reason?: string;
+  insertedId?: string;
+}
+
+export async function runSummariesWorker(deps: SummariesWorkerDeps): Promise<SummariesRunResult[]> {
+  const now = (deps.now ?? (() => new Date()))();
+  const periods = deps.periods ?? ['weekly'];
+  const householdIds = deps.householdIds ?? (await listHouseholds(deps.supabase));
+  const results: SummariesRunResult[] = [];
+
+  for (const householdId of householdIds) {
+    for (const period of periods) {
+      try {
+        const result = await runOneHouseholdPeriod(deps, householdId, period, now);
+        results.push(result);
+      } catch (err) {
+        deps.log.error('summaries: household/period run failed', {
+          household_id: householdId,
+          period,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        results.push({
+          householdId,
+          period,
+          skipped: true,
+          reason: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+  }
+
+  deps.log.info('summaries run complete', {
+    households: householdIds.length,
+    periods,
+    inserted: results.filter((r) => !r.skipped).length,
+    skipped: results.filter((r) => r.skipped).length,
+  });
+
+  return results;
+}
+
+async function runOneHouseholdPeriod(
+  deps: SummariesWorkerDeps,
+  householdId: string,
+  period: SummaryPeriod,
+  now: Date,
+): Promise<SummariesRunResult> {
+  const { coveredStart, coveredEnd, priorStart, priorEnd } = computePeriodWindow(period, now);
+
+  const existing = await findExistingSummary(deps.supabase, householdId, period, coveredStart);
+  if (existing) {
+    return {
+      householdId,
+      period,
+      skipped: true,
+      reason: 'already_exists',
+    };
+  }
+
+  const [transactions, accounts, budgets, priorSpendCents] = await Promise.all([
+    loadTransactions(deps.supabase, householdId, coveredStart, coveredEnd),
+    loadAccounts(deps.supabase, householdId),
+    loadBudgets(deps.supabase, householdId),
+    loadSpendInWindow(deps.supabase, householdId, priorStart, priorEnd),
+  ]);
+
+  const input: FinancialSummaryInput = {
+    householdId: householdId as HouseholdId,
+    period,
+    coveredStart,
+    coveredEnd,
+    transactions,
+    accounts,
+    budgets,
+    priorPeriodSpendCents: priorSpendCents,
+    now,
+  };
+
+  const rendered: FinancialSummaryOutput = renderFinancialSummary(input);
+
+  const insertedId = await insertSummary(deps.supabase, {
+    householdId,
+    period,
+    coveredStart,
+    coveredEnd,
+    bodyMd: rendered.bodyMd,
+  });
+
+  await writeAudit(deps.supabase, {
+    household_id: householdId,
+    action: 'summary.financial.generated',
+    resource_id: insertedId,
+    after: {
+      period,
+      covered_start: coveredStart,
+      covered_end: coveredEnd,
+      metrics: rendered.metrics,
+    },
+  });
+
+  return { householdId, period, skipped: false, insertedId };
+}
 
 /**
- * Stub handler. Preserves the eventual signature shape so unit tests in
- * this package pin it from day one; the owner replaces the body in
- * M5+ without changing the export.
+ * Compute `[coveredStart, coveredEnd)` for the period that just ended.
+ * Crons run right after midnight on the first day of the *next* period,
+ * so we produce the summary for the period that finished at `now`.
  */
+export function computePeriodWindow(
+  period: SummaryPeriod,
+  now: Date,
+): {
+  coveredStart: string;
+  coveredEnd: string;
+  priorStart: string;
+  priorEnd: string;
+} {
+  if (period === 'weekly') {
+    // This Monday (00:00Z) and previous Monday.
+    const thisMonday = mondayUtc(now);
+    const previousMonday = new Date(thisMonday);
+    previousMonday.setUTCDate(previousMonday.getUTCDate() - 7);
+    const twoMondaysAgo = new Date(previousMonday);
+    twoMondaysAgo.setUTCDate(twoMondaysAgo.getUTCDate() - 7);
+    return {
+      coveredStart: previousMonday.toISOString(),
+      coveredEnd: thisMonday.toISOString(),
+      priorStart: twoMondaysAgo.toISOString(),
+      priorEnd: previousMonday.toISOString(),
+    };
+  }
+  if (period === 'monthly') {
+    const thisMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const lastMonthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+    const twoMonthsAgoStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 2, 1));
+    return {
+      coveredStart: lastMonthStart.toISOString(),
+      coveredEnd: thisMonthStart.toISOString(),
+      priorStart: twoMonthsAgoStart.toISOString(),
+      priorEnd: lastMonthStart.toISOString(),
+    };
+  }
+  // Daily — previous UTC day.
+  const todayStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const yesterday = new Date(todayStart);
+  yesterday.setUTCDate(yesterday.getUTCDate() - 1);
+  const dayBefore = new Date(yesterday);
+  dayBefore.setUTCDate(dayBefore.getUTCDate() - 1);
+  return {
+    coveredStart: yesterday.toISOString(),
+    coveredEnd: todayStart.toISOString(),
+    priorStart: dayBefore.toISOString(),
+    priorEnd: yesterday.toISOString(),
+  };
+}
+
+function mondayUtc(d: Date): Date {
+  const midnight = new Date(
+    Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), 0, 0, 0, 0),
+  );
+  const dow = midnight.getUTCDay(); // 0=Sun
+  const offset = dow === 0 ? 6 : dow - 1;
+  midnight.setUTCDate(midnight.getUTCDate() - offset);
+  return midnight;
+}
+
+async function listHouseholds(supabase: SupabaseClient<Database>): Promise<string[]> {
+  const { data, error } = await supabase.schema('app').from('household').select('id').limit(10_000);
+  if (error) throw new Error(`household scan failed: ${error.message}`);
+  return (data ?? []).map((r) => r.id as string);
+}
+
+async function findExistingSummary(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  period: SummaryPeriod,
+  coveredStart: string,
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('summary')
+    .select('id')
+    .eq('household_id', householdId)
+    .eq('segment', SUMMARY_SEGMENT)
+    .eq('period', period)
+    .eq('covered_start', coveredStart)
+    .limit(1);
+  if (error) throw new Error(`summary lookup failed: ${error.message}`);
+  return (data ?? []).length > 0;
+}
+
+async function loadTransactions(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  startIso: string,
+  endIso: string,
+): Promise<SummaryTransactionRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('transaction')
+    .select(
+      'id, household_id, account_id, occurred_at, amount_cents, currency, merchant_raw, category, source, metadata',
+    )
+    .eq('household_id', householdId)
+    .gte('occurred_at', startIso)
+    .lt('occurred_at', endIso);
+  if (error) throw new Error(`transaction lookup failed: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    account_id: (r.account_id as string | null) ?? null,
+    occurred_at: r.occurred_at as string,
+    amount_cents: Number(r.amount_cents),
+    currency: r.currency as string,
+    merchant_raw: (r.merchant_raw as string | null) ?? null,
+    category: (r.category as string | null) ?? null,
+    source: r.source as string,
+    metadata: (r.metadata as Record<string, unknown>) ?? {},
+  }));
+}
+
+async function loadAccounts(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+): Promise<SummaryAccountRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('account')
+    .select('id, household_id, name, kind, balance_cents, currency, last_synced_at')
+    .eq('household_id', householdId);
+  if (error) throw new Error(`account lookup failed: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    name: r.name as string,
+    kind: r.kind as string,
+    balance_cents: r.balance_cents === null ? null : Number(r.balance_cents),
+    currency: r.currency as string,
+    last_synced_at: (r.last_synced_at as string | null) ?? null,
+  }));
+}
+
+async function loadBudgets(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+): Promise<SummaryBudgetRow[]> {
+  const { data, error } = await supabase
+    .schema('app')
+    .from('budget')
+    .select('id, household_id, name, category, period, amount_cents, currency')
+    .eq('household_id', householdId);
+  if (error) throw new Error(`budget lookup failed: ${error.message}`);
+  return (data ?? []).map((r) => ({
+    id: r.id as string,
+    household_id: r.household_id as string,
+    name: r.name as string,
+    category: r.category as string,
+    period: r.period as 'weekly' | 'monthly' | 'yearly',
+    amount_cents: Number(r.amount_cents),
+    currency: r.currency as string,
+  }));
+}
+
+async function loadSpendInWindow(
+  supabase: SupabaseClient<Database>,
+  householdId: string,
+  startIso: string,
+  endIso: string,
+): Promise<number> {
+  const txs = await loadTransactions(supabase, householdId, startIso, endIso);
+  let total = 0;
+  for (const tx of txs) {
+    if (tx.amount_cents < 0) total += Math.abs(tx.amount_cents);
+  }
+  return total;
+}
+
+async function insertSummary(
+  supabase: SupabaseClient<Database>,
+  args: {
+    householdId: string;
+    period: SummaryPeriod;
+    coveredStart: string;
+    coveredEnd: string;
+    bodyMd: string;
+  },
+): Promise<string> {
+  const insert: Database['app']['Tables']['summary']['Insert'] = {
+    household_id: args.householdId,
+    segment: SUMMARY_SEGMENT,
+    period: args.period,
+    covered_start: args.coveredStart,
+    covered_end: args.coveredEnd,
+    body_md: args.bodyMd,
+    model: SUMMARY_MODEL_LABEL,
+  };
+  const { data, error } = await supabase
+    .schema('app')
+    .from('summary')
+    .insert(insert)
+    .select('id')
+    .single();
+  if (error || !data) {
+    throw new Error(`summary insert failed: ${error?.message ?? 'no id'}`);
+  }
+  return data.id as string;
+}
+
+async function writeAudit(
+  supabase: SupabaseClient<Database>,
+  input: { household_id: string; action: string; resource_id: string; after: unknown },
+): Promise<void> {
+  const { error } = await supabase
+    .schema('audit')
+    .from('event')
+    .insert({
+      household_id: input.household_id,
+      actor_user_id: null,
+      action: input.action,
+      resource_type: 'app.summary',
+      resource_id: input.resource_id,
+      before: null,
+      after: input.after as Json,
+    });
+  if (error) {
+    console.warn(`[worker-summaries] audit write failed: ${error.message}`);
+  }
+}
+
+// Legacy stub kept for the old handler.test.ts entry which only checked
+// the symbol existed. Remove once downstream callers migrate.
 export async function handler(): Promise<void> {
-  throw new NotYetImplementedError('summaries handler not implemented until M5+');
+  throw new Error('summaries: use runSummariesWorker() instead of handler()');
 }

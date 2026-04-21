@@ -2,19 +2,22 @@
   "name": "@homehub/worker-summaries",
   "version": "0.0.0",
   "private": true,
-  "description": "Writes daily, weekly, and monthly summaries into app.summary. Owned by @memory-background; fleshed out in M5+.",
+  "description": "Writes daily, weekly, and monthly summaries into app.summary. Owned by @memory-background. M5-B ships the financial weekly + monthly renderer; other segments follow in their respective milestones.",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
+    "cron": "node dist/cron.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@homehub/db": "workspace:*",
     "@homehub/shared": "workspace:*",
-    "@homehub/worker-runtime": "workspace:*"
+    "@homehub/summaries": "workspace:*",
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

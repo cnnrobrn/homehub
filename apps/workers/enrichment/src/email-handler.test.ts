@@ -41,12 +41,19 @@ interface SupabaseState {
   householdSettings: Record<string, unknown>;
   modelCallRows: Array<{ cost_usd: number }>;
   existingSuggestions: Array<{ id: string; preview: Record<string, unknown>; kind: string }>;
+  existingTransactions: Array<{
+    id: string;
+    household_id: string;
+    source: string;
+    source_id: string;
+  }>;
   nodes: Array<{ id: string; canonical_name: string; type: string; household_id: string }>;
   episodeInserts: Array<Record<string, unknown>>;
   candidateInserts: Array<Record<string, unknown>>;
   suggestionInserts: Array<Record<string, unknown>>;
   nodeInserts: Array<Record<string, unknown>>;
   auditInserts: Array<Record<string, unknown>>;
+  transactionInserts: Array<Record<string, unknown>>;
   factCandidates: Map<string, Record<string, unknown>>;
   facts: Map<string, Record<string, unknown>>;
 }
@@ -57,12 +64,14 @@ function makeSupabase(init: Partial<SupabaseState> = {}) {
     householdSettings: init.householdSettings ?? {},
     modelCallRows: init.modelCallRows ?? [],
     existingSuggestions: init.existingSuggestions ?? [],
+    existingTransactions: init.existingTransactions ?? [],
     nodes: init.nodes ?? [],
     episodeInserts: [],
     candidateInserts: [],
     suggestionInserts: [],
     nodeInserts: [],
     auditInserts: [],
+    transactionInserts: [],
     factCandidates: new Map(),
     facts: new Map(),
   };
@@ -149,6 +158,39 @@ function makeSupabase(init: Partial<SupabaseState> = {}) {
       };
       return chain;
     }
+    if (table === 'transaction') {
+      const filters: Record<string, unknown> = {};
+      const chain: Record<string, unknown> = {
+        select() {
+          return chain;
+        },
+        eq(col: string, val: unknown) {
+          filters[col] = val;
+          return chain;
+        },
+        limit() {
+          return chain;
+        },
+        insert(p: Record<string, unknown>) {
+          state.transactionInserts.push(p);
+          state.existingTransactions.push({
+            id: `tx-${state.transactionInserts.length}`,
+            household_id: p.household_id as string,
+            source: p.source as string,
+            source_id: p.source_id as string,
+          });
+          return Promise.resolve({ data: null, error: null });
+        },
+      };
+      (chain as Record<string, unknown>).then = (fulfill: (v: unknown) => unknown) => {
+        let rows = state.existingTransactions.slice();
+        for (const [k, v] of Object.entries(filters)) {
+          rows = rows.filter((r) => (r as Record<string, unknown>)[k] === v);
+        }
+        return Promise.resolve(fulfill({ data: rows, error: null }));
+      };
+      return chain;
+    }
     throw new Error(`unexpected app.${table}`);
   }
 
@@ -209,6 +251,18 @@ function makeSupabase(init: Partial<SupabaseState> = {}) {
             household_id: insertPayload!.household_id as string,
           });
           return Promise.resolve({ data: { id }, error: null });
+        },
+        async maybeSingle() {
+          let rows = state.nodes.slice();
+          for (const [k, v] of Object.entries(filters)) {
+            rows = rows.filter((r) => (r as Record<string, unknown>)[k] === v);
+          }
+          const hit = rows[0];
+          if (!hit) return { data: null, error: null };
+          return {
+            data: { canonical_name: hit.canonical_name, id: hit.id },
+            error: null,
+          };
         },
       };
       (chain as Record<string, unknown>).then = (fulfill: (v: unknown) => unknown) => {
@@ -715,6 +769,183 @@ describe('enrichEmailOne', () => {
 
     // No new suggestion inserted — duplicate detected.
     expect(state.suggestionInserts).toHaveLength(0);
+  });
+
+  it('receipt → app.transaction (happy path): writes an email_receipt row', async () => {
+    const now = new Date('2026-04-21T00:00:00Z');
+    const { supabase, state } = makeSupabase({
+      emailRow: emailRow({
+        subject: "Your receipt from Trader Joe's",
+        from_email: 'noreply@traderjoes.com',
+        from_name: "Trader Joe's",
+        categories: ['receipt'],
+        body_preview: 'total $87.14',
+      }),
+    });
+    const result: EmailExtractionResult = {
+      episodes: [
+        {
+          kind: 'receipt',
+          occurred_at: '2026-04-20T22:40:00Z',
+          title: "Trader Joe's receipt",
+          summary: "Trader Joe's receipt for $87.14.",
+          subject_reference: "merchant:Trader Joe's",
+          attributes: {
+            merchant: "Trader Joe's",
+            amount_cents: 8714,
+            currency: 'USD',
+            category: 'groceries',
+          },
+        },
+      ],
+      facts: [],
+      suggestions: [],
+    };
+    const extractor: ModelEmailExtractor = { extract: vi.fn(async () => result) };
+    const { queues } = makeQueues();
+
+    await enrichEmailOne(
+      {
+        supabase: supabase as never,
+        queues,
+        log: makeLog(),
+        extractor,
+        now: () => now,
+      },
+      envelope(),
+    );
+
+    expect(state.transactionInserts).toHaveLength(1);
+    const tx = state.transactionInserts[0]!;
+    expect(tx.source).toBe('email_receipt');
+    expect(tx.source_id).toBe(EMAIL_ID);
+    expect(tx.household_id).toBe(HOUSEHOLD_ID);
+    expect(tx.amount_cents).toBe(-8714);
+    expect(tx.currency).toBe('USD');
+    expect(tx.merchant_raw).toBe("Trader Joe's");
+    expect(tx.category).toBe('groceries');
+    expect(tx.account_id).toBeNull();
+    const meta = tx.metadata as Record<string, unknown>;
+    expect(meta.status).toBe('unmatched');
+    expect(meta.source_email_id).toBe(EMAIL_ID);
+    expect(meta.extracted_from).toBe('email_receipt_extraction');
+  });
+
+  it('receipt → app.transaction: skips when one already exists (idempotent)', async () => {
+    const now = new Date('2026-04-21T00:00:00Z');
+    const { supabase, state } = makeSupabase({
+      emailRow: emailRow({ categories: ['receipt'] }),
+      existingTransactions: [
+        {
+          id: 'tx-existing',
+          household_id: HOUSEHOLD_ID,
+          source: 'email_receipt',
+          source_id: EMAIL_ID,
+        },
+      ],
+    });
+    const result: EmailExtractionResult = {
+      episodes: [
+        {
+          kind: 'receipt',
+          occurred_at: '2026-04-20T22:40:00Z',
+          title: "Trader Joe's receipt",
+          summary: "Trader Joe's receipt",
+          subject_reference: "merchant:Trader Joe's",
+          attributes: { merchant: "Trader Joe's", amount_cents: 8714, currency: 'USD' },
+        },
+      ],
+      facts: [],
+      suggestions: [],
+    };
+    const extractor: ModelEmailExtractor = { extract: vi.fn(async () => result) };
+    const { queues } = makeQueues();
+
+    await enrichEmailOne(
+      {
+        supabase: supabase as never,
+        queues,
+        log: makeLog(),
+        extractor,
+        now: () => now,
+      },
+      envelope(),
+    );
+
+    expect(state.transactionInserts).toHaveLength(0);
+  });
+
+  it('receipt → app.transaction: skips when amount_cents is missing', async () => {
+    const now = new Date('2026-04-21T00:00:00Z');
+    const { supabase, state } = makeSupabase({
+      emailRow: emailRow({ categories: ['receipt'] }),
+    });
+    const result: EmailExtractionResult = {
+      episodes: [
+        {
+          kind: 'receipt',
+          occurred_at: '2026-04-20T22:40:00Z',
+          title: "Trader Joe's receipt",
+          summary: "Trader Joe's receipt",
+          subject_reference: "merchant:Trader Joe's",
+          attributes: { merchant: "Trader Joe's" },
+        },
+      ],
+      facts: [],
+      suggestions: [],
+    };
+    const extractor: ModelEmailExtractor = { extract: vi.fn(async () => result) };
+    const { queues } = makeQueues();
+
+    await enrichEmailOne(
+      {
+        supabase: supabase as never,
+        queues,
+        log: makeLog(),
+        extractor,
+        now: () => now,
+      },
+      envelope(),
+    );
+
+    expect(state.transactionInserts).toHaveLength(0);
+  });
+
+  it('receipt → app.transaction: positive sign when attributes.refund is true', async () => {
+    const now = new Date('2026-04-21T00:00:00Z');
+    const { supabase, state } = makeSupabase({
+      emailRow: emailRow({ categories: ['receipt'] }),
+    });
+    const result: EmailExtractionResult = {
+      episodes: [
+        {
+          kind: 'receipt',
+          occurred_at: '2026-04-20T22:40:00Z',
+          title: 'Amazon refund',
+          summary: 'Amazon refund',
+          subject_reference: 'merchant:Amazon',
+          attributes: { merchant: 'Amazon', amount_cents: 1999, currency: 'USD', refund: true },
+        },
+      ],
+      facts: [],
+      suggestions: [],
+    };
+    const extractor: ModelEmailExtractor = { extract: vi.fn(async () => result) };
+    const { queues } = makeQueues();
+
+    await enrichEmailOne(
+      {
+        supabase: supabase as never,
+        queues,
+        log: makeLog(),
+        extractor,
+        now: () => now,
+      },
+      envelope(),
+    );
+
+    expect(state.transactionInserts).toHaveLength(1);
+    expect(state.transactionInserts[0]!.amount_cents).toBe(1999);
   });
 
   it('skips suggestions whose starts_at precedes received_at', async () => {

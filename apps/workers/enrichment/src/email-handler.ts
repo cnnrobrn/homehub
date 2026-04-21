@@ -228,6 +228,7 @@ export async function enrichEmailOne(
   const candidateIds: string[] = [];
   let episodesWritten = 0;
   let suggestionsWritten = 0;
+  let transactionsWritten = 0;
 
   if (
     extraction.episodes.length > 0 ||
@@ -271,6 +272,20 @@ export async function enrichEmailOne(
           throw new Error(`mem.episode insert failed: ${epErr.message}`);
         }
         episodesWritten += 1;
+
+        // M5-B cross-cut: receipts also shadow-write into `app.transaction`
+        // (`source='email_receipt'`) so the financial reconciler has
+        // something to match against provider-side rows.
+        if (ep.kind === 'receipt') {
+          const wrote = await maybeWriteReceiptTransaction({
+            supabase,
+            log,
+            email,
+            episode: ep,
+            merchantFallback: await resolveMerchantName(supabase, subjectNodeId),
+          });
+          if (wrote) transactionsWritten += 1;
+        }
       } catch (err) {
         log.warn('enrich_email: episode write failed; skipping', {
           error: err instanceof Error ? err.message : String(err),
@@ -449,6 +464,7 @@ export async function enrichEmailOne(
         candidates: candidateIds.length,
         suggestions: suggestionsWritten,
         new_nodes: newlyCreatedNodeIds.size,
+        transactions: transactionsWritten,
       },
       prompt_version: EMAIL_EXTRACTOR_PROMPT_VERSION,
       budget_tier: budget.ok ? budget.tier : null,
@@ -772,4 +788,114 @@ function isValidNodeType(raw: string): raw is NodeType {
     'account',
     'category',
   ].includes(raw);
+}
+
+// ---- Receipt → app.transaction shadow write (M5-B) --------------------
+
+/**
+ * Write (or skip) a `source='email_receipt'` row for a receipt episode.
+ *
+ * Idempotency: we dedupe on `(household_id, source='email_receipt',
+ * source_id=email.id)` before inserting. Replays therefore do not
+ * double-write.
+ *
+ * Sign convention: receipts are outflows by default → negative cents.
+ * If the extractor signalled `attributes.refund = true` (the v2 prompt
+ * emits this for refund copy), we flip to positive.
+ *
+ * Returns `true` when a row was inserted, `false` otherwise (missing
+ * amount, duplicate, error — each is logged as a warning at this layer
+ * because they're not fatal to the enrichment pass).
+ */
+async function maybeWriteReceiptTransaction(args: {
+  supabase: SupabaseClient<Database>;
+  log: Logger;
+  email: EmailRow;
+  episode: EmailExtractionResult['episodes'][number];
+  merchantFallback: string | null;
+}): Promise<boolean> {
+  const { supabase, log, email, episode, merchantFallback } = args;
+
+  const attrs = (episode.attributes ?? {}) as Record<string, unknown>;
+  const rawAmount = attrs.amount_cents;
+  if (typeof rawAmount !== 'number' || !Number.isFinite(rawAmount) || rawAmount === 0) {
+    log.debug('enrich_email: receipt missing amount_cents; skipping transaction write', {
+      email_id: email.id,
+    });
+    return false;
+  }
+
+  // Deduplicate on the natural key used by the sync + reconciler paths.
+  const { data: existing, error: exErr } = await supabase
+    .schema('app')
+    .from('transaction')
+    .select('id')
+    .eq('household_id', email.household_id)
+    .eq('source', 'email_receipt')
+    .eq('source_id', email.id)
+    .limit(1);
+  if (exErr) {
+    log.warn('enrich_email: receipt dedupe lookup failed', { error: exErr.message });
+    return false;
+  }
+  if ((existing ?? []).length > 0) {
+    log.debug('enrich_email: receipt transaction already exists; skipping', {
+      email_id: email.id,
+    });
+    return false;
+  }
+
+  const refund = attrs.refund === true;
+  const amountAbs = Math.abs(Math.round(rawAmount));
+  const amountCents = refund ? amountAbs : -amountAbs;
+  const currency = typeof attrs.currency === 'string' ? attrs.currency : 'USD';
+  const merchantRaw =
+    typeof attrs.merchant === 'string' && attrs.merchant.trim().length > 0
+      ? attrs.merchant.trim()
+      : merchantFallback;
+  const category = typeof attrs.category === 'string' ? attrs.category : null;
+
+  const insert: Database['app']['Tables']['transaction']['Insert'] = {
+    household_id: email.household_id,
+    member_id: email.member_id,
+    account_id: null,
+    occurred_at: episode.occurred_at,
+    amount_cents: amountCents,
+    currency,
+    merchant_raw: merchantRaw,
+    category,
+    source: 'email_receipt',
+    source_id: email.id,
+    source_version: email.source_version ?? null,
+    metadata: {
+      status: 'unmatched',
+      source_email_id: email.id,
+      extracted_from: 'email_receipt_extraction',
+    } as unknown as Json,
+  };
+
+  const { error: insErr } = await supabase.schema('app').from('transaction').insert(insert);
+  if (insErr) {
+    log.warn('enrich_email: app.transaction insert failed', { error: insErr.message });
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Resolve the canonical name of a node id for use as the fallback
+ * `merchant_raw` when the extractor's `attributes.merchant` is missing.
+ */
+async function resolveMerchantName(
+  supabase: SupabaseClient<Database>,
+  nodeId: string,
+): Promise<string | null> {
+  const { data, error } = await supabase
+    .schema('mem')
+    .from('node')
+    .select('canonical_name')
+    .eq('id', nodeId)
+    .maybeSingle();
+  if (error || !data) return null;
+  return (data.canonical_name as string) ?? null;
 }

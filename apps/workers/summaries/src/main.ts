@@ -1,9 +1,10 @@
 /**
  * `summaries` worker entrypoint.
  *
- * M0 scaffold. The runtime wires up env, tracing, Supabase, and the queue
- * client; the handler body is still a stub. This file mirrors the
- * template in sibling worker services under apps/workers/*.
+ * Long-running HTTP server that exposes `/health` + `/ready` for Railway
+ * probes and idles until SIGTERM. Actual work is cron-driven (see
+ * `src/cron.ts`). Keeping a long-lived process gives Railway a stable
+ * log stream + a cheap place to respond to health checks.
  */
 
 import { createServer } from 'node:http';
@@ -11,7 +12,6 @@ import { createServer } from 'node:http';
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
-  createQueueClient,
   createServiceClient,
   initTracing,
   onShutdown,
@@ -28,9 +28,7 @@ const exitCode = await runWorker(
   async () => {
     initTracing(env);
     const supabase = createServiceClient(env);
-    const queues = createQueueClient(supabase);
 
-    // Health/ready HTTP server per specs/05-agents/workers.md.
     let ready = false;
     const port = Number.parseInt(process.env.PORT ?? '8080', 10);
     const server = createServer((req, res) => {
@@ -61,13 +59,20 @@ const exitCode = await runWorker(
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    // The queue client is constructed so readiness reflects a working
-    // Supabase connection. The real consumer loop lands later.
-    void queues;
-    ready = true;
+    try {
+      const { error } = await supabase
+        .schema('app')
+        .from('household')
+        .select('id', { count: 'exact', head: true });
+      if (error) throw error;
+      ready = true;
+      log.info('readiness ok; idling (cron-driven)');
+    } catch (err) {
+      log.error('readiness probe failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
 
-    log.info('worker started (no-op loop)');
-    // TODO(@memory-background, M5+): replace with cron-driven summary generation.
     await new Promise<void>((resolve) => {
       const onSig = (): void => resolve();
       process.once('SIGTERM', onSig);

@@ -51,7 +51,7 @@ const RESERVATION_INPUT: EmailInput = {
 
 describe('EMAIL_EXTRACTOR_PROMPT_VERSION', () => {
   it('exports a stable tag callers can stamp on evidence rows', () => {
-    expect(EMAIL_EXTRACTOR_PROMPT_VERSION).toBe('2026-04-20-email-v1');
+    expect(EMAIL_EXTRACTOR_PROMPT_VERSION).toBe('2026-04-20-email-v2');
   });
 });
 
