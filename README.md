@@ -8,7 +8,7 @@ Start with [`spec.md`](./spec.md) for the top-level overview and [`specs/`](./sp
 
 This is a pnpm monorepo. The workspace globs are already configured; the packages below will be filled in by later M0 chunks.
 
-- `apps/web/` — Next.js control panel (coming in M0-D).
+- `apps/web/` — Next.js control panel (shell landed in M0-D; real UI ships with `@frontend-chat` in M1). See [`apps/web/README.md`](./apps/web/README.md).
 - `apps/workers/*` — Railway worker services, one per worker class (coming in M0-E).
 - `apps/mcp/*` — MCP servers (coming in M0-E).
 - `packages/db/` — Supabase migrations, local stack config, and generated types. See [`packages/db/README.md`](./packages/db/README.md).
@@ -44,7 +44,7 @@ pnpm --filter @homehub/db db:stop
 Additional commands (Nango docker-compose, seed data, dev servers) arrive with later M0 chunks:
 
 - Worker runtime + queue wiring: coming in M0-C.
-- Next.js app shell: coming in M0-D.
+- Next.js app shell: ships in M0-D (`pnpm --filter @homehub/web dev`).
 - Worker + MCP service stubs: coming in M0-E.
 - Local Nango via docker-compose: coming in M0-F.
 

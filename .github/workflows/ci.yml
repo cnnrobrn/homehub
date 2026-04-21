@@ -113,6 +113,45 @@ jobs:
       - name: Format check
         run: pnpm format:check
 
+  web-build:
+    name: Web build
+    runs-on: ubuntu-latest
+    # CI runs `next build` for `@homehub/web` to catch compile-time
+    # regressions (bad imports, RSC/client boundary violations, typed
+    # routes). Real Supabase secrets are not available on CI, so the
+    # `apps/web/src/lib/env.ts` schema relaxes to optional when
+    # `NEXT_PHASE === 'phase-production-build'`. We pass empty strings
+    # for the `NEXT_PUBLIC_*` vars so Next's inlining has a value to
+    # embed; the build-phase opt-out handles the missing service-role
+    # key. See `apps/web/README.md` for the full contract.
+    env:
+      NEXT_PUBLIC_SUPABASE_URL: ''
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ''
+      NEXT_PUBLIC_APP_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      # Disable Next's anonymous usage telemetry on CI.
+      NEXT_TELEMETRY_DISABLED: '1'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build web app
+        run: pnpm --filter @homehub/web build
+
   migration-lint:
     name: Migration lint
     runs-on: ubuntu-latest

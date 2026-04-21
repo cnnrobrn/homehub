@@ -1,0 +1,73 @@
+/**
+ * Web-app environment loader.
+ *
+ * Two exports:
+ *   - `publicEnv` — the `NEXT_PUBLIC_*` subset. Safe to import from both
+ *     server and client code. Evaluated at module load.
+ *   - `serverEnv` — a getter for the full schema, including the service-
+ *     role key. Evaluated lazily the first time it's called. A separate
+ *     getter (rather than a module-top-level `const`) keeps the server-
+ *     only Zod schema out of the client bundle when a client component
+ *     transitively imports this file for `publicEnv`; Next's tree-
+ *     shaking drops the unused call path cleanly.
+ *
+ * ## Build-time opt-out
+ *
+ * Next's production build (`next build`) imports this module during its
+ * static analysis pass, but CI shouldn't need real Supabase secrets to
+ * produce a build artifact. When `NEXT_PHASE === 'phase-production-build'`
+ * we relax both schemas so the build succeeds with empty values.
+ * Runtime paths (`next start`, serverless invocations, `pnpm dev`) see
+ * the non-optional shape and fail loudly on missing vars.
+ */
+
+import { baseServerEnvSchema, loadEnv } from '@homehub/shared';
+import { z } from 'zod';
+
+const isBuildPhase = process.env.NEXT_PHASE === 'phase-production-build';
+
+const requiredString = z.string().min(1);
+const requiredUrl = z.string().url();
+
+const buildSafeString = isBuildPhase ? z.string().default('') : requiredString;
+const buildSafeUrl = isBuildPhase ? z.string().default('') : requiredUrl;
+
+const publicSchema = z.object({
+  NEXT_PUBLIC_SUPABASE_URL: buildSafeUrl,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: buildSafeString,
+  NEXT_PUBLIC_APP_URL: buildSafeUrl,
+});
+
+const serverSchema = baseServerEnvSchema.extend({
+  NEXT_PUBLIC_SUPABASE_URL: buildSafeUrl,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: buildSafeString,
+  SUPABASE_SERVICE_ROLE_KEY: buildSafeString,
+  NEXT_PUBLIC_APP_URL: buildSafeUrl,
+});
+
+export type PublicEnv = z.infer<typeof publicSchema>;
+export type ServerEnv = z.infer<typeof serverSchema>;
+
+/**
+ * Public env — safe on both sides. Next inlines `NEXT_PUBLIC_*` strings
+ * into the client bundle at build time, so browser callers still see
+ * real values after the server `loadEnv` runs during SSR.
+ */
+export const publicEnv: PublicEnv = loadEnv(publicSchema);
+
+let cachedServerEnv: ServerEnv | null = null;
+
+/**
+ * Lazy accessor for the full server-side env. Throws on missing vars at
+ * call time (not import time) so that a client component transitively
+ * pulling this module for `publicEnv` doesn't explode the page.
+ *
+ * Callers MUST only invoke this from server contexts (Server Components,
+ * Route Handlers, Server Actions). Calling from a client component would
+ * attempt to read `SUPABASE_SERVICE_ROLE_KEY` from `process.env`, which
+ * is always `undefined` in the browser and will fail validation.
+ */
+export function serverEnv(): ServerEnv {
+  cachedServerEnv ??= loadEnv(serverSchema);
+  return cachedServerEnv;
+}
