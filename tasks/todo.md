@@ -66,10 +66,10 @@
 
 ## M3.7 — Consolidation & reflection
 
-- [ ] Nightly consolidator (episodic → semantic candidates; pattern detection) — @memory-background
-- [ ] Weekly reflector (`mem.insight`) — @memory-background
-- [ ] Decay-aware ranking wired into `query_memory` — @memory-background
-- [ ] Settings/memory page: pause writes, retention windows, rule authoring, per-category model budget — @frontend-chat
+- [x] Nightly consolidator (semantic candidates + temporal/co-occurrence/threshold patterns, budget-gated, per-entity batching) — @memory-background (a8fa1c9)
+- [x] Weekly reflector writing `mem.insight` with citation footnote in body_md — @memory-background (a8fa1c9)
+- [x] Decay-aware ranking (layer-specific half-lives episodic 14d / semantic 120d / procedural 365d + per-type overrides, pattern decay, old-candidate filter) — @memory-background (a8fa1c9)
+- [x] Settings/memory page: pause toggle, retention windows, rule CRUD, model budget + MTD spend, weekly insights feed, forget-everything danger zone — @frontend-chat (df5c939)
 
 ## M4 — Gmail ingestion
 

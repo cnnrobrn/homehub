@@ -470,4 +470,50 @@ Two parallel streams (no file-tree collision):
 - `@memory-background` (M3.7-A): nightly consolidator worker (rolls episodes from last 7d into semantic candidates, detects temporal / co-occurrence / threshold patterns, bumps reinforcement counts, writes `mem.pattern` rows), weekly reflector worker (reads episodes + new facts + pattern activity → `mem.insight` markdown), decay-aware ranking wired into `@homehub/query-memory` (layer-specific half-lives: episodic 14d / semantic 120d / procedural 365d), `pg_cron` scheduling stubs (request via @infra-platform as a trivial migration).
 - `@frontend-chat` (M3.7-B): `/settings/memory` page — pause-writes toggle, retention windows per category (raw emails / transactions / attachments) with member-visible countdowns, rule authoring UI (CRUD on `mem.rule`), per-category model budget (household setting), `mem.insight` feed ("weekly reflection") with confirm/dismiss affordances.
 
+## 2026-04-20 — M3.7-A reviewed & accepted (commit a8fa1c9)
+
+Scope delivered: per-entity consolidation prompt + schema + prompt runtime wire, weekly reflection prompt + schema, `apps/workers/consolidator` real CLI-driven implementation (836-line handler + 404-line patterns module covering temporal + co-occurrence + threshold regularity detectors, batch-by-entity, per-household nightly budget ceiling, skip when < MIN_NEW_EPISODES), `apps/workers/reflector` real CLI-driven implementation (10 tests — idempotency, insufficient-episodes skip, budget-exceeded skip, happy path with citation footnote embedded in body_md via HTML-comment since `mem.insight` has no metadata column today), decay-aware ranking in `@homehub/query-memory` with layer-specific half-lives (episodic 14d / semantic 120d / procedural 365d) + per-node-type overrides (person 180d / merchant 90d / place 365d / dish 120d) + pattern decay at 3× natural period + old-candidate filter at 90d.
+
+Specialist decisions accepted:
+
+1. **Citation footnote in `body_md`** as HTML comment `<!-- homehub:reflection {...} -->` — clean fallback for the missing `mem.insight.metadata` column. Parseable, invisible in renders.
+2. **Consolidator as CLI entry** (not pgmq-driven) — Railway cron or platform-level scheduler invokes `runConsolidator({ householdIds? })`. Matches the spec's "nightly 3am household-tz" pattern; queue-driven scheduling is unnecessary.
+3. **Pattern upsert on `(household_id, kind, description_hash)`** — stable natural key prevents duplicates across nightly runs.
+4. **Patterns use `last_reinforced_at` for decay** with 3× natural-period multiplier. Standing default.
+5. **Old candidates filtered OUT of retrieval** (not just down-ranked). Spec-correct — candidates > 90d without reinforcement should never surface.
+
+Follow-up tracked (not blocking M3.7-B):
+
+- `mem.insight.metadata` jsonb column would let confirmations ride the row rather than `audit.event` back-reads. Request to @infra-platform.
+
+## 2026-04-20 — M3.7-B reviewed & accepted (commit df5c939)
+
+Scope delivered: `/settings/memory` page with six cards — pause toggle, retention windows, rule authoring (list + create + edit + archive + delete with RLS backstop), model budget + MTD spend progress, weekly insights feed (10 most recent with confirm/dismiss), danger-zone forget-everything with type-to-confirm dialog + 48h undo window. Sidebar Memory link lit up. `stripCitationFootnote` helper with 6 unit tests. 12 new server actions in `apps/web/src/app/actions/memory.ts`. New shadcn primitives: Switch, Slider, Progress, Table, Textarea. 34 new apps/web tests (151 total).
+
+Specialist decisions accepted:
+
+1. **Insight confirmations written to `audit.event`** (not the row) because `mem.insight` has no metadata column. Correct fallback; `listInsightsAction` back-reads audit events to populate `confirmedByMemberIds` / `dismissedByMemberIds` for display. Migration to add metadata column is optional polish.
+2. **Forget-everything is intent-only** (writes `audit.event` `mem.forget_all.requested` with 48h undo window). Actual purge is M10. UI clearly indicates "scheduled for 48h — you can still undo."
+3. **Inline zod v4 resolver in `RuleCreateForm`** — works around `@hookform/resolvers@1.0.0` predating zod v4's `.issues` change. Upgrading the resolver is the cleaner follow-up fix.
+4. **Purge workers deferred to M10.** Retention windows are stored today; the worker that acts on them lands with ops readiness.
+
+Follow-ups tracked:
+
+- `mem.insight.metadata` migration (optional).
+- `@hookform/resolvers` upgrade to v5.x for zod v4 compat.
+- Purge worker for retention windows + forget-all (M10).
+- Per-segment retention nuance (later).
+
+## 2026-04-20 — **M3.7 COMPLETE**
+
+Two commits (`a8fa1c9`, `df5c939`) on `main`. Consolidator + reflector + decay ranking all live and budget-gated; `/settings/memory` surfaces pause / retention / rules / budget / insights / forget-all. 725 tests before this block, 759 after (with the +34 from M3.7-B landed).
+
+## 2026-04-20 — M4 dispatched
+
+Single stream (overwhelmingly @integrations-led; memory-background adds the email extraction prompt; frontend adds the privacy preview):
+
+- `@integrations` (M4-A): register `google-mail` in Nango (minimum scopes per `specs/03-integrations/google-workspace.md`), `packages/providers/email` adapter + Nango proxy wrapper, `apps/workers/sync-gmail` worker with Gmail watch + history id deltas + server-side filter narrowing to receipts/reservations/bills/invites/shipping, attachment handling → Supabase Storage (bucket `email_attachments` with household-scoped RLS — request storage bucket from @infra-platform), `webhook-ingest` gmail route (Pub/Sub → enqueue delta), `/settings/connections` Gmail connect button + `listConnectionsAction` extension.
+- `@memory-background` (M4-B, lands after M4-A so the queue exists): `packages/prompts/extraction/email.md` prompt + schema covering receipts / reservations / bills / invites / shipping, extractor + handler for `enrich_email` queue, reservation → calendar-event suggestion path (writes draft `app.suggestion` rows of kind `add_to_calendar`), audit trail.
+- `@frontend-chat` (M4-C, lands with M4-A): privacy-preview dialog before first Gmail ingestion — shows categories to be labeled + a filter preview + opt-out per category. Writes the member's opt-ins to `sync.provider_connection.metadata.email_categories`.
+
 
