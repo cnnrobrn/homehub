@@ -31,12 +31,12 @@
 
 ## M2 — First provider end-to-end (Google Calendar)
 
-- [ ] Register `google-calendar` provider in Nango — @integrations  (blocked-by: M0 Nango, M1 schema)
-- [ ] `packages/providers/calendar` adapter + Nango proxy wrapper — @integrations
-- [ ] `apps/workers/sync-gcal` with delta sync (sync tokens) — @integrations
-- [ ] Google push notifications → Pub/Sub → `webhook-ingest` → enrichment queue — @integrations
-- [ ] Enrichment trigger on `app.event` insert + `enrich_event` queue consumer — @memory-background  (blocked-by: `mem.*` schema)
-- [ ] Calendar MVP page (unified grid, no segment filter yet) — @frontend-chat
+- [x] Register `google-calendar` provider in Nango (runbook at `infra/nango/providers/google-calendar.md`; live registration human-gated) — @integrations (f873e41)
+- [x] `packages/providers/calendar` adapter + Nango proxy wrapper — @integrations (f873e41)
+- [x] `apps/workers/sync-gcal` with delta sync (sync tokens) — @integrations (f873e41)
+- [x] Google push notifications → `webhook-ingest` → `sync_delta:gcal` queue; `/webhooks/nango` handles `connection.created` + watch setup — @integrations (f873e41)
+- [x] `enrich_event` queue consumer with deterministic classifier (model-backed path lands in M3 behind the same interface) — @memory-background (e6a8bd4)
+- [x] Unified calendar MVP at `/calendar` + dashboard Today strip + realtime subscription — @frontend-chat (a29f8d2)
 
 ## M3 — Memory network MVP
 

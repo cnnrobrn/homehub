@@ -257,4 +257,82 @@ Three parallel streams now that M1 is done and RLS is trustworthy:
 
 M2-A + M2-B + M2-C can run in parallel — they touch disjoint files. I'll dispatch them one-per-message and review independently. @infra-platform gets a shared dispatch for the two support migrations (0010 sync-gcal metadata, 0011 event_enrichment_preview staging).
 
+## 2026-04-20 — M2-A reviewed & accepted (commit f873e41)
+
+Scope delivered: `@homehub/providers-calendar` with `GoogleCalendarProvider`, real `sync-gcal` worker (full+delta, rate-limit/sync-token-expiry handling, audit writes), `webhook-ingest` routes for `/webhooks/google-calendar` (channel-token auth) and `/webhooks/nango` (HMAC), `/api/integrations/connect` + `disconnectConnectionAction`, real `/settings/connections` page with `ConnectionsTable` + Connect/Disconnect. Worker-runtime Nango client extended with `createConnectSession` + `deleteConnection`. Web-side slim Nango client avoids bundling pino/OTel.
+
+Verified locally: 30 tests in providers/calendar, 10 in sync-gcal, 24 in webhook-ingest, 66 in worker-runtime (up from 29), 34 in apps/web (up from 26) — all green.
+
+Specialist decisions accepted:
+
+1. **`sync.cursor.value` as JSON-in-text** for gcal channels — appropriate for M2 volume. `jsonb` promotion + indexed channel-id column deferred to a later infra pass.
+2. **Disconnect as a server action** (no `/api/integrations/disconnect` route) — correct Next.js CSRF posture.
+3. **Web avoids `@homehub/worker-runtime` import** and uses a slim `apps/web/src/lib/nango/client.ts` instead. Keeps the Next bundle lean.
+4. **Segment sentinel `'system'`** at sync time; enrichment reclassifies. Standing decision.
+5. **Push-channel renewal is "hourly poll if stale" today.** A dedicated watch-renewer worker is a follow-up, to land before we rely on push-only.
+
+Follow-ups tracked, not blocking M2-B/C:
+
+- Promote `sync.cursor.value` to `jsonb` + add `gcal_channel_id` column (+ unique index).
+- Dedicated watch-renewer worker before Google's 7-day push-channel TTL becomes a reliability risk.
+
+## 2026-04-20 — M2-B and M2-C dispatched in parallel
+
+`@memory-background` (M2-B): shallow enrichment for `app.event`. Reads the `enrich_event` queue (sync-gcal already enqueues on upsert), classifies the event's `segment` (`financial|food|fun|social|system`) from title/description/location heuristics, updates `app.event.segment` and `app.event.metadata.enrichment` with version + rationale, audits. Keep it deterministic (regex + keyword map) for M2; real model-backed extraction lands with `mem.*` in M3. Lay the groundwork: `packages/prompts/extraction/event.md` as a living draft; `packages/enrichment` package with a typed `EventClassifier` interface. No `mem.*` writes — that's M3.
+
+`@frontend-chat` (M2-C): unified calendar MVP at `/calendar` (not per-segment yet), dashboard "Today" strip reads from `app.event`. Reads via a new `listEvents` server helper on the authed Supabase client, filtered by household + date range + segment. Respects per-segment grants at the UI level (spec: `can_read_segment`). Realtime subscription stub (Supabase realtime on `app.event`) that re-fetches on change.
+
+## 2026-04-20 — M2-B reviewed & accepted (commit e6a8bd4)
+
+Scope delivered: `@homehub/enrichment` package with `createDeterministicEventClassifier()` (ordered rules: social → financial → food → fun → attendee-fallback → system, tiered confidence), 32 fixture snapshots spanning all five segments, `apps/workers/enrichment` now a real pgmq consumer that reclassifies `app.event.segment`, writes `metadata.enrichment` with version `2026-04-20-deterministic-v1`, and audits every change. `packages/prompts/extraction/event.md` draft + `packages/prompts` workspace slot for M3's runtime prompt loader. No model calls, no `mem.*` writes — both land in M3.
+
+Verified locally: 76 tests in `packages/enrichment`, 14 in `apps/workers/enrichment` (up from 2 stub). Full monorepo test count: 413 tests passing across 22 packages.
+
+Specialist decisions accepted:
+
+1. **First-match ordering social-before-fun** — "birthday party" → social (not fun). Direct assertion test locks it.
+2. **External-attendee social fallback** is the M2 substitute for full `app.person` resolution. M3's model path will replace it with real people lookups.
+3. **Version tag in `metadata.enrichment.version`** — `2026-04-20-deterministic-v1`. M3 will bump the tag so the backfill worker knows which rows to reprocess.
+4. **`@homehub/prompts` workspace stub** with no-op scripts — claims the package slot for M3 without exporting any runtime code. Clean.
+5. **No retries at the classifier tier** — the classifier is pure; a second attempt would produce the same outcome. DLQ on any unrecoverable path. Correct.
+
+Follow-up tracked, not blocking M2-C:
+
+- When M3 lands `mem.*`, swap the classifier path behind a feature flag so the deterministic one stays as the degraded-tier fallback when `withBudgetGuard` denies the model call.
+
+## 2026-04-20 — M2-C dispatched
+
+`@frontend-chat`: unified calendar MVP at `/calendar`. Server-component week/month views backed by a `listEvents({ householdId, from, to, segments })` helper on the authenticated Supabase client (RLS enforces household isolation; UI drops segments the member has `can_read_segment = 'none'` on). Dashboard "Today" strip reads today's events and renders them with per-segment color. `realtime`-subscribe to `app.event` via `@supabase/ssr`'s browser client (client component island) and re-fetch on change. Design tokens already define segment colors; extend if needed. No interactive mutations — read-only v1.
+
+## 2026-04-20 — M2-C reviewed & accepted (commit a29f8d2)
+
+Scope delivered: `/calendar` page (week/month server-rendered, URL-driven cursor/view/segments), `listEvents` server helper with Zod + grant intersection + PostgREST `or()` for null-ends-at handling, dashboard Today strip, realtime subscription with 500ms debounce, segment color tokens (`--segment-*`) wired through Tailwind v4 `@theme`, five new client islands (CalendarNav, ViewToggle, SegmentFilter, DayCellNavButton, RealtimeEventRefresher). 58 tests in apps/web (up from 34). Build: `/calendar` at 6.42 kB / 211 kB first-load.
+
+Specialist decisions accepted:
+
+1. **`segments=none` sentinel** for "explicitly cleared" vs. missing-param for "all readable." Clean. Server intersects with grants either way so a hand-edited URL cannot reveal forbidden segments.
+2. **Local-browser timezone for v1.** Household TZ lands when `Temporal.ZonedDateTime` + household settings wire up. Comment in `range.ts` documents the swap.
+3. **Multi-day events render first-day-only in month view.** Avoids drag-spanning-bar complexity. Week view puts them in the all-day strip. Good MVP call.
+4. **Full re-fetch on realtime change** with 500ms debounce. Diff-apply is a follow-up; the MVP is correct under load.
+
+Follow-ups tracked:
+
+- Diff-apply realtime (avoid re-query on every change).
+- Week-grid overlap resolution (side-by-side columns for concurrent events).
+- Household timezone plumbing (Temporal).
+- Per-segment calendar pages (M5+).
+
+## 2026-04-20 — **M2 COMPLETE**
+
+Commits: f873e41 (gcal + Nango + sync + connections UI), e6a8bd4 (deterministic enrichment), a29f8d2 (calendar MVP + realtime). End-to-end verified path: member connects Google Calendar → sync-gcal upserts → enrich_event classifies segment → /calendar renders. 413+ tests across the tree. Human-gated: OAuth client creation in Google Cloud, live Nango provider registration.
+
+## 2026-04-20 — M3 dispatched (schema-first)
+
+Three parallel streams post-schema:
+
+- `@infra-platform` (M3-A): `mem.*` schema migrations (`node`, `alias`, `edge`, `episode`, `fact`, `fact_candidate`, `pattern`, `rule`, `mention`, `insight`) with bi-temporal columns on `mem.fact` (`valid_from`, `valid_to`, `recorded_at`, `superseded_at`), `pgvector` embedding column on `mem.node` + `mem.episode`, RLS, pgTAP tests — ≥3 per table. Dispatched first; the other two streams block on schema lands.
+- `@memory-background` (M3-B, blocked-on M3-A): extraction prompts v1 via `@homehub/prompts` runtime loader, model-backed event classifier behind the existing `EventClassifier` interface (feature-flagged; deterministic stays as the degraded-tier fallback), reconciler (candidate → canonical promotion + conflict routing), node-regen worker (debounced), `query_memory` implementation (layer-aware + hybrid + `as_of` + conflict surfacing). Consolidator + reflector land in M3.7.
+- `@integrations` (M3-C, blocked-on M3-B `query_memory`): `mcp-homehub-core` tools — `query_memory`, `list_events`, `get_node`, `get_episode_timeline`. Replace the M0-E MCP stub with real tool registrations.
+- `@frontend-chat` (M3-D, blocked-on M3-B `query_memory`): graph browser page (search + node doc + facts/episodes/patterns panels + evidence drawer), per-fact affordances (confirm/edit/dispute/delete/show evidence), node merge/delete/pin.
+
 
