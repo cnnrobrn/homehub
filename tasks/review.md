@@ -516,4 +516,41 @@ Single stream (overwhelmingly @integrations-led; memory-background adds the emai
 - `@memory-background` (M4-B, lands after M4-A so the queue exists): `packages/prompts/extraction/email.md` prompt + schema covering receipts / reservations / bills / invites / shipping, extractor + handler for `enrich_email` queue, reservation → calendar-event suggestion path (writes draft `app.suggestion` rows of kind `add_to_calendar`), audit trail.
 - `@frontend-chat` (M4-C, lands with M4-A): privacy-preview dialog before first Gmail ingestion — shows categories to be labeled + a filter preview + opt-out per category. Writes the member's opt-ins to `sync.provider_connection.metadata.email_categories`.
 
+## 2026-04-20 — M4 reviewed & accepted
+
+- **M4-A (a7d1985)**: `@homehub/providers-email` (`GoogleMailProvider` with minimum scopes + query composition + rate-limit/history-id-expired error mapping), real `sync-gmail` worker with feature-flagged persist + attachment storage + label + `enrich_email` enqueue, `/webhooks/google-mail/pubsub` (shared-secret gate today, full JWT verification deferred) + extended `/webhooks/nango` for `connection.created/deleted` on `google-mail`, `/api/integrations/connect?provider=google-mail` + `EmailConnectDialog` privacy preview with live query-string rendering, `/settings/connections` Gmail row.
+- **Migration 0012/0013 (0c78ab6)**: `app.email` + `app.email_attachment` + `sync.provider_connection.metadata jsonb` + `email_attachments` storage bucket + RLS + pgTAP (+6 per table, 35 files total). Types regenerated.
+- **M4-B (2366e32)**: `emailExtractionSchema` in `@homehub/prompts` with 5 few-shot examples, `createKimiEmailExtractor` in `@homehub/enrichment` (version `2026-04-20-email-v1`), real `enrich_email` handler (budget-gated, full body fetched via new `EmailProvider.fetchFullBody`, falls back to `body_preview`), reservation → `app.suggestion` path with segment heuristic (food/fun/social) + dedupe via pre-query on `(household_id, kind, preview.source_email_id, preview.starts_at)`.
+
+Specialist decisions accepted:
+
+1. **Feature flag default OFF** for `HOMEHUB_EMAIL_INGESTION_ENABLED`. Operator flips when comfortable. Standing decision.
+2. **Full JWT verification deferred** on Pub/Sub route — shared-secret token gate for v1, JWKS verification tracked as @integrations follow-up.
+3. **`household` subject → `category` node type** (canonical_name='household') for shipment-tracking facts. Clean workaround for the type enum; revisit if it proliferates.
+4. **Suggestion segment heuristic** (food/fun/social from category + title + location keywords). Simple, tunable, correct for v1.
+5. **Body preview → full body swap in extractor only.** Full body never persisted; 2KB preview stays retention-controlled. Privacy intent honored.
+
+Follow-ups tracked:
+
+- Full Pub/Sub JWT verification + JWKS caching.
+- Watch-renewal cron (Gmail watch expires after 7 days).
+- Settings UI to edit email category opt-ins post-connection.
+- Content-hash dedupe for attachments across household members.
+- Partial unique index on `(source_type='email', source_id, metadata->>kind)` for episode replay-safety.
+- M9 approval-flow UI for the `app.suggestion` cards.
+
+## 2026-04-20 — **M4 COMPLETE**
+
+Three commits (`a7d1985`, `0c78ab6`, `2366e32`). End-to-end verified: member → Connect Gmail → privacy preview → OAuth → Nango connection.created → `sync_full:gmail` enqueued → sync-gmail labels `HomeHub/Ingested` + upserts `app.email` + uploads attachments → `enrich_email` enqueued → extractor writes `mem.episode` + `mem.fact_candidate` + `app.suggestion` (add_to_calendar for reservations/invites). Human-gated: Google OAuth client issuance + Nango provider registration + Railway `HOMEHUB_EMAIL_INGESTION_ENABLED=true` flip.
+
+## 2026-04-20 — M5 dispatched
+
+Three streams, sequenced:
+
+- `@integrations` (M5-A, dispatched first): register one budgeting provider in Nango (YNAB preferred per `specs/03-integrations/budgeting.md`; Monarch if YNAB access is harder; fallback runbook), `packages/providers/financial` adapter + Nango proxy wrapper (unified interface: `listAccounts`, `listTransactions`, `listBudgets`), `apps/workers/sync-financial` worker (hourly poll, idempotent upserts to `app.transaction` + `app.account` + `app.budget`), email-receipt ↔ provider-transaction reconciler (a new worker in `apps/workers/reconciler` wake-up path — it's been a stub; time to light it up for financial, matching the sibling reconciler pattern).
+- `@memory-background` (M5-B, parallel to M5-A once provider adapter interface ships): financial extraction additions (extraction prompts can reuse event/email paths — no new prompt), weekly/monthly financial summary template + renderer in `packages/summaries` (new package), financial alert detectors in `packages/alerts/financial/*.ts` (`budget_over_threshold`, `payment_failed`, `large_transaction`, `subscription_price_increase`, `account_stale`, `duplicate_charge`, `new_recurring_charge`), subscription detector writing `mem.node` type `subscription` + `app.transaction.metadata.recurring_signal`.
+- `@frontend-chat` (M5-C, lands after M5-A + M5-B): `/financial` segment dashboard, `/financial/transactions` ledger (filters + search + member column), `/financial/accounts` (balances + health), `/financial/budgets` (category progress), `/financial/subscriptions` (detected recurring charges + cancel suggestions stub for M9), `/financial/calendar` wired to the existing calendar via segment filter.
+
+M5-A first since adapter + sync worker are load-bearing. Once those land and types regenerate, M5-B + M5-C can run in parallel.
+
 

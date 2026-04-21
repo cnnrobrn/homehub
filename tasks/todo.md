@@ -73,12 +73,13 @@
 
 ## M4 — Gmail ingestion
 
-- [ ] Register `google-mail` in Nango (minimum scopes) — @integrations
-- [ ] `sync-gmail` worker (watch + history id; server-side filter) — @integrations
-- [ ] Attachment handling → Supabase Storage — @integrations
-- [ ] Extraction prompt for email (receipt/reservation/bill/invite/shipping) — @memory-background
-- [ ] Reservation → calendar-event suggestion (Gmail-sourced) — @memory-background
-- [ ] Privacy preview UI for first-time ingestion — @frontend-chat
+- [x] Register `google-mail` in Nango (runbook at `infra/nango/providers/google-mail.md`; live registration human-gated) — @integrations (a7d1985)
+- [x] `sync-gmail` worker with Gmail watch + history id deltas + feature-flagged persist (default OFF until operator flips) — @integrations (a7d1985)
+- [x] Attachment handling → Supabase Storage `email_attachments` bucket with household-scoped RLS — @integrations (a7d1985, migration 0c78ab6)
+- [x] Migration 0012 + 0013: `app.email`, `app.email_attachment`, `sync.provider_connection.metadata`, storage bucket + RLS + pgTAP — @infra-platform (0c78ab6)
+- [x] Extraction prompt + extractor + `enrich_email` handler (receipt/reservation/bill/invite/shipment all five categories) — @memory-background (2366e32)
+- [x] Reservation → `add_to_calendar` `app.suggestion` pipeline (segment heuristic + dedupe) — @memory-background (2366e32)
+- [x] Privacy preview dialog with live filter preview + opt-in checkboxes — @integrations (a7d1985)
 
 ## M5 — Financial segment
 
