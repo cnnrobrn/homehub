@@ -208,3 +208,54 @@ jobs:
         if: always()
         working-directory: packages/db
         run: supabase stop --no-backup || true
+
+  rls-tests:
+    name: RLS tests
+    runs-on: ubuntu-latest
+    # Runs the pgTAP-style RLS assertion suite in
+    # `packages/db/tests/rls/` against a freshly-booted local stack.
+    # Parallel with migration-lint (they share the same install pattern
+    # but do not share state — each job gets its own runner).
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install Supabase CLI
+        run: |
+          set -euo pipefail
+          curl -fsSL -o /tmp/supabase.deb \
+            "https://github.com/supabase/cli/releases/download/v${SUPABASE_CLI_VERSION}/supabase_${SUPABASE_CLI_VERSION}_linux_amd64.deb"
+          sudo dpkg -i /tmp/supabase.deb
+          rm /tmp/supabase.deb
+          supabase --version
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Start local Supabase stack
+        working-directory: packages/db
+        # `supabase start` applies every migration under supabase/migrations
+        # in order, so by the time it returns the schema is ready for tests.
+        run: supabase start --ignore-health-check
+
+      - name: Run RLS tests
+        working-directory: packages/db
+        # `db:test` loads _helpers.sql + _setup.sql and runs each
+        # *_test.sql. Any assertion failure raises and psql exits non-zero.
+        run: pnpm db:test
+
+      - name: Stop local Supabase stack
+        if: always()
+        working-directory: packages/db
+        run: supabase stop --no-backup || true

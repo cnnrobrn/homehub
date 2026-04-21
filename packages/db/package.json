@@ -29,6 +29,7 @@
     "db:reset:local": "echo 'WARNING: destroying local Supabase state and re-applying migrations from scratch. Local only. Ctrl-C within 3s to abort.' && sleep 3 && supabase db reset --local",
     "db:diff": "supabase db diff",
     "db:lint": "supabase db lint --local --level warning --fail-on warning",
+    "db:test": "bash scripts/rls-test.sh",
     "db:types": "supabase gen types typescript --local --schema app,mem,sync,audit > src/types.generated.ts"
   },
   "devDependencies": {
