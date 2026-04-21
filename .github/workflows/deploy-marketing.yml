@@ -48,7 +48,7 @@ env:
   # startup. See ci.yml for the longer comment.
   NODE_VERSION: '20.19.0'
   # pnpm version is taken from the root package.json `packageManager`
-  # field. pnpm/action-setup@v4 reads that automatically — specifying
+  # field. pnpm/action-setup@v6 reads that automatically — specifying
   # `with.version` here would clash and fail with
   # "ERR_PNPM_BAD_PM_VERSION: Multiple versions of pnpm specified".
   # Evaluated once at workflow start. Used to skip the Cloudflare deploy
@@ -71,7 +71,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
         uses: actions/setup-node@v4
