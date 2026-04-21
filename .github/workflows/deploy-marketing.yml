@@ -82,6 +82,7 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           packageManager: pnpm
+          wranglerVersion: '4'
           workingDirectory: apps/marketing
           command: deploy
 
@@ -92,8 +93,8 @@ jobs:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           packageManager: pnpm
+          wranglerVersion: '4'
           workingDirectory: apps/marketing
-          # `versions upload` stages a new version without routing
-          # traffic to it — returns a preview URL of the form
-          # `<version-tag>-homehub-marketing.connor-972.workers.dev`.
-          command: versions upload --message "PR #${{ github.event.pull_request.number }} @ ${{ github.sha }}"
+          # Quote the full command scalar so YAML does not treat `#` as a
+          # comment and truncate the message before it reaches Wrangler.
+          command: 'versions upload --message "PR ${{ github.event.pull_request.number }} @ ${{ github.sha }}"'
