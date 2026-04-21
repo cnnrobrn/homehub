@@ -21,6 +21,22 @@ const nextConfig: NextConfig = {
   reactStrictMode: true,
   typedRoutes: true,
   outputFileTracingRoot: path.join(__dirname, '..', '..'),
+  // Compile workspace packages from their TypeScript sources instead
+  // of their built `dist/` outputs. Without this the build required
+  // every `@homehub/*` package to be `tsc`-built first, which the CI
+  // web-build step wasn't doing and local dev never relied on.
+  transpilePackages: [
+    '@homehub/approval-flow',
+    '@homehub/auth-server',
+    '@homehub/db',
+    '@homehub/dlq-admin',
+    '@homehub/providers-email',
+    '@homehub/query-memory',
+    '@homehub/shared',
+    '@homehub/tools',
+    '@homehub/worker-foreground-agent',
+    '@homehub/worker-runtime',
+  ],
   // The repo's root flat config already runs ESLint across the whole
   // monorepo in CI (`pnpm lint`). `next build`'s built-in lint pass
   // tries to run its own legacy `.eslintrc` setup and fights the flat

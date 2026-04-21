@@ -19,6 +19,7 @@ const calendarSrc = fileURLToPath(new URL('../providers/calendar/src/index.ts', 
 const emailSrc = fileURLToPath(new URL('../providers/email/src/index.ts', import.meta.url));
 const financialSrc = fileURLToPath(new URL('../providers/financial/src/index.ts', import.meta.url));
 const grocerySrc = fileURLToPath(new URL('../providers/grocery/src/index.ts', import.meta.url));
+const promptsSrc = fileURLToPath(new URL('../prompts/src/index.ts', import.meta.url));
 
 export default defineConfig({
   resolve: {
@@ -28,6 +29,7 @@ export default defineConfig({
       '@homehub/worker-runtime': runtimeSrc,
       '@homehub/approval-flow': approvalFlowSrc,
       '@homehub/enrichment': enrichmentSrc,
+      '@homehub/prompts': promptsSrc,
       '@homehub/providers-calendar': calendarSrc,
       '@homehub/providers-email': emailSrc,
       '@homehub/providers-financial': financialSrc,

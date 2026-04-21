@@ -185,11 +185,9 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build web app
-        # `...@homehub/web` builds the target plus every workspace
-        # dependency it transitively needs, in topological order. Plain
-        # `--filter @homehub/web` skips the deps, so Next fails on
-        # unbuilt `packages/*/dist/index.js` entries.
-        run: pnpm --filter '...@homehub/web' build
+        # Deps are compiled from source via `transpilePackages` in
+        # next.config.ts, so no pre-build pass is needed.
+        run: pnpm --filter @homehub/web build
 
   nango-compose-validate:
     name: Nango compose validate
