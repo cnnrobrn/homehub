@@ -83,14 +83,15 @@
 
 ## M5 — Financial segment
 
-- [ ] Register first budgeting provider in Nango (YNAB preferred) — @integrations
-- [ ] `packages/providers/financial` adapter — @integrations
-- [ ] `sync-financial` worker — @integrations
-- [ ] Reconciler (email-receipt ↔ provider-transaction) — @integrations
-- [ ] Financial summary template (weekly/monthly) — @memory-background
-- [ ] Financial alerts: `budget_over_threshold`, `payment_failed`, `large_transaction`, `subscription_price_increase`, `account_stale`, `duplicate_charge`, `new_recurring_charge` — @memory-background
-- [ ] Subscription detector — @memory-background
-- [ ] Financial dashboard + ledger + accounts + budgets + subscriptions pages — @frontend-chat
+- [x] Register YNAB provider in Nango (runbook `infra/nango/providers/ynab.md`; live reg human-gated) — @integrations (6068252)
+- [x] `packages/providers/financial` adapter + `YnabProvider` + milliunit conversion — @integrations (6068252)
+- [x] `sync-financial` worker (full/delta with `server_knowledge` cursor, cron at `:00`) — @integrations (6068252)
+- [x] Email-receipt ↔ provider-transaction reconciler (Jaro-Winkler similarity, ±$1/±3d tolerances, ambiguous/shadowed/match states) — @integrations (6068252)
+- [x] Email-receipt → `app.transaction` write path (prompt bumped to v2) — @memory-background (04c84c1)
+- [x] `packages/summaries` + `apps/workers/summaries` deterministic weekly/monthly financial summary — @memory-background (04c84c1)
+- [x] `packages/alerts` seven financial detectors + `apps/workers/alerts` worker (dedupe via context jsonb until 0014 migration lands) — @memory-background (04c84c1)
+- [x] Subscription detector writing `mem.node type='subscription'` + tagging transactions — @memory-background (04c84c1)
+- [x] `/financial` UI: dashboard / transactions / accounts / budgets / subscriptions / calendar / summaries / alerts with realtime refresher — @frontend-chat (c26cb9a)
 
 ## M6 — Food segment
 

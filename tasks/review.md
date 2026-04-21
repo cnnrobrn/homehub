@@ -553,4 +553,39 @@ Three streams, sequenced:
 
 M5-A first since adapter + sync worker are load-bearing. Once those land and types regenerate, M5-B + M5-C can run in parallel.
 
+## 2026-04-20 — M5-A / M5-B / M5-C all accepted
+
+- **M5-A (6068252)**: `@homehub/providers-financial` with `YnabProvider`, real `sync-financial` worker (full/delta with `server_knowledge` cursor, Railway hourly cron), real `apps/workers/reconciler` with Jaro-Winkler email↔provider matching (±$1.00, ±3d, similarity > 0.8), `/api/integrations/connect?provider=ynab`, YNAB runbook. Feature flag `HOMEHUB_FINANCIAL_INGESTION_ENABLED=true` default.
+- **M5-B (04c84c1)**: email-receipt → `app.transaction` write path (prompt v2), `@homehub/summaries` with `renderFinancialSummary`, real `apps/workers/summaries` with weekly/monthly Railway cron, `@homehub/alerts` with seven detectors (budget_over_threshold, payment_failed, large_transaction, subscription_price_increase, account_stale, duplicate_charge, new_recurring_charge), real `apps/workers/alerts` with subscription detector pre-step (upserts `mem.node type='subscription'`, tags transactions via `metadata.recurring_signal`).
+- **M5-C (c26cb9a)**: `/financial` route tree (dashboard + transactions + accounts + budgets + subscriptions + calendar + summaries + alerts), server helpers in `apps/web/src/lib/financial/`, server actions (dismissAlert, proposeCancelSubscription stub), realtime refresher on `app.transaction + app.account + app.alert`.
+
+Standing decisions:
+
+1. **Dedupe metadata in `context` jsonb** until migration 0014 adds `kind` + `dedupe_key` columns on `app.alert`. Code is the only path to change when the migration lands.
+2. **`dismissAlertAction` uses service-role** since no member-level RLS policy exists yet on `app.alert.update`. Audit captures actor.
+3. **Next-charge projection** from `mem.node.metadata.cadence` + `metadata.last_charged_at`. Pattern will extend naturally once we track actual subscription node attributes.
+
+Follow-ups tracked:
+
+- Migration 0014 promoting alert dedupe to columns + partial index.
+- Migration 0015+ for `app.transaction(household_id, source, source_id)` cross-household uniqueness + `app.budget(household_id, name, category)` uniqueness.
+- Swap `<pre>` summary rendering for shared `<Markdown />` primitive.
+- Member RLS policy on `app.alert.update` + swap `dismissAlertAction` to authed client.
+- Monarch + Plaid adapters under the same `FinancialProvider` interface.
+- Apps/marketing scaffold (untracked) is external to my agent loops — human-owned; noted but not fixed.
+
+## 2026-04-20 — **M5 COMPLETE**
+
+Three commits (`6068252`, `04c84c1`, `c26cb9a`). End-to-end: member connects YNAB → sync-financial upserts accounts+transactions+budgets → alerts worker nightly writes app.alert rows + detects subscriptions → summaries worker weekly renders markdown → `/financial` UI reads all of it + realtime refresh.
+
+## 2026-04-20 — M6 + M7 + M8 dispatched in parallel
+
+All three segments fan out with disjoint file trees. No specialist touches `apps/web/src/components/shell/AppSidebar.tsx` (coordinator flips the three links in a single close-commit).
+
+- **M6 Food** (all four specialists): `@integrations` (grocery adapter + sync-grocery worker + Nango register), `@memory-background` (pantry-diff worker, food alerts `pantry_expiring` / `meal_plan_gap` / `grocery_order_issue`, meal-swap/grocery-order/new-dish suggestion generators, food summary template), `@frontend-chat` (meal planner week grid + drag-drop, pantry UI, groceries UI with draft/placed states, dishes library, food draft-write tools `draft_meal_plan` + `propose_grocery_order`).
+- **M7 Fun** (primarily @memory-background + @frontend-chat): trip parent/child modeling in `app.event.metadata`, conflicting-RSVPs detector, outing-idea + trip-prep + book-reservation suggestion generators, `/fun` UI (trips, queue, calendar filter, summaries, alerts).
+- **M8 Social** (primarily @memory-background + @frontend-chat): birthday/anniversary materializer (writes `app.event` for mem.fact `has_birthday`), absence + reciprocity detectors, reach-out + gift-idea + host-back suggestion generators, group nodes (`mem.node type='group'`), `/social` UI (person directory, person detail pages with memory graph link, reciprocity view).
+
+Each dispatch is self-contained: its own `packages/alerts/<segment>/*`, `packages/suggestions/<segment>/*`, `apps/web/src/app/(app)/<segment>/*`, `apps/web/src/components/<segment>/*`, `apps/web/src/app/actions/<segment>.ts`. No shared writes to AppSidebar or root package.json (unless pnpm-lock.yaml needs an update — acceptable). Running all three in parallel.
+
 
