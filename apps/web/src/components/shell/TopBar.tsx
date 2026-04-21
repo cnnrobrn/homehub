@@ -13,7 +13,7 @@
 import type { Role } from '@homehub/auth-server';
 
 import { listHouseholdsAction } from '@/app/actions/household';
-import { CommandKPlaceholder } from '@/components/shell/CommandKPlaceholder';
+import { CommandKLauncher } from '@/components/shell/CommandKLauncher';
 import { HouseholdSwitcher } from '@/components/shell/HouseholdSwitcher';
 import { UserMenu } from '@/components/shell/UserMenu';
 
@@ -46,7 +46,7 @@ export async function TopBar({ householdName, householdId, userEmail, memberRole
         }))}
       />
       <div className="flex-1" />
-      <CommandKPlaceholder />
+      <CommandKLauncher householdId={householdId} />
       <UserMenu email={userEmail} role={memberRole} />
     </header>
   );

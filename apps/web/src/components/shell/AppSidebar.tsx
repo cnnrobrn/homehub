@@ -12,6 +12,7 @@ import {
   CircleDollarSign,
   Cog,
   LayoutDashboard,
+  MessageSquare,
   PartyPopper,
   Users,
   Utensils,
@@ -32,6 +33,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" />, href: '/' },
+  { label: 'Chat', icon: <MessageSquare className="h-4 w-4" />, href: '/chat' },
   { label: 'Calendar', icon: <Calendar className="h-4 w-4" />, href: '/calendar' },
   {
     label: 'Financial',

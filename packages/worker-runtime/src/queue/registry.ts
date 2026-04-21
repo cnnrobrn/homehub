@@ -15,6 +15,19 @@ export const queueNames = {
   enrichEmail: 'enrich_email',
   enrichTransaction: 'enrich_transaction',
   enrichMeal: 'enrich_meal',
+  /**
+   * `enrich_conversation` — fired once per **member** turn in a chat
+   * conversation. The member's message is a likely source of teachable
+   * facts; the enrichment worker routes those through the normal
+   * candidate pipeline. Handler lives with @memory-background (M3.5-B).
+   */
+  enrichConversation: 'enrich_conversation',
+  /**
+   * `rollup_conversation` — fired after a substantive assistant turn
+   * to enqueue the conversation→episode rollup job. Also owned by
+   * @memory-background (M3.5-B).
+   */
+  rollupConversation: 'rollup_conversation',
   nodeRegen: 'node_regen',
   reconcileTransaction: 'reconcile_transaction',
   pantryDiff: 'pantry_diff',
@@ -51,6 +64,8 @@ export const staticQueueNames: readonly string[] = [
   queueNames.enrichEmail,
   queueNames.enrichTransaction,
   queueNames.enrichMeal,
+  queueNames.enrichConversation,
+  queueNames.rollupConversation,
   queueNames.nodeRegen,
   queueNames.reconcileTransaction,
   queueNames.pantryDiff,

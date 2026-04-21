@@ -25,6 +25,10 @@ const authServerSrc = fileURLToPath(
 const queryMemorySrc = fileURLToPath(
   new URL('../../packages/query-memory/src/index.ts', import.meta.url),
 );
+const toolsSrc = fileURLToPath(new URL('../../packages/tools/src/index.ts', import.meta.url));
+const foregroundAgentSrc = fileURLToPath(
+  new URL('../workers/foreground-agent/src/handler.ts', import.meta.url),
+);
 const workerRuntimeSrc = fileURLToPath(
   new URL('../../packages/worker-runtime/src/index.ts', import.meta.url),
 );
@@ -38,6 +42,8 @@ export default defineConfig({
       '@homehub/db': dbSrc,
       '@homehub/auth-server': authServerSrc,
       '@homehub/query-memory': queryMemorySrc,
+      '@homehub/tools': toolsSrc,
+      '@homehub/worker-foreground-agent': foregroundAgentSrc,
       '@homehub/worker-runtime': workerRuntimeSrc,
     },
   },

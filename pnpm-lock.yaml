@@ -118,6 +118,12 @@ importers:
       '@homehub/shared':
         specifier: workspace:*
         version: link:../../packages/shared
+      '@homehub/tools':
+        specifier: workspace:*
+        version: link:../../packages/tools
+      '@homehub/worker-foreground-agent':
+        specifier: workspace:*
+        version: link:../workers/foreground-agent
       '@homehub/worker-runtime':
         specifier: workspace:*
         version: link:../../packages/worker-runtime
@@ -336,12 +342,21 @@ importers:
       '@homehub/db':
         specifier: workspace:*
         version: link:../../../packages/db
+      '@homehub/query-memory':
+        specifier: workspace:*
+        version: link:../../../packages/query-memory
       '@homehub/shared':
         specifier: workspace:*
         version: link:../../../packages/shared
+      '@homehub/tools':
+        specifier: workspace:*
+        version: link:../../../packages/tools
       '@homehub/worker-runtime':
         specifier: workspace:*
         version: link:../../../packages/worker-runtime
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -709,6 +724,31 @@ importers:
 
   packages/shared:
     dependencies:
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
+  packages/tools:
+    dependencies:
+      '@homehub/db':
+        specifier: workspace:*
+        version: link:../db
+      '@homehub/query-memory':
+        specifier: workspace:*
+        version: link:../query-memory
+      '@homehub/shared':
+        specifier: workspace:*
+        version: link:../shared
+      '@homehub/worker-runtime':
+        specifier: workspace:*
+        version: link:../worker-runtime
       zod:
         specifier: ^4.3.6
         version: 4.3.6

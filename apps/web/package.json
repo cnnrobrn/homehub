@@ -18,6 +18,8 @@
     "@homehub/db": "workspace:*",
     "@homehub/query-memory": "workspace:*",
     "@homehub/shared": "workspace:*",
+    "@homehub/tools": "workspace:*",
+    "@homehub/worker-foreground-agent": "workspace:*",
     "@homehub/worker-runtime": "workspace:*",
     "@nangohq/node": "^0.70.1",
     "@hookform/resolvers": "^3.9.1",

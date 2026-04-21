@@ -4,6 +4,15 @@
   "private": true,
   "description": "Runs the per-turn conversation agent loop (ingest, context assembly, model call, tool orchestration, post-turn memory writes). Owned by @frontend-chat; fleshed out in M3.5.",
   "type": "module",
+  "main": "./dist/handler.js",
+  "types": "./dist/handler.d.ts",
+  "exports": {
+    ".": {
+      "types": "./src/handler.ts",
+      "import": "./dist/handler.js",
+      "default": "./dist/handler.js"
+    }
+  },
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/main.ts",
@@ -13,8 +22,11 @@
   },
   "dependencies": {
     "@homehub/db": "workspace:*",
+    "@homehub/query-memory": "workspace:*",
     "@homehub/shared": "workspace:*",
-    "@homehub/worker-runtime": "workspace:*"
+    "@homehub/tools": "workspace:*",
+    "@homehub/worker-runtime": "workspace:*",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
