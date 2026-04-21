@@ -1,0 +1,19 @@
+node_modules
+pnpm-lock.yaml
+dist
+build
+coverage
+.next
+.turbo
+.vercel
+*.tsbuildinfo
+supabase/.temp
+supabase/.branches
+.husky/_
+
+# Spec + task markdown: owned by the coordinator, not subject to
+# the code formatter's line-length/whitespace rules.
+spec.md
+specs/
+tasks/
+scripts/agents/
