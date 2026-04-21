@@ -335,4 +335,24 @@ Three parallel streams post-schema:
 - `@integrations` (M3-C, blocked-on M3-B `query_memory`): `mcp-homehub-core` tools — `query_memory`, `list_events`, `get_node`, `get_episode_timeline`. Replace the M0-E MCP stub with real tool registrations.
 - `@frontend-chat` (M3-D, blocked-on M3-B `query_memory`): graph browser page (search + node doc + facts/episodes/patterns panels + evidence drawer), per-fact affordances (confirm/edit/dispute/delete/show evidence), node merge/delete/pin.
 
+## 2026-04-20 — M3-A reviewed & accepted (commit ef5d5f0)
+
+Scope delivered: `mem.*` schema in two forward-only migrations (0010 core — node/alias/edge/mention/episode + triggers; 0011 facts — fact/fact_candidate/pattern/rule/insight). 10 tables, 18 indexes (including ivfflat pgvector on `mem.node.embedding` + `mem.episode.embedding` with `lists=100`), 15 RLS policies, 10 new pgTAP test files (33 total across the suite). Shared memory-type enums exported from `@homehub/shared`. `packages/db/src/types.generated.ts` regenerated; all 22 workspace packages still typecheck clean.
+
+Specialist decisions accepted:
+
+1. **`mem.alias.household_id` as NOT NULL column + BEFORE-INSERT backfill trigger.** Keeps RLS single-table without cross-table joins. Good.
+2. **Curated-column enforcement via BEFORE-UPDATE trigger.** Correct — RLS `with check` can't compare OLD/NEW so column-level restrictions can't be pure policies. Standing decision.
+3. **ivfflat `lists=100`.** Sensible for <100k nodes. Revisit during M10 ops if recall drifts at scale.
+4. **`mem.fact_candidate` nullability relaxed** vs. `mem.fact` (subject_node_id/confidence/valid_from nullable) — matches the extractor writing partially-resolved rows before reconciliation. Good.
+5. **`mem.mention` row_table has no FK.** Deliberate — it points at arbitrary source tables (`app.event`, `app.transaction`, `app.email`). M3-B worker validates the allowed `row_table` set.
+6. **`mem.node_revision` deferred.** Spec's open question leans yes but not immediately load-bearing. Re-visit when M3-B surfaces a debugging need.
+
+Follow-ups tracked for M3-B:
+
+- Reconciler must atomically set `superseded_at + superseded_by` when promoting a conflicting candidate. Optional check constraint pairing those two is worth re-evaluating once reconciler patterns are clear.
+- `mem.edge` JSON-append to `evidence` + `weight` increment on `(household_id, src_id, dst_id, type)` conflict is the expected upsert semantics.
+
+M3-A unblocks @memory-background (M3-B) and, via M3-B's `query_memory`, @integrations (M3-C) and @frontend-chat (M3-D).
+
 

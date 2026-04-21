@@ -40,8 +40,8 @@
 
 ## M3 — Memory network MVP
 
-- [ ] `mem.*` schema migrations (node, edge, episode, fact, fact_candidate, pattern, rule, mention, insight, alias) + bi-temporal columns — @infra-platform
-- [ ] RLS + tests for `mem.*` — @infra-platform
+- [x] `mem.*` schema migrations (node, edge, episode, fact, fact_candidate, pattern, rule, mention, insight, alias) + bi-temporal columns + pgvector indexes — @infra-platform (ef5d5f0)
+- [x] RLS + tests for `mem.*` (10 tables, 15 policies, 33 total pgTAP files in the suite) — @infra-platform (ef5d5f0)
 - [ ] Extraction prompts v1 (event, email, transaction, meal, conversation) — @memory-background
 - [ ] Enrichment worker (Kimi K2 via OpenRouter, JSON mode, schema-validated) — @memory-background
 - [ ] Reconciler: candidate → canonical promotion; conflict routing — @memory-background
