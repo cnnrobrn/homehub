@@ -31,3 +31,18 @@ export {
 export { addDays, addHours, addMinutes, fromIso, now, toIso } from './time.js';
 
 export { formatMoney, fromCents, toCents, type Cents } from './money.js';
+
+export {
+  CANDIDATE_STATUSES,
+  CONFLICT_STATUSES,
+  EDGE_TYPES,
+  EPISODE_SOURCE_TYPES,
+  FACT_SOURCES,
+  NODE_TYPES,
+  type CandidateStatus,
+  type ConflictStatus,
+  type EdgeType,
+  type EpisodeSourceType,
+  type FactSource,
+  type NodeType,
+} from './memory/node-types.js';

@@ -214,3 +214,107 @@ insert into app.model_calls (id, household_id, task, model, input_tokens, output
   ('a0000018-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
    'enrich_event', 'kimi-k2', 100, 50, 0.001234)
 on conflict (id) do nothing;
+
+-- -------- mem.node -----------------------------------------------------
+-- One canonical node per household so cross-household denial tests have
+-- symmetric targets. Household A gets a second node (ingredient) so the
+-- edge fixture has two nodes to connect.
+insert into mem.node (id, household_id, type, canonical_name) values
+  ('a0000020-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'dish', 'Chicken Tikka Masala'),
+  ('a0000021-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'ingredient', 'Paneer'),
+  ('b0000020-0000-0000-0000-000000000000', 'bbbbbbb1-0000-0000-0000-000000000000',
+   'dish', 'Beef Stew')
+on conflict (id) do nothing;
+
+-- -------- mem.alias ----------------------------------------------------
+insert into mem.alias (id, household_id, node_id, alias, source) values
+  ('a0000022-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'a0000020-0000-0000-0000-000000000000', 'CTM', 'extracted'),
+  ('b0000022-0000-0000-0000-000000000000', 'bbbbbbb1-0000-0000-0000-000000000000',
+   'b0000020-0000-0000-0000-000000000000', 'Stew', 'extracted')
+on conflict (id) do nothing;
+
+-- -------- mem.edge -----------------------------------------------------
+insert into mem.edge (id, household_id, src_id, dst_id, type) values
+  ('a0000023-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'a0000020-0000-0000-0000-000000000000', 'a0000021-0000-0000-0000-000000000000',
+   'contains')
+on conflict (id) do nothing;
+
+-- -------- mem.mention --------------------------------------------------
+insert into mem.mention (id, household_id, node_id, row_table, row_id) values
+  ('a0000024-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'a0000020-0000-0000-0000-000000000000', 'app.meal',
+   'a0000008-0000-0000-0000-000000000000')
+on conflict (id) do nothing;
+
+-- -------- mem.episode --------------------------------------------------
+insert into mem.episode
+  (id, household_id, title, occurred_at, source_type, source_id)
+values
+  ('a0000025-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'Dinner with the Garcias', now() - interval '1 day', 'meal',
+   'a0000008-0000-0000-0000-000000000000'),
+  ('b0000025-0000-0000-0000-000000000000', 'bbbbbbb1-0000-0000-0000-000000000000',
+   'Bob Family Dinner', now() - interval '1 day', 'meal',
+   '00000000-0000-0000-0000-000000000001')
+on conflict (id) do nothing;
+
+-- -------- mem.fact -----------------------------------------------------
+insert into mem.fact
+  (id, household_id, subject_node_id, predicate, object_value,
+   confidence, valid_from, source)
+values
+  ('a0000026-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'a0000020-0000-0000-0000-000000000000', 'contains',
+   '["paneer"]'::jsonb, 0.92, now() - interval '30 days', 'extraction'),
+  ('b0000026-0000-0000-0000-000000000000', 'bbbbbbb1-0000-0000-0000-000000000000',
+   'b0000020-0000-0000-0000-000000000000', 'contains',
+   '["beef"]'::jsonb, 0.88, now() - interval '30 days', 'extraction')
+on conflict (id) do nothing;
+
+-- -------- mem.fact_candidate -------------------------------------------
+insert into mem.fact_candidate
+  (id, household_id, subject_node_id, predicate, object_value,
+   confidence, valid_from, source, status)
+values
+  ('a0000027-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'a0000020-0000-0000-0000-000000000000', 'prefers_spice',
+   '"medium"'::jsonb, 0.6, now() - interval '2 days', 'extraction', 'pending')
+on conflict (id) do nothing;
+
+-- -------- mem.pattern --------------------------------------------------
+insert into mem.pattern
+  (id, household_id, kind, description, confidence, sample_size,
+   observed_from, observed_to)
+values
+  ('a0000028-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'temporal', 'Alice cooks on Sunday evenings', 0.8, 6,
+   now() - interval '60 days', now())
+on conflict (id) do nothing;
+
+-- -------- mem.rule -----------------------------------------------------
+-- Alice (owner, house A) authors a rule. Bob's (house B) rule used for
+-- cross-household denial tests.
+insert into mem.rule
+  (id, household_id, author_member_id, description, predicate_dsl)
+values
+  ('a0000029-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   'aaaaaaa1-1111-0000-0000-000000000000',
+   'No grocery orders after 9pm on weekdays',
+   '{"segment":"food","condition":"weekday_late_evening"}'::jsonb),
+  ('b0000029-0000-0000-0000-000000000000', 'bbbbbbb1-0000-0000-0000-000000000000',
+   'bbbbbbb1-1111-0000-0000-000000000000',
+   'No subscription charges over $20',
+   '{"segment":"financial","condition":"subscription_over_20"}'::jsonb)
+on conflict (id) do nothing;
+
+-- -------- mem.insight --------------------------------------------------
+insert into mem.insight
+  (id, household_id, week_start, body_md)
+values
+  ('a000002a-0000-0000-0000-000000000000', 'aaaaaaa1-0000-0000-0000-000000000000',
+   current_date - 7, '# Weekly insight\n- Grocery spend down 8%')
+on conflict (id) do nothing;
