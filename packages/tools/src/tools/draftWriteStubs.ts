@@ -11,6 +11,11 @@
  * that `INSERT INTO app.suggestion`. Until then, the agent loop
  * intercepts the stub result and emits a suggestion card event in
  * the stream.
+ *
+ * M6 promoted the food-segment stubs (`add_meal_to_plan`,
+ * `draft_meal_plan`, `propose_grocery_order`) to real implementations
+ * under `./food/*`. The remaining stubs here cover financial, social,
+ * fun, and memory operations whose approval flow still lands in M9.
  */
 
 import { z } from 'zod';
@@ -48,48 +53,6 @@ function stub<TIn>(
     },
   };
 }
-
-export const addMealToPlanStub = stub(
-  'add_meal_to_plan',
-  'Draft: add a planned meal on a date + slot. Member must approve before it lands.',
-  z.object({
-    date: z.string(),
-    slot: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
-    dish: z.string().min(1),
-    servings: z.number().int().positive().optional(),
-  }),
-  ['food'],
-  (a) => `Add ${a.dish} for ${a.slot} on ${a.date}`,
-);
-
-export const draftMealPlanStub = stub(
-  'draft_meal_plan',
-  'Draft a meal plan over a date range with optional constraints. Member edits + approves before persist.',
-  z.object({
-    start_date: z.string(),
-    end_date: z.string(),
-    constraints: z
-      .object({
-        dietary: z.array(z.string()).optional(),
-        effort: z.enum(['low', 'medium', 'high']).optional(),
-        variety: z.enum(['low', 'medium', 'high']).optional(),
-      })
-      .optional(),
-  }),
-  ['food'],
-  (a) => `Draft meal plan ${a.start_date} → ${a.end_date}`,
-);
-
-export const proposeGroceryOrderStub = stub(
-  'propose_grocery_order',
-  'Propose a grocery order (Instacart, store). Creates a draft; member approves.',
-  z.object({
-    planned_for: z.string(),
-    provider: z.string().optional(),
-  }),
-  ['food'],
-  (a) => `Propose grocery order for ${a.planned_for}`,
-);
 
 export const proposeTransferStub = stub(
   'propose_transfer',
@@ -155,9 +118,6 @@ export const forgetFactStub = stub(
 );
 
 export const draftWriteStubs = [
-  addMealToPlanStub,
-  draftMealPlanStub,
-  proposeGroceryOrderStub,
   proposeTransferStub,
   draftMessageStub,
   proposeAddToCalendarStub,

@@ -13,6 +13,14 @@
 
 import { createRuleTool } from './tools/createRule.js';
 import { draftWriteStubs } from './tools/draftWriteStubs.js';
+import { addMealToPlanTool } from './tools/food/addMealToPlan.js';
+import { addPantryItemTool } from './tools/food/addPantryItem.js';
+import { draftMealPlanTool } from './tools/food/draftMealPlan.js';
+import { proposeGroceryOrderTool } from './tools/food/proposeGroceryOrder.js';
+import { removeMealTool } from './tools/food/removeMeal.js';
+import { removePantryItemTool } from './tools/food/removePantryItem.js';
+import { updateMealTool } from './tools/food/updateMeal.js';
+import { updatePantryItemTool } from './tools/food/updatePantryItem.js';
 import { getAccountBalancesTool } from './tools/getAccountBalances.js';
 import { getBudgetStatusTool } from './tools/getBudgetStatus.js';
 import { getEpisodeTimelineTool } from './tools/getEpisodeTimeline.js';
@@ -48,6 +56,15 @@ export function defaultToolSet(): ReadonlyArray<ToolDefinition<unknown, unknown>
     // Direct-writes
     rememberFactTool as ToolDefinition<unknown, unknown>,
     createRuleTool as ToolDefinition<unknown, unknown>,
+    addMealToPlanTool as ToolDefinition<unknown, unknown>,
+    updateMealTool as ToolDefinition<unknown, unknown>,
+    removeMealTool as ToolDefinition<unknown, unknown>,
+    addPantryItemTool as ToolDefinition<unknown, unknown>,
+    updatePantryItemTool as ToolDefinition<unknown, unknown>,
+    removePantryItemTool as ToolDefinition<unknown, unknown>,
+    // Draft-writes with real suggestion persistence
+    draftMealPlanTool as ToolDefinition<unknown, unknown>,
+    proposeGroceryOrderTool as ToolDefinition<unknown, unknown>,
     // Draft-write stubs (suggestion-card surface for the UI)
     ...(draftWriteStubs as ReadonlyArray<ToolDefinition<unknown, unknown>>),
   ];

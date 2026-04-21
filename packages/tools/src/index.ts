@@ -65,15 +65,22 @@ export { rememberFactTool } from './tools/rememberFact.js';
 export { createRuleTool } from './tools/createRule.js';
 export {
   draftWriteStubs,
-  addMealToPlanStub,
-  draftMealPlanStub,
-  proposeGroceryOrderStub,
   proposeTransferStub,
   draftMessageStub,
   proposeAddToCalendarStub,
   supersedeFactStub,
   forgetFactStub,
 } from './tools/draftWriteStubs.js';
+
+// Food-segment tools (M6).
+export { addMealToPlanTool } from './tools/food/addMealToPlan.js';
+export { updateMealTool } from './tools/food/updateMeal.js';
+export { removeMealTool } from './tools/food/removeMeal.js';
+export { addPantryItemTool } from './tools/food/addPantryItem.js';
+export { updatePantryItemTool } from './tools/food/updatePantryItem.js';
+export { removePantryItemTool } from './tools/food/removePantryItem.js';
+export { draftMealPlanTool } from './tools/food/draftMealPlan.js';
+export { proposeGroceryOrderTool } from './tools/food/proposeGroceryOrder.js';
 
 /**
  * Build the M3.5-A catalog bound to a caller's `ToolContext`.

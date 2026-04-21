@@ -1,23 +1,22 @@
 {
-  "name": "@homehub/worker-sync-grocery",
+  "name": "@homehub/worker-pantry-diff",
   "version": "0.0.0",
   "private": true,
-  "description": "Pulls grocery order status via webhook and poll. Owned by @integrations; fleshed out in M6.",
+  "description": "Reconciles planned meals against pantry inventory and produces a deficit draft grocery list. Triggered on meal + pantry_item change and hourly cron. Owned by @memory-background.",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
+    "cron": "node dist/cron.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@homehub/db": "workspace:*",
-    "@homehub/providers-grocery": "workspace:*",
     "@homehub/shared": "workspace:*",
     "@homehub/worker-runtime": "workspace:*",
-    "@supabase/supabase-js": "^2.104.0",
-    "zod": "^4.3.6"
+    "@supabase/supabase-js": "^2.104.0"
   },
   "devDependencies": {
     "tsx": "^4.19.2",
