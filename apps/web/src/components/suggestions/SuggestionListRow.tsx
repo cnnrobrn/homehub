@@ -12,7 +12,6 @@ import { ChevronDown, ChevronRight } from 'lucide-react';
 import Link from 'next/link';
 import { useState } from 'react';
 
-
 import { SuggestionApprovalPill } from './SuggestionApprovalPill';
 import { SuggestionEvidenceDrawer } from './SuggestionEvidenceDrawer';
 

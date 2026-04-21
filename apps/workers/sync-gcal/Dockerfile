@@ -11,7 +11,7 @@
 ARG SERVICE_NAME=worker-sync-gcal
 
 # ---- builder ----------------------------------------------------------------
-FROM node:20.18.0-alpine AS builder
+FROM node:20.19.0-alpine AS builder
 ARG SERVICE_NAME
 ENV CI=true \
     PNPM_HOME=/pnpm \
@@ -31,7 +31,7 @@ RUN pnpm --filter "@homehub/${SERVICE_NAME}" build
 RUN pnpm --filter "@homehub/${SERVICE_NAME}" deploy --prod /out
 
 # ---- runtime ----------------------------------------------------------------
-FROM node:20.18.0-alpine AS runtime
+FROM node:20.19.0-alpine AS runtime
 ARG SERVICE_NAME
 ENV NODE_ENV=production \
     PORT=8080

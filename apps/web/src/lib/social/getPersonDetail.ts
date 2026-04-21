@@ -21,7 +21,6 @@ import {
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const getPersonDetailArgsSchema = z.object({
   householdId: z.string().uuid(),
   personNodeId: z.string().uuid(),

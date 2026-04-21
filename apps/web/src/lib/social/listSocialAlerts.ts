@@ -10,7 +10,6 @@ import { hasSocialRead, type SegmentGrant, type SocialAlertRow } from './types';
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const ALERT_SEVERITIES = ['critical', 'warn', 'info'] as const;
 export type AlertSeverity = (typeof ALERT_SEVERITIES)[number];
 

@@ -42,8 +42,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  NODE_VERSION: '20.18.0'
-  PNPM_VERSION: '9.15.9'
+  NODE_VERSION: '20.19.0'
 
 jobs:
   deploy:
@@ -56,15 +55,13 @@ jobs:
       pull-requests: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
+        uses: pnpm/action-setup@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: pnpm
@@ -81,20 +78,29 @@ jobs:
       - name: Deploy to production
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         uses: cloudflare/wrangler-action@v3
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: pnpm
+          wranglerVersion: '4'
           workingDirectory: apps/marketing
           command: deploy
 
       - name: Upload preview version
         if: github.event_name == 'pull_request'
         uses: cloudflare/wrangler-action@v3
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          packageManager: pnpm
+          wranglerVersion: '4'
           workingDirectory: apps/marketing
-          # `versions upload` stages a new version without routing
-          # traffic to it — returns a preview URL of the form
-          # `<version-tag>-homehub-marketing.connor-972.workers.dev`.
-          command: versions upload --message "PR #${{ github.event.pull_request.number }} @ ${{ github.sha }}"
+          # Quote the full command scalar so YAML does not treat `#` as a
+          # comment and truncate the message before it reaches Wrangler.
+          command: 'versions upload --message "PR ${{ github.event.pull_request.number }} @ ${{ github.sha }}"'

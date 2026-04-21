@@ -13,7 +13,6 @@ import { hasSocialRead, type GroupRow, type SegmentGrant } from './types';
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 export const listGroupsArgsSchema = z.object({
   householdId: z.string().uuid(),
   limit: z.number().int().positive().max(200).optional(),
