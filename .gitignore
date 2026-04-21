@@ -1,0 +1,55 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.pnpm-debug.log*
+npm-debug.log*
+yarn-error.log*
+
+# Next.js
+.next/
+out/
+.vercel/
+
+# Build outputs
+dist/
+build/
+coverage/
+*.tsbuildinfo
+
+# Turbo
+.turbo/
+
+# Env files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Supabase local state
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+
+# Docker
+.docker-volumes/
+
+# macOS
+.DS_Store
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# OS
+Thumbs.db
+
+# Claude Code local
+.claude/settings.local.json
+
+# Worktree belt-and-braces (worktrees live at ../homehub-worktrees/, but guard against accidental in-repo dirs)
+.worktrees/
