@@ -8,6 +8,11 @@
  * After a successful magic-link send we show a "check your inbox" panel
  * in place of the form; the page reloads when the user clicks the link
  * from their mail client and hits `/auth/callback`.
+ *
+ * Styling follows the marketing site's indie-software system: tight
+ * 3px radii, mono-caps divider, warm-sand note block for the confirmed
+ * state. The shared `Button`/`Input` primitives are kept — they already
+ * resolve from the same tokens as the marketing palette.
  */
 
 'use client';
@@ -22,7 +27,6 @@ import { Button } from '@/components/ui/button';
 import { FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import { toast } from '@/components/ui/use-toast';
 
 const schema = z.object({
@@ -62,68 +66,77 @@ export function LoginForm({ next }: { next: string }) {
       setGoogleLoading(false);
       return;
     }
-    // Follow the URL Supabase prepared — full page redirect so the OAuth
-    // consent screen takes over.
     window.location.href = res.data.redirectTo;
   }
 
   if (sent) {
     return (
-      <div className="w-full rounded-lg border border-border bg-surface p-6 text-center">
-        <p className="text-sm text-fg">
-          We sent a sign-in link to <strong>{sent}</strong>.
+      <div className="border-border bg-surface-note flex flex-col gap-2 rounded-[6px] border border-l-2 border-l-[var(--color-accent)] p-5">
+        <div className="font-mono text-[10px] tracking-[0.5px] text-fg-muted">
+          — CHECK YOUR INBOX
+        </div>
+        <p className="text-[14px] leading-[1.55] text-fg">
+          We sent a sign-in link to <strong className="font-semibold">{sent}</strong>.
         </p>
-        <p className="mt-2 text-xs text-fg-muted">
+        <p className="text-[12.5px] leading-[1.5] text-fg-muted">
           Open it on this device to finish signing in. You can close this tab.
         </p>
         <button
           type="button"
-          className="mt-4 text-xs text-accent underline underline-offset-4"
+          className="mt-2 self-start font-mono text-[11px] tracking-[0.5px] text-fg-muted underline underline-offset-4 transition-colors hover:text-fg"
           onClick={() => setSent(null)}
         >
-          Use a different email
+          use a different email
         </button>
       </div>
     );
   }
 
   return (
-    <div className="flex w-full flex-col gap-4">
+    <div className="flex w-full flex-col gap-5">
       <Button
         type="button"
         variant="outline"
-        className="w-full"
+        className="border-border h-10 w-full rounded-[3px] text-[14px] font-normal"
         onClick={onGoogleClick}
         disabled={googleLoading}
         aria-label="Continue with Google"
       >
-        {googleLoading ? 'Opening Google…' : 'Continue with Google'}
+        {googleLoading ? 'opening google…' : 'continue with google'}
       </Button>
-      <div className="flex items-center gap-3">
-        <Separator className="flex-1" />
-        <span className="text-xs uppercase text-fg-muted">or</span>
-        <Separator className="flex-1" />
+      <div className="flex items-center gap-3" aria-hidden="true">
+        <div className="bg-border h-px flex-1" />
+        <span className="font-mono text-[10px] tracking-[1px] text-fg-muted">OR</span>
+        <div className="bg-border h-px flex-1" />
       </div>
       <form onSubmit={handleSubmit(onEmailSubmit)} className="flex flex-col gap-3" noValidate>
         <div className="flex flex-col gap-1.5">
-          <Label htmlFor="email">Email</Label>
+          <Label
+            htmlFor="email"
+            className="font-mono text-[10px] tracking-[0.5px] text-fg-muted uppercase"
+          >
+            Email
+          </Label>
           <Input
             id="email"
             type="email"
             autoComplete="email"
+            placeholder="you@household.com"
             required
+            className="h-10 rounded-[3px] text-[14px]"
             aria-invalid={errors.email ? 'true' : 'false'}
             {...register('email')}
           />
           <FormMessage error={errors.email?.message ?? null} />
         </div>
-        <Button type="submit" className="w-full" disabled={isSubmitting}>
-          {isSubmitting ? 'Sending link…' : 'Send magic link'}
+        <Button
+          type="submit"
+          className="bg-fg text-bg hover:bg-fg/90 h-10 w-full rounded-[3px] text-[14px] font-medium"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? 'sending link…' : 'send magic link →'}
         </Button>
       </form>
-      <p className="text-xs text-fg-muted">
-        We use passwordless email for everyone — no sign-up step required.
-      </p>
     </div>
   );
 }
