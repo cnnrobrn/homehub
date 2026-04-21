@@ -1,16 +1,26 @@
 /**
  * `consolidator` worker entrypoint.
  *
- * M0 scaffold. The runtime wires up env, tracing, Supabase, and the queue
- * client; the handler body is still a stub. This file mirrors the
- * template in sibling worker services under apps/workers/*.
+ * Runs as a Railway cron (see `README.md`). Invocation shape:
+ *
+ *   pnpm --filter @homehub/worker-consolidator start
+ *
+ * By default iterates every household in `app.household`. Scope to
+ * specific households via the `HOMEHUB_HOUSEHOLD_IDS` env var
+ * (comma-separated). Exits 0 on success, 1 on fatal error.
+ *
+ * A `/health` + `/ready` HTTP server is also started so Railway's
+ * health checks don't flap during the cron invocation. `/ready` flips
+ * green after the consolidator boots (Supabase round-trip) and the
+ * server is torn down on SIGTERM.
  */
 
 import { createServer } from 'node:http';
 
-import { loadEnv } from '@homehub/shared';
+import { loadEnv, type HouseholdId } from '@homehub/shared';
 import {
   createLogger,
+  createModelClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -18,6 +28,8 @@ import {
   runWorker,
   workerRuntimeEnvSchema,
 } from '@homehub/worker-runtime';
+
+import { runConsolidator } from './handler.js';
 
 const SERVICE_NAME = 'worker-consolidator';
 
@@ -30,7 +42,12 @@ const exitCode = await runWorker(
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
 
-    // Health/ready HTTP server per specs/05-agents/workers.md.
+    if (!env.OPENROUTER_API_KEY) {
+      log.error('consolidator requires OPENROUTER_API_KEY to be set');
+      throw new Error('OPENROUTER_API_KEY not configured');
+    }
+    const modelClient = createModelClient(env, { logger: log, supabase });
+
     let ready = false;
     const port = Number.parseInt(process.env.PORT ?? '8080', 10);
     const server = createServer((req, res) => {
@@ -61,20 +78,48 @@ const exitCode = await runWorker(
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    // The queue client is constructed so readiness reflects a working
-    // Supabase connection. The real consumer loop lands later.
-    void queues;
-    ready = true;
+    // Basic readiness: a cheap head-count against app.household.
+    try {
+      const { error } = await supabase
+        .schema('app')
+        .from('household')
+        .select('id', { count: 'exact', head: true });
+      if (error) throw error;
+      ready = true;
+    } catch (err) {
+      log.error('consolidator readiness probe failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
 
-    log.info('worker started (no-op loop)');
-    // TODO(@memory-background, M3.7): replace with cron-driven consolidation loop.
-    await new Promise<void>((resolve) => {
-      const onSig = (): void => resolve();
-      process.once('SIGTERM', onSig);
-      process.once('SIGINT', onSig);
+    const householdIds = parseHouseholdIds(process.env.HOMEHUB_HOUSEHOLD_IDS);
+    log.info('consolidator run starting', {
+      household_scope: householdIds.length === 0 ? 'all' : householdIds,
+    });
+
+    const report = await runConsolidator(
+      { supabase, queues, log, modelClient },
+      { ...(householdIds.length > 0 ? { householdIds } : {}) },
+    );
+
+    log.info('consolidator run complete', {
+      households_processed: report.householdsProcessed,
+      entities_consolidated: report.entitiesConsolidated,
+      fact_candidates_written: report.factCandidatesWritten,
+      patterns_upserted: report.patternsUpserted,
+      budget_exceeded_households: report.budgetExceededHouseholds,
     });
   },
   { shutdownTimeoutMs: 30_000 },
 );
+
+function parseHouseholdIds(raw: string | undefined): HouseholdId[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean) as HouseholdId[];
+}
 
 process.exit(exitCode);

@@ -17,7 +17,9 @@
     "dist",
     "extraction",
     "rollup",
-    "node-doc"
+    "node-doc",
+    "consolidation",
+    "reflection"
   ],
   "scripts": {
     "build": "tsc",

@@ -14,8 +14,14 @@ export {
 } from './query.js';
 
 export {
+  CANDIDATE_MAX_AGE_DAYS,
   DEFAULT_RANKING_WEIGHTS,
   DEFAULT_RECENCY_HALF_LIFE_DAYS,
+  HALF_LIFE_EPISODIC_DAYS,
+  HALF_LIFE_PROCEDURAL_DAYS,
+  HALF_LIFE_SEMANTIC_DAYS,
+  PATTERN_DECAY_MULTIPLIER,
+  SEMANTIC_NODE_HALF_LIFE_DAYS,
   type EdgeRow,
   type EpisodeRow,
   type FactRow,
@@ -34,6 +40,9 @@ export {
   connectivityWeight,
   typePriorWeight,
   conflictPenalty,
+  defaultHalfLifeFor,
+  isPatternDecayed,
   scoreNode,
   scoreFact,
+  scorePattern,
 } from './ranking.js';

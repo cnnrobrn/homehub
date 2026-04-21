@@ -41,6 +41,7 @@ const KIND_DIRS = [
   'rollup',
   'node-doc',
   'consolidation',
+  'reflection',
   'summary',
   'suggestion',
 ] as const;

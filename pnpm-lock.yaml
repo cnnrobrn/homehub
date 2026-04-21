@@ -289,12 +289,21 @@ importers:
       '@homehub/db':
         specifier: workspace:*
         version: link:../../../packages/db
+      '@homehub/enrichment':
+        specifier: workspace:*
+        version: link:../../../packages/enrichment
+      '@homehub/prompts':
+        specifier: workspace:*
+        version: link:../../../packages/prompts
       '@homehub/shared':
         specifier: workspace:*
         version: link:../../../packages/shared
       '@homehub/worker-runtime':
         specifier: workspace:*
         version: link:../../../packages/worker-runtime
+      '@supabase/supabase-js':
+        specifier: ^2.104.0
+        version: 2.104.0
     devDependencies:
       tsx:
         specifier: ^4.19.2
@@ -423,12 +432,18 @@ importers:
       '@homehub/db':
         specifier: workspace:*
         version: link:../../../packages/db
+      '@homehub/prompts':
+        specifier: workspace:*
+        version: link:../../../packages/prompts
       '@homehub/shared':
         specifier: workspace:*
         version: link:../../../packages/shared
       '@homehub/worker-runtime':
         specifier: workspace:*
         version: link:../../../packages/worker-runtime
+      '@supabase/supabase-js':
+        specifier: ^2.104.0
+        version: 2.104.0
     devDependencies:
       tsx:
         specifier: ^4.19.2

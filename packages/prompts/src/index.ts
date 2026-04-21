@@ -31,6 +31,9 @@ export {
   conversationFactSchema,
   conversationRuleSchema,
   conversationRollupSchema,
+  consolidationFactSchema,
+  entityConsolidationSchema,
+  weeklyReflectionSchema,
   type EventExtractionResponse,
   type ExtractionEpisode,
   type ExtractionFact,
@@ -40,4 +43,7 @@ export {
   type ConversationFact,
   type ConversationRule,
   type ConversationRollupResponse,
+  type ConsolidationFact,
+  type EntityConsolidationResponse,
+  type WeeklyReflectionResponse,
 } from './schemas.js';

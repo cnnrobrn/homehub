@@ -179,3 +179,50 @@ export const conversationRollupSchema = z.object({
   ended_at: z.iso.datetime({ offset: true }).optional(),
 });
 export type ConversationRollupResponse = z.infer<typeof conversationRollupSchema>;
+
+/**
+ * Atomic fact emitted by the per-entity consolidation prompt (M3.7-A).
+ * Same atomic triple shape as the extractor, but evidence MUST reference
+ * ≥2 episode ids (the prompt enforces this; the schema is permissive on
+ * string content — evidence is free-form text). Consolidation-sourced
+ * candidates flow through the standard reconciler with `source =
+ * 'consolidation'`.
+ */
+export const consolidationFactSchema = z.object({
+  subject: z.string().min(1),
+  predicate: z.string().min(1),
+  object_value: z.unknown().optional(),
+  object_node_reference: z.string().optional(),
+  confidence: z.number().min(0).max(1),
+  evidence: z.string().min(1),
+  valid_from: z.union([z.iso.datetime({ offset: true }), z.literal('inferred')]),
+  qualifier: z.record(z.string(), z.unknown()).optional(),
+});
+export type ConsolidationFact = z.infer<typeof consolidationFactSchema>;
+
+/**
+ * Per-entity consolidation envelope. A nightly pass over one entity's
+ * canonical facts + recent episodes produces zero-or-more candidate
+ * facts. An empty array is valid and means "no new pattern emerged."
+ */
+export const entityConsolidationSchema = z.object({
+  facts: z.array(consolidationFactSchema),
+});
+export type EntityConsolidationResponse = z.infer<typeof entityConsolidationSchema>;
+
+/**
+ * Weekly reflection output (M3.7-A). The reflector emits a short
+ * markdown body plus id lists the reader can trace back to. The lists
+ * are authoritative for what the body leans on; the body itself is
+ * prose. Cited ids are required to be non-empty on `cited_episodes`
+ * or `cited_patterns` in non-trivial weeks, but the schema is
+ * permissive — the worker logs a warning when all three are empty
+ * rather than rejecting the response.
+ */
+export const weeklyReflectionSchema = z.object({
+  body_md: z.string().min(1),
+  cited_episodes: z.array(z.string()),
+  cited_facts: z.array(z.string()),
+  cited_patterns: z.array(z.string()),
+});
+export type WeeklyReflectionResponse = z.infer<typeof weeklyReflectionSchema>;

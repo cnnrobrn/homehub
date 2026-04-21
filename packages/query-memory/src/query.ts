@@ -26,8 +26,9 @@
 import { type HouseholdId, type NodeType } from '@homehub/shared';
 import { type Logger, type ModelClient, type ServiceSupabaseClient } from '@homehub/worker-runtime';
 
-import { cosineSimilarity, scoreFact, scoreNode } from './ranking.js';
+import { cosineSimilarity, isPatternDecayed, scoreFact, scoreNode } from './ranking.js';
 import {
+  CANDIDATE_MAX_AGE_DAYS,
   DEFAULT_RANKING_WEIGHTS,
   type EdgeRow,
   type EpisodeRow,
@@ -89,6 +90,21 @@ function episodeAsOfKeep(ep: EpisodeRow, asOf: Date): boolean {
 function nodeAsOfKeep(n: NodeRow, asOf: Date): boolean {
   if (Date.parse(n.created_at) > asOf.getTime()) return false;
   return true;
+}
+
+/**
+ * M3.7-A: detect facts that are effectively stale candidates — low
+ * reinforcement, consolidation-sourced, and older than 90 days since
+ * last reinforcement. These are excluded from default retrieval per
+ * `consolidation.md` § Decay. `as_of` queries bypass this filter.
+ */
+function isStaleCandidateFact(f: FactRow, now: Date): boolean {
+  if (f.reinforcement_count > 1) return false;
+  if (f.source !== 'consolidation') return false;
+  const anchor = Date.parse(f.last_reinforced_at);
+  if (!Number.isFinite(anchor)) return false;
+  const ageDays = (now.getTime() - anchor) / (1000 * 60 * 60 * 24);
+  return ageDays > CANDIDATE_MAX_AGE_DAYS;
 }
 
 export function createQueryMemory(opts: CreateQueryMemoryOptions): QueryMemoryClient {
@@ -332,7 +348,15 @@ export function createQueryMemory(opts: CreateQueryMemoryOptions): QueryMemoryCl
       const liveFacts = allFacts.filter((f) => {
         if (asOf) return factAsOfKeep(f, asOf);
         // Current-state filter: valid_to is null and not superseded.
-        return f.valid_to === null && f.superseded_at === null;
+        if (f.valid_to !== null || f.superseded_at !== null) return false;
+        // M3.7-A: candidate-like facts (source='consolidation' with
+        // reinforcement_count ≤ 1) older than 90 days without
+        // reinforcement are dropped from default retrieval entirely.
+        // Per `consolidation.md`: "Candidate facts expire after 90 days
+        // unless reinforced." Time-travel queries (as_of) bypass this
+        // filter — the row is still on disk.
+        if (isStaleCandidateFact(f, nowDate)) return false;
+        return true;
       });
 
       const rankedFacts = liveFacts
@@ -362,7 +386,13 @@ export function createQueryMemory(opts: CreateQueryMemoryOptions): QueryMemoryCl
       // --- Patterns -------------------------------------------------------
       let patterns: PatternRow[] = [];
       if (layers.has('procedural')) {
-        patterns = (await loadPatterns(args.householdId)).slice(0, limit);
+        const raw = await loadPatterns(args.householdId);
+        // M3.7-A: decayed patterns (not reinforced within 3× natural
+        // period) are excluded from default retrieval. `as_of` queries
+        // bypass the filter — the row is still on disk, just not
+        // surfaced for "what's true now" questions.
+        const filtered = asOf ? raw : raw.filter((p) => !isPatternDecayed(p, nowDate));
+        patterns = filtered.slice(0, limit);
       }
 
       // --- Edges between ranked nodes --------------------------------------

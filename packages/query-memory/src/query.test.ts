@@ -344,12 +344,12 @@ describe('createQueryMemory.query', () => {
           household_id: HOUSEHOLD_ID,
           kind: 'temporal',
           description: 'Groceries on Saturday mornings',
-          parameters: {},
+          parameters: { period_days: 7 },
           confidence: 0.8,
           sample_size: 12,
           observed_from: '2026-01-01T00:00:00Z',
-          observed_to: '2026-04-01T00:00:00Z',
-          last_reinforced_at: '2026-04-01T00:00:00Z',
+          observed_to: '2026-04-15T00:00:00Z',
+          last_reinforced_at: '2026-04-18T00:00:00Z',
           status: 'active',
         },
       ],
@@ -359,6 +359,7 @@ describe('createQueryMemory.query', () => {
       supabase: supabase as never,
       modelClient: model,
       log: makeLog(),
+      now: () => new Date('2026-04-20T00:00:00Z'),
     });
     const withPatterns = await client.query({ householdId: HOUSEHOLD_ID, query: 'q' });
     expect(withPatterns.patterns).toHaveLength(1);
@@ -368,6 +369,99 @@ describe('createQueryMemory.query', () => {
       layers: ['episodic'],
     });
     expect(episodicOnly.patterns).toHaveLength(0);
+  });
+
+  it('M3.7-A: excludes decayed patterns from default retrieval', async () => {
+    const supabase = makeSupabase({
+      nodes: [makeNode({ id: 'n1', embedding: vec([1, 0]) })],
+      patterns: [
+        // Fresh pattern: 2 days since last reinforcement < 21d threshold.
+        {
+          id: 'fresh',
+          household_id: HOUSEHOLD_ID,
+          kind: 'temporal',
+          description: 'Fresh',
+          parameters: { period_days: 7 },
+          confidence: 0.8,
+          sample_size: 10,
+          observed_from: '2026-01-01T00:00:00Z',
+          observed_to: '2026-04-15T00:00:00Z',
+          last_reinforced_at: '2026-04-18T00:00:00Z',
+          status: 'active',
+        },
+        // Decayed pattern: 50 days since last reinforcement > 21d threshold.
+        {
+          id: 'decayed',
+          household_id: HOUSEHOLD_ID,
+          kind: 'temporal',
+          description: 'Decayed',
+          parameters: { period_days: 7 },
+          confidence: 0.8,
+          sample_size: 10,
+          observed_from: '2026-01-01T00:00:00Z',
+          observed_to: '2026-03-01T00:00:00Z',
+          last_reinforced_at: '2026-03-01T00:00:00Z',
+          status: 'active',
+        },
+      ],
+    });
+    const model = makeModelClient([1, 0]);
+    const client = createQueryMemory({
+      supabase: supabase as never,
+      modelClient: model,
+      log: makeLog(),
+      now: () => new Date('2026-04-20T00:00:00Z'),
+    });
+    const result = await client.query({ householdId: HOUSEHOLD_ID, query: 'q' });
+    const ids = result.patterns.map((p) => p.id);
+    expect(ids).toContain('fresh');
+    expect(ids).not.toContain('decayed');
+
+    // as_of bypasses the decay filter — the row is still on disk.
+    const asOfResult = await client.query({
+      householdId: HOUSEHOLD_ID,
+      query: 'q',
+      as_of: '2026-04-20T00:00:00Z',
+    });
+    const asOfIds = asOfResult.patterns.map((p) => p.id);
+    expect(asOfIds).toContain('fresh');
+    expect(asOfIds).toContain('decayed');
+  });
+
+  it('M3.7-A: filters stale consolidation candidate facts older than 90 days', async () => {
+    const supabase = makeSupabase({
+      nodes: [makeNode({ id: 'n1', embedding: vec([1, 0]) })],
+      facts: [
+        // Fresh canonical fact.
+        makeFact({ id: 'fresh' }),
+        // Stale, low-reinforcement consolidation-sourced fact.
+        makeFact({
+          id: 'stale-candidate',
+          source: 'consolidation',
+          reinforcement_count: 1,
+          last_reinforced_at: '2026-01-01T00:00:00Z',
+        }),
+        // Stale but well-reinforced consolidation fact — kept.
+        makeFact({
+          id: 'stale-reinforced',
+          source: 'consolidation',
+          reinforcement_count: 5,
+          last_reinforced_at: '2026-01-01T00:00:00Z',
+        }),
+      ],
+    });
+    const model = makeModelClient([1, 0]);
+    const client = createQueryMemory({
+      supabase: supabase as never,
+      modelClient: model,
+      log: makeLog(),
+      now: () => new Date('2026-04-20T00:00:00Z'),
+    });
+    const result = await client.query({ householdId: HOUSEHOLD_ID, query: 'q' });
+    const ids = result.facts.map((f) => f.id);
+    expect(ids).toContain('fresh');
+    expect(ids).not.toContain('stale-candidate');
+    expect(ids).toContain('stale-reinforced');
   });
 
   it('falls back gracefully when embed() fails', async () => {

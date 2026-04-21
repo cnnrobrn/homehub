@@ -1,23 +1,36 @@
 /**
  * `reflector` worker entrypoint.
  *
- * M0 scaffold. The runtime wires up env, tracing, Supabase, and the queue
- * client; the handler body is still a stub. This file mirrors the
- * template in sibling worker services under apps/workers/*.
+ * Runs as a Railway weekly cron (see `specs/05-agents/workers.md`).
+ * Invocation shape:
+ *
+ *   pnpm --filter @homehub/worker-reflector start
+ *
+ * By default iterates every household in `app.household` for the most
+ * recent Monday (UTC). Scope via the following env vars:
+ *   - `HOMEHUB_HOUSEHOLD_IDS` — comma-separated household ids.
+ *   - `HOMEHUB_WEEK_START`    — override `YYYY-MM-DD`; useful for
+ *                               backfills. Defaults to last Monday UTC.
+ *
+ * Exits 0 on success, 1 on fatal error. A `/health` + `/ready` HTTP
+ * server is also started so Railway's health checks don't flap during
+ * the cron invocation.
  */
 
 import { createServer } from 'node:http';
 
-import { loadEnv } from '@homehub/shared';
+import { loadEnv, type HouseholdId } from '@homehub/shared';
 import {
   createLogger,
-  createQueueClient,
+  createModelClient,
   createServiceClient,
   initTracing,
   onShutdown,
   runWorker,
   workerRuntimeEnvSchema,
 } from '@homehub/worker-runtime';
+
+import { runReflector } from './handler.js';
 
 const SERVICE_NAME = 'worker-reflector';
 
@@ -28,9 +41,13 @@ const exitCode = await runWorker(
   async () => {
     initTracing(env);
     const supabase = createServiceClient(env);
-    const queues = createQueueClient(supabase);
 
-    // Health/ready HTTP server per specs/05-agents/workers.md.
+    if (!env.OPENROUTER_API_KEY) {
+      log.error('reflector requires OPENROUTER_API_KEY to be set');
+      throw new Error('OPENROUTER_API_KEY not configured');
+    }
+    const modelClient = createModelClient(env, { logger: log, supabase });
+
     let ready = false;
     const port = Number.parseInt(process.env.PORT ?? '8080', 10);
     const server = createServer((req, res) => {
@@ -61,20 +78,51 @@ const exitCode = await runWorker(
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    // The queue client is constructed so readiness reflects a working
-    // Supabase connection. The real consumer loop lands later.
-    void queues;
-    ready = true;
+    // Readiness probe: a head-count against app.household is cheap and
+    // proves the service-role Supabase client can reach Postgres.
+    try {
+      const { error } = await supabase
+        .schema('app')
+        .from('household')
+        .select('id', { count: 'exact', head: true });
+      if (error) throw error;
+      ready = true;
+    } catch (err) {
+      log.error('reflector readiness probe failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      throw err;
+    }
 
-    log.info('worker started (no-op loop)');
-    // TODO(@memory-background, M3.7): replace with cron-driven reflection loop.
-    await new Promise<void>((resolve) => {
-      const onSig = (): void => resolve();
-      process.once('SIGTERM', onSig);
-      process.once('SIGINT', onSig);
+    const householdIds = parseHouseholdIds(process.env.HOMEHUB_HOUSEHOLD_IDS);
+    const weekStartOverride = process.env.HOMEHUB_WEEK_START?.trim();
+    log.info('reflector run starting', {
+      household_scope: householdIds.length === 0 ? 'all' : householdIds,
+      week_start: weekStartOverride ?? 'last_monday_utc',
+    });
+
+    const report = await runReflector(
+      { supabase, log, modelClient },
+      {
+        ...(householdIds.length > 0 ? { householdIds } : {}),
+        ...(weekStartOverride ? { weekStart: weekStartOverride } : {}),
+      },
+    );
+
+    log.info('reflector run complete', {
+      inserted: report.inserted,
+      skipped: report.skipped,
     });
   },
   { shutdownTimeoutMs: 30_000 },
 );
+
+function parseHouseholdIds(raw: string | undefined): HouseholdId[] {
+  if (!raw) return [];
+  return raw
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean) as HouseholdId[];
+}
 
 process.exit(exitCode);
