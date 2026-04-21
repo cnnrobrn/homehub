@@ -50,6 +50,7 @@ Thumbs.db
 
 # Claude Code local
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # Worktree belt-and-braces (worktrees live at ../homehub-worktrees/, but guard against accidental in-repo dirs)
 .worktrees/

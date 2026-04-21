@@ -60,6 +60,6 @@ export default [
     },
   },
   {
-    ignores: ['.next/**', 'next-env.d.ts'],
+    ignores: ['.next/**', 'out/**', 'public/**', 'next-env.d.ts'],
   },
 ];
