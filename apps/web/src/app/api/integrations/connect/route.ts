@@ -1,6 +1,7 @@
 /**
  * GET /api/integrations/connect?provider=google-calendar
  * GET /api/integrations/connect?provider=google-mail&categories=receipt,shipping
+ * GET /api/integrations/connect?provider=ynab
  *
  * Mints a Nango Connect session scoped to `(household_id, member_id,
  * provider)` and redirects the browser to Nango's hosted-auth URL.
@@ -12,14 +13,19 @@
  *      `/settings/connections` always sends the member-confirmed list,
  *      so a missing param means the caller hit the route directly; we
  *      404 in that case.
- *   3. Call Nango `POST /connect/sessions` with:
+ *   3. For `ynab`, no per-category opt-in is required — financial data
+ *      is all member-owned and goes through a single "read my YNAB"
+ *      OAuth scope. A budget-picker UI is a follow-up for @frontend-chat
+ *      (M5-C); today the sync worker picks the default / first budget.
+ *   4. Call Nango `POST /connect/sessions` with:
  *        - `end_user.id` = `member:<member_id>` (stable HomeHub id).
  *        - `tags` = { household_id, member_id, provider, email_categories? }
  *          so the Nango webhook (handled by `apps/workers/webhook-ingest`)
  *          can route `connection.created` back to the right row and
- *          write the opt-in set into `sync.provider_connection.metadata`.
+ *          write any opt-in metadata into
+ *          `sync.provider_connection.metadata`.
  *        - `allowed_integrations` = [provider]
- *   4. 302 to the `connect_link` returned by Nango.
+ *   5. 302 to the `connect_link` returned by Nango.
  *
  * Error shape: anything that fails resolution returns a 4xx JSON body
  * rather than redirecting.
@@ -41,7 +47,7 @@ export const dynamic = 'force-dynamic';
  * Nango integration configured in the admin UI (see
  * `infra/nango/providers/<provider>.md`).
  */
-const ALLOWED_PROVIDERS = new Set(['google-calendar', 'google-mail']);
+const ALLOWED_PROVIDERS = new Set(['google-calendar', 'google-mail', 'ynab']);
 
 export async function GET(request: NextRequest): Promise<Response> {
   const provider = request.nextUrl.searchParams.get('provider') ?? '';

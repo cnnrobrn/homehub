@@ -2,19 +2,21 @@
   "name": "@homehub/worker-reconciler",
   "version": "0.0.0",
   "private": true,
-  "description": "Reconciles duplicate transactions (email vs budget app) and merges memory facts. Owned by @integrations + @memory-background; fleshed out in M3/M5.",
+  "description": "Reconciles email-receipt transactions with provider-side (YNAB/Monarch/Plaid) transactions. Cron-driven, hourly. Owned by @integrations.",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
+    "cron": "node dist/cron.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@homehub/db": "workspace:*",
     "@homehub/shared": "workspace:*",
-    "@homehub/worker-runtime": "workspace:*"
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

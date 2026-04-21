@@ -55,6 +55,7 @@ import {
   HOMEHUB_INGESTED_LABEL_NAME,
   isEmailCategory,
 } from '@homehub/providers-email';
+import { type FinancialProvider } from '@homehub/providers-financial';
 import { type Logger, type QueueClient, queueNames } from '@homehub/worker-runtime';
 import { type SupabaseClient } from '@supabase/supabase-js';
 
@@ -69,6 +70,25 @@ export const GMAIL_PROVIDER_KEY = 'google-mail';
 export const GMAIL_PROVIDER = 'gmail';
 export const GMAIL_HISTORY_ID_KIND = 'gmail.history_id';
 export const GMAIL_WATCH_KIND = 'gmail.watch';
+
+/**
+ * Financial providers routed through the Nango webhook. YNAB is the
+ * only one with a concrete implementation in M5-A; Monarch + Plaid are
+ * stubs here so a misconfigured provider surfaces a log line rather
+ * than a silent 204.
+ */
+export const YNAB_PROVIDER_KEY = 'ynab';
+export const YNAB_PROVIDER = 'ynab';
+export const MONARCH_PROVIDER_KEY = 'monarch';
+export const MONARCH_PROVIDER = 'monarch';
+export const PLAID_PROVIDER_KEY = 'plaid';
+export const PLAID_PROVIDER = 'plaid';
+
+const FINANCIAL_PROVIDER_KEYS = new Set<string>([
+  YNAB_PROVIDER_KEY,
+  MONARCH_PROVIDER_KEY,
+  PLAID_PROVIDER_KEY,
+]);
 
 // `sync.cursor.value` for a gcal channel is JSON
 // `{"channel_id","resource_id","expiration"}`. Connection is the FK.
@@ -91,6 +111,15 @@ export interface WebhookIngestDeps {
   queues: QueueClient;
   calendar: CalendarProvider;
   email: EmailProvider;
+  /**
+   * YNAB provider. Optional because a webhook-ingest deployment in a
+   * household without YNAB configured shouldn't force a Nango config
+   * at boot. When absent, `connection.created` for `ynab` is still
+   * processed (we enqueue a full sync) but the `ynab_budget_id`
+   * seeding is skipped and the sync worker falls back to the default
+   * budget at first read.
+   */
+  financial?: FinancialProvider;
   log: Logger;
   env: {
     NANGO_WEBHOOK_SECRET?: string;
@@ -378,7 +407,11 @@ export async function handleNangoWebhook(
     };
   }
 
-  if (providerKey !== GCAL_PROVIDER_KEY && providerKey !== GMAIL_PROVIDER_KEY) {
+  if (
+    providerKey !== GCAL_PROVIDER_KEY &&
+    providerKey !== GMAIL_PROVIDER_KEY &&
+    !FINANCIAL_PROVIDER_KEYS.has(providerKey)
+  ) {
     deps.log.warn('nango webhook for provider we do not handle', { provider: providerKey });
     return { status: 204, body: {} };
   }
@@ -394,7 +427,15 @@ export async function handleNangoWebhook(
         tags: payload.endUser?.tags ?? {},
       });
     }
-    return handleGmailConnectionCreated(deps, {
+    if (providerKey === GMAIL_PROVIDER_KEY) {
+      return handleGmailConnectionCreated(deps, {
+        nangoConnectionId: connectionId,
+        tags: payload.endUser?.tags ?? {},
+      });
+    }
+    // Financial (ynab / monarch / plaid).
+    return handleFinancialConnectionCreated(deps, {
+      providerKey,
       nangoConnectionId: connectionId,
       tags: payload.endUser?.tags ?? {},
     });
@@ -403,7 +444,13 @@ export async function handleNangoWebhook(
     if (providerKey === GCAL_PROVIDER_KEY) {
       return handleGcalConnectionDeleted(deps, { nangoConnectionId: connectionId });
     }
-    return handleGmailConnectionDeleted(deps, { nangoConnectionId: connectionId });
+    if (providerKey === GMAIL_PROVIDER_KEY) {
+      return handleGmailConnectionDeleted(deps, { nangoConnectionId: connectionId });
+    }
+    return handleFinancialConnectionDeleted(deps, {
+      providerKey,
+      nangoConnectionId: connectionId,
+    });
   }
 
   deps.log.info('nango webhook with non-actionable type; ignoring', { type: eventType });
@@ -751,6 +798,143 @@ async function handleGmailConnectionDeleted(
   });
 
   deps.log.info('gmail connection revoked', { connection_id: connection.id });
+  return { status: 204, body: {} };
+}
+
+// ---- financial (ynab / monarch / plaid) --------------------------------
+
+/**
+ * Map an incoming Nango provider key to the HomeHub-side provider
+ * label stored on `sync.provider_connection.provider`. For financial
+ * providers today they're identical (`ynab`/`monarch`/`plaid`) but we
+ * keep the indirection so a future Nango-config-key split from the
+ * stored label doesn't blow up the webhook path.
+ */
+function financialProviderLabel(providerKey: string): 'ynab' | 'monarch' | 'plaid' | null {
+  if (providerKey === YNAB_PROVIDER_KEY) return 'ynab';
+  if (providerKey === MONARCH_PROVIDER_KEY) return 'monarch';
+  if (providerKey === PLAID_PROVIDER_KEY) return 'plaid';
+  return null;
+}
+
+async function handleFinancialConnectionCreated(
+  deps: WebhookIngestDeps,
+  args: { providerKey: string; nangoConnectionId: string; tags: Record<string, string> },
+): Promise<WebhookResult> {
+  const providerLabel = financialProviderLabel(args.providerKey);
+  if (!providerLabel) {
+    deps.log.warn('unknown financial provider key; ignoring', { provider: args.providerKey });
+    return { status: 204, body: {} };
+  }
+
+  const householdId = args.tags.household_id;
+  const memberId = args.tags.member_id ?? null;
+  if (!householdId) {
+    deps.log.error('nango financial connection.created missing household_id tag', {
+      nango_connection_id: args.nangoConnectionId,
+      provider: providerLabel,
+    });
+    return { status: 400, body: { error: 'household_id tag required on connect session' } };
+  }
+
+  // YNAB-specific metadata seeding (budget id) is deferred to the
+  // first sync so we don't duplicate the adapter's budget-resolution
+  // path inside the webhook handler. The sync worker resolves the
+  // budget id the first time it runs (via `resolveBudgetId` in
+  // `sync-financial/src/main.ts`), and a budget-picker UI is a M5-C
+  // follow-up for @frontend-chat.
+  const metadata: Record<string, unknown> = {};
+
+  const { data: upserted, error: upsertErr } = await (deps.supabase
+    .schema('sync')
+    .from('provider_connection')
+    .upsert(
+      {
+        household_id: householdId,
+        member_id: memberId,
+        provider: providerLabel,
+        nango_connection_id: args.nangoConnectionId,
+        status: 'active',
+        updated_at: new Date().toISOString(),
+        metadata: metadata as unknown as Json,
+      } as never,
+      { onConflict: 'household_id,provider,nango_connection_id' },
+    )
+    .select('id, household_id, nango_connection_id')
+    .maybeSingle() as unknown as Promise<{
+    data: { id: string; household_id: string; nango_connection_id: string } | null;
+    error: { message: string } | null;
+  }>);
+  if (upsertErr) {
+    throw new Error(`provider_connection upsert failed: ${upsertErr.message}`);
+  }
+  if (!upserted) {
+    throw new Error('provider_connection upsert returned no row');
+  }
+
+  const now = (deps.now ?? (() => new Date()))();
+  await deps.queues.send(queueNames.syncFull(providerLabel), {
+    household_id: upserted.household_id,
+    kind: `sync.${providerLabel}.full`,
+    entity_id: upserted.id,
+    version: 1,
+    enqueued_at: now.toISOString(),
+  });
+
+  await writeAudit(deps.supabase, {
+    household_id: upserted.household_id,
+    action: `sync.${providerLabel}.connection.created`,
+    resource_id: upserted.id,
+    after: { nango_connection_id: args.nangoConnectionId, member_id: memberId },
+  });
+
+  deps.log.info('financial connection created; full sync enqueued', {
+    connection_id: upserted.id,
+    household_id: upserted.household_id,
+    provider: providerLabel,
+  });
+  return { status: 204, body: {} };
+}
+
+async function handleFinancialConnectionDeleted(
+  deps: WebhookIngestDeps,
+  args: { providerKey: string; nangoConnectionId: string },
+): Promise<WebhookResult> {
+  const providerLabel = financialProviderLabel(args.providerKey);
+  if (!providerLabel) {
+    return { status: 204, body: {} };
+  }
+
+  const { data: connection, error: lookupErr } = await deps.supabase
+    .schema('sync')
+    .from('provider_connection')
+    .select('id, household_id')
+    .eq('provider', providerLabel)
+    .eq('nango_connection_id', args.nangoConnectionId)
+    .maybeSingle();
+  if (lookupErr) throw new Error(`connection lookup failed: ${lookupErr.message}`);
+  if (!connection) {
+    return { status: 204, body: {} };
+  }
+
+  await deps.supabase
+    .schema('sync')
+    .from('provider_connection')
+    .update({ status: 'revoked', updated_at: new Date().toISOString() })
+    .eq('id', connection.id);
+  await deps.supabase.schema('sync').from('cursor').delete().eq('connection_id', connection.id);
+
+  await writeAudit(deps.supabase, {
+    household_id: connection.household_id,
+    action: `sync.${providerLabel}.connection.deleted`,
+    resource_id: connection.id,
+    after: { nango_connection_id: args.nangoConnectionId },
+  });
+
+  deps.log.info('financial connection revoked', {
+    connection_id: connection.id,
+    provider: providerLabel,
+  });
   return { status: 204, body: {} };
 }
 

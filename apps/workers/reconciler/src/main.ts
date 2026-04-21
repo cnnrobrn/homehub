@@ -1,9 +1,15 @@
 /**
  * `reconciler` worker entrypoint.
  *
- * M0 scaffold. The runtime wires up env, tracing, Supabase, and the queue
- * client; the handler body is still a stub. This file mirrors the
- * template in sibling worker services under apps/workers/*.
+ * Long-running HTTP server that exposes `/health` + `/ready` for Railway
+ * probes and idles until SIGTERM. The actual reconciliation work is
+ * driven by the sibling `cron.ts` entry (Railway cron trigger), not by
+ * this process. We keep this process running so the service has a
+ * long-lived presence for log aggregation + a cheap place to respond
+ * to health checks.
+ *
+ * Feature flag: none — the reconciler is a no-op when there are no
+ * `source='email_receipt'` rows, which is today's state.
  */
 
 import { createServer } from 'node:http';
@@ -30,7 +36,6 @@ const exitCode = await runWorker(
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
 
-    // Health/ready HTTP server per specs/05-agents/workers.md.
     let ready = false;
     const port = Number.parseInt(process.env.PORT ?? '8080', 10);
     const server = createServer((req, res) => {
@@ -61,13 +66,24 @@ const exitCode = await runWorker(
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    // The queue client is constructed so readiness reflects a working
-    // Supabase connection. The real consumer loop lands later.
+    try {
+      const { error } = await supabase
+        .schema('sync')
+        .from('provider_connection')
+        .select('id', { count: 'exact', head: true });
+      if (error) throw error;
+      ready = true;
+      log.info('readiness ok; idling (cron-driven)');
+    } catch (err) {
+      log.error('readiness probe failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    // We construct the queue client so readiness reflects a working
+    // Supabase connection; the reconciler itself writes directly to
+    // app.transaction and does not consume pgmq messages in M5-A.
     void queues;
-    ready = true;
 
-    log.info('worker started (no-op loop)');
-    // TODO(@integrations, M5) + TODO(@memory-background, M3): replace with cron-triggered reconciliation.
     await new Promise<void>((resolve) => {
       const onSig = (): void => resolve();
       process.once('SIGTERM', onSig);

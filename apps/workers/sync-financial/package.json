@@ -2,19 +2,23 @@
   "name": "@homehub/worker-sync-financial",
   "version": "0.0.0",
   "private": true,
-  "description": "Pulls transactions and account snapshots from Monarch, YNAB, and Plaid. Owned by @integrations; fleshed out in M5.",
+  "description": "Pulls transactions, accounts, and budgets from YNAB (and Monarch / Plaid in later milestones). Owned by @integrations.",
   "type": "module",
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/main.ts",
     "start": "node dist/main.js",
+    "cron": "node dist/cron.js",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
   "dependencies": {
     "@homehub/db": "workspace:*",
+    "@homehub/providers-financial": "workspace:*",
     "@homehub/shared": "workspace:*",
-    "@homehub/worker-runtime": "workspace:*"
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "tsx": "^4.19.2",

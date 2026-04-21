@@ -20,6 +20,9 @@ const PROVIDER_LABELS: Record<string, string> = {
   gcal: 'Google Calendar',
   'google-mail': 'Gmail',
   gmail: 'Gmail',
+  ynab: 'YNAB',
+  monarch: 'Monarch Money',
+  plaid: 'Plaid',
 };
 
 function formatRelative(iso: string | null): string {
@@ -86,8 +89,11 @@ export default async function ConnectionsPage() {
             <a href="/api/integrations/connect?provider=google-calendar">Connect Google Calendar</a>
           </Button>
           <EmailConnectDialog />
+          <Button asChild>
+            <a href="/api/integrations/connect?provider=ynab">Connect YNAB</a>
+          </Button>
           <span className="text-sm text-fg-muted" aria-live="polite">
-            Monarch / YNAB ship in later milestones.
+            Monarch and Plaid land in later milestones.
           </span>
         </div>
       </section>

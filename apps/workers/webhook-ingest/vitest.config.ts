@@ -22,6 +22,9 @@ const providersCalendarSrc = fileURLToPath(
 const providersEmailSrc = fileURLToPath(
   new URL('../../../packages/providers/email/src/index.ts', import.meta.url),
 );
+const providersFinancialSrc = fileURLToPath(
+  new URL('../../../packages/providers/financial/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   resolve: {
@@ -31,6 +34,7 @@ export default defineConfig({
       '@homehub/db': dbSrc,
       '@homehub/providers-calendar': providersCalendarSrc,
       '@homehub/providers-email': providersEmailSrc,
+      '@homehub/providers-financial': providersFinancialSrc,
     },
   },
 });
