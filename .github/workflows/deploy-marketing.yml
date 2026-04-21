@@ -43,7 +43,10 @@ concurrency:
 
 env:
   NODE_VERSION: '20.18.0'
-  PNPM_VERSION: '9.15.9'
+  # pnpm version is taken from the root package.json `packageManager`
+  # field. pnpm/action-setup@v4 reads that automatically — specifying
+  # `with.version` here would clash and fail with
+  # "ERR_PNPM_BAD_PM_VERSION: Multiple versions of pnpm specified".
   # Evaluated once at workflow start. Used to skip the Cloudflare deploy
   # and preview steps when secrets are unavailable (fork PRs, secret
   # rotation). Without this gate, those steps fail with a non-interactive
@@ -65,8 +68,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4

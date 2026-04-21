@@ -11,7 +11,10 @@ concurrency:
 
 env:
   NODE_VERSION: '20.18.0'
-  PNPM_VERSION: '9.15.9'
+  # pnpm version is taken from the root package.json `packageManager`
+  # field (pinned with integrity hash). pnpm/action-setup@v4 reads that
+  # automatically — specifying `with.version` here would clash and fail
+  # with "ERR_PNPM_BAD_PM_VERSION: Multiple versions of pnpm specified".
   # Pinned Supabase CLI version. Bump deliberately; a bump can change
   # migration linter behavior or bundled Postgres extension versions.
   SUPABASE_CLI_VERSION: '2.90.0'
@@ -26,8 +29,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -50,8 +51,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -74,8 +73,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -98,8 +95,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -124,8 +119,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -163,8 +156,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -248,8 +239,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: ${{ env.PNPM_VERSION }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
