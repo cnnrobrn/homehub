@@ -1,0 +1,137 @@
+@import 'tailwindcss';
+@import '../styles/tokens.css';
+
+/*
+ * Tailwind v4 `@theme` bridge — re-exports the design tokens from
+ * `tokens.css` as Tailwind theme variables so `bg-bg`, `text-ink`,
+ * `text-sub`, `text-accent`, `border-rule`, etc. resolve to the same
+ * source of truth.
+ */
+@theme {
+  --color-bg: var(--color-bg);
+  --color-card: var(--color-card);
+  --color-ink: var(--color-ink);
+  --color-sub: var(--color-sub);
+  --color-accent: var(--color-accent);
+  --color-rule: var(--color-rule);
+  --color-warm-sand: var(--color-warm-sand);
+  --color-note-bg: var(--color-note-bg);
+  --color-friday-bg: var(--color-friday-bg);
+  --color-chart-empty: var(--color-chart-empty);
+  --color-terminal-bg: var(--color-terminal-bg);
+  --color-terminal-fg: var(--color-terminal-fg);
+  --color-terminal-dim: var(--color-terminal-dim);
+  --color-area-money: var(--color-area-money);
+  --color-area-meals: var(--color-area-meals);
+  --color-area-plans: var(--color-area-plans);
+  --color-area-people: var(--color-area-people);
+
+  --radius-xs: var(--radius-xs);
+  --radius-sm: var(--radius-sm);
+
+  --shadow-card: var(--shadow-card);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+html,
+body {
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+}
+
+body {
+  min-height: 100svh;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/*
+ * Responsive scaling — the design is authored at 1280px. Below that we
+ * tighten horizontal padding and shrink the hero headline; under 900px
+ * we stack the two-column sections and collapse the areas/testimonials
+ * grids; under 600px we drop the nav links and let text sections flow
+ * single-column.
+ */
+@media (max-width: 1199px) {
+  .hh-section {
+    padding-left: 40px;
+    padding-right: 40px;
+  }
+  .hh-hero-h1 {
+    font-size: 54px;
+  }
+  .hh-closing-h1 {
+    font-size: 52px;
+  }
+}
+
+@media (max-width: 899px) {
+  .hh-nav-links,
+  .hh-nav-auth {
+    display: none !important;
+  }
+  .hh-hero {
+    grid-template-columns: 1fr !important;
+    gap: 48px !important;
+  }
+  .hh-hero-h1 {
+    font-size: 44px;
+    letter-spacing: -1.5px;
+  }
+  .hh-closing-h1 {
+    font-size: 44px;
+    letter-spacing: -1.5px;
+  }
+  .hh-areas-grid,
+  .hh-pricing-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .hh-how-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .hh-ask-grid,
+  .hh-suggestion-grid,
+  .hh-privacy-grid {
+    grid-template-columns: 1fr !important;
+    gap: 32px !important;
+  }
+  .hh-testimonials-grid {
+    grid-template-columns: 1fr !important;
+  }
+  .hh-footer-grid {
+    grid-template-columns: 1fr 1fr !important;
+  }
+  .hh-hero-meta {
+    flex-wrap: wrap;
+    gap: 10px !important;
+  }
+}
+
+@media (max-width: 599px) {
+  .hh-section {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+  .hh-hero-h1 {
+    font-size: 38px;
+    letter-spacing: -1px;
+  }
+  .hh-closing-h1 {
+    font-size: 36px;
+  }
+  .hh-footer-grid {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/*
+ * Sticky-nav scroll shadow. The nav toggles `data-scrolled="true"` via
+ * a tiny effect in `Nav.tsx`; the shadow is a 1px downward border
+ * rather than a blurred box-shadow so it reads as a hairline rule.
+ */
+.hh-nav[data-scrolled='true'] {
+  box-shadow: 0 1px 0 var(--color-rule);
+}
