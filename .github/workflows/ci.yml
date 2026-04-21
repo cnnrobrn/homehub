@@ -79,6 +79,15 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build internal packages for tests
+        # Many workspace packages expose built `dist/*` entrypoints in
+        # `exports`, so worker tests need those packages compiled first
+        # on a clean runner.
+        run: |
+          pnpm -r --if-present --filter './packages/**' run build
+          pnpm -r --if-present --filter './apps/workers/**' run build
+          pnpm -r --if-present --filter './apps/mcp/**' run build
+
       - name: Test
         run: pnpm -r --if-present run test
 
