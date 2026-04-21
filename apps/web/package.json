@@ -13,6 +13,7 @@
     "format:check": "prettier --check ."
   },
   "dependencies": {
+    "@homehub/auth-server": "workspace:*",
     "@homehub/db": "workspace:*",
     "@homehub/shared": "workspace:*",
     "@supabase/ssr": "^0.10.2",

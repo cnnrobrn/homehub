@@ -1,20 +1,28 @@
 /**
  * Per-household model-budget guard.
  *
- * Reads `app.household.settings->model_budget_monthly_cents` and sums
- * the current-month `app.model_calls.cost_usd`; when usage exceeds the
- * budget, callers are told to drop non-essential jobs or switch to a
- * cheaper model.
+ * Sums the current calendar-month `app.model_calls.cost_usd` for a
+ * household and compares it against
+ * `app.household.settings->>'model_budget_monthly_cents'`. Returns:
  *
- * Neither `app.household.settings` nor `app.model_calls` exists yet —
- * both land in M1. Until then the guard returns a permissive
- * `{ ok: true, tier: 'default' }` and logs a one-time warning so call
- * sites can wire it today.
+ *   - `{ ok: true, tier: 'default' }`   — usage < 80% of budget, or no
+ *                                         budget configured (Infinity).
+ *   - `{ ok: true, tier: 'degraded' }`  — usage >= 80% of budget; caller
+ *                                         should prefer cheaper models.
+ *   - `{ ok: false, reason: 'budget_exceeded' }` — usage >= 100% of
+ *                                         budget; caller should drop
+ *                                         non-essential jobs.
+ *
+ * The DB-side store is cost in USD (numeric) on `model_calls.cost_usd`;
+ * the budget ceiling is stored in *cents* on household.settings so a
+ * small integer lives in JSONB without rounding drift. We convert on
+ * read.
  *
  * Spec: `specs/05-agents/model-routing.md` § Per-household budgets.
  */
 
 import { type HouseholdId } from '@homehub/shared';
+import { z } from 'zod';
 
 import { type Logger } from '../log/logger.js';
 import { type ServiceSupabaseClient } from '../supabase/client.js';
@@ -31,29 +39,81 @@ export interface WithBudgetGuardArgs {
   task_class: string;
 }
 
-let stubWarned = false;
+/**
+ * Shape we expect under `household.settings`. We parse defensively —
+ * settings is `jsonb`, callers can add arbitrary keys, and we only need
+ * one field. Non-numeric values fall back to "unlimited."
+ */
+const householdSettingsSchema = z
+  .object({
+    model_budget_monthly_cents: z.number().nonnegative().optional(),
+  })
+  .catchall(z.unknown());
+
+/**
+ * Compute the first-of-month UTC timestamp for the supplied `now`. We
+ * use UTC so "budget month" is a stable boundary across zones. The
+ * alternative — household-local time — adds complexity for the sake of
+ * one edge-of-day case; the spec explicitly names monthly budgets.
+ */
+function firstOfMonthUtc(now: Date): string {
+  const y = now.getUTCFullYear();
+  const m = now.getUTCMonth();
+  return new Date(Date.UTC(y, m, 1, 0, 0, 0, 0)).toISOString();
+}
 
 export async function withBudgetGuard(
   supabase: ServiceSupabaseClient,
   args: WithBudgetGuardArgs,
   logger?: Logger,
 ): Promise<BudgetCheckResult> {
-  void supabase;
-  void args;
-  if (!stubWarned) {
-    logger?.warn(
-      'withBudgetGuard: app.model_calls / household.settings not yet provisioned; returning default tier',
-    );
-    stubWarned = true;
+  // 1) Pull the budget from household.settings. service_role bypasses RLS.
+  const { data: hRow, error: hErr } = await supabase
+    .schema('app')
+    .from('household')
+    .select('settings')
+    .eq('id', args.household_id)
+    .maybeSingle();
+
+  if (hErr) {
+    logger?.warn('withBudgetGuard: household read failed', { error: hErr.message });
+    // Fail open: instrumentation must not block jobs. Caller still gets
+    // a permissive answer and the warn is operator-observable.
+    return { ok: true, tier: 'default' };
+  }
+
+  const settings = householdSettingsSchema.safeParse(hRow?.settings ?? {});
+  const budgetCents = settings.success ? settings.data.model_budget_monthly_cents : undefined;
+  if (budgetCents === undefined) {
+    // No budget configured — permissive.
+    return { ok: true, tier: 'default' };
+  }
+
+  // 2) Sum current-month cost.
+  const periodStart = firstOfMonthUtc(new Date());
+  const { data: rows, error: cErr } = await supabase
+    .schema('app')
+    .from('model_calls')
+    .select('cost_usd')
+    .eq('household_id', args.household_id)
+    .gte('at', periodStart);
+
+  if (cErr) {
+    logger?.warn('withBudgetGuard: model_calls read failed', { error: cErr.message });
+    return { ok: true, tier: 'default' };
+  }
+
+  const usedUsd = (rows ?? []).reduce((acc, r) => {
+    const n = typeof r.cost_usd === 'number' ? r.cost_usd : Number(r.cost_usd);
+    return Number.isFinite(n) ? acc + n : acc;
+  }, 0);
+  const usedCents = Math.round(usedUsd * 100);
+
+  if (usedCents >= budgetCents) {
+    return { ok: false, reason: 'budget_exceeded' };
+  }
+  if (usedCents >= Math.floor(budgetCents * 0.8)) {
+    return { ok: true, tier: 'degraded' };
   }
   return { ok: true, tier: 'default' };
-}
-
-/**
- * Test-only reset so the warning can be reasserted independently per
- * test. Not exported from the barrel.
- * @internal
- */
-export function __resetBudgetGuardForTests(): void {
-  stubWarned = false;
 }

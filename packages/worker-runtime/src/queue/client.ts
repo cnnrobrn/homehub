@@ -21,17 +21,18 @@
  * the documented contract, not a promise the client enforces
  * single-handedly.
  *
- * DLQ: `sync.dead_letter` lands with M1. Until then, `deadLetter` throws
- * `NotYetImplementedError`. The interface is stable so worker code can
- * wire the call today and start writing rows automatically when the
- * table ships.
+ * DLQ: `sync.dead_letter` landed in M1 (migration 0009). `deadLetter`
+ * now writes directly to it. When a payload carries a provider
+ * connection id (as some sync-worker envelopes will in M2) the caller
+ * can pass it in the options; otherwise the row's `connection_id` is
+ * null and operators dedupe by (queue, received_at).
  */
 
-import { now, toIso } from '@homehub/shared';
+import { type Json } from '@homehub/db';
 import { type PostgrestError } from '@supabase/supabase-js';
 import { z } from 'zod';
 
-import { NotYetImplementedError, QueueError } from '../errors.js';
+import { QueueError } from '../errors.js';
 import { type ServiceSupabaseClient } from '../supabase/client.js';
 
 import { messageEnvelopeSchema, type MessageEnvelope } from './envelope.js';
@@ -204,18 +205,35 @@ export function createQueueClient(supabase: ServiceSupabaseClient): QueueClient 
       ensureOk(queueName, res, 'set_vt');
     },
 
-    async deadLetter(queueName, _messageId, _reason, _payload) {
-      // `sync.dead_letter` lands with M1. Keep the call surface stable
-      // so every handler can call `deadLetter` today; swap the stub for
-      // a real insert when the table arrives.
-      void _messageId;
-      void _reason;
-      void _payload;
-      void now;
-      void toIso;
-      throw new NotYetImplementedError(
-        `queue.deadLetter: sync.dead_letter lands in M1 (queue=${queueName})`,
-      );
+    async deadLetter(queueName, messageId, reason, payload) {
+      // Insert the failed message into `sync.dead_letter`. We do not
+      // archive from pgmq here — that's the caller's job (they may want
+      // to keep the original around for replay). Schema columns:
+      //   queue        — the source queue name
+      //   message_id   — the pgmq message id (nullable; a "poison on
+      //                  claim" path may not have one)
+      //   payload      — full MessageEnvelope so operators can replay
+      //   error        — human-readable reason; not machine-parseable
+      //   connection_id — populated by callers that know which Nango
+      //                  connection produced the message; null otherwise.
+      // MessageEnvelope is a plain-data object — safe to treat as `Json`
+      // for the insert. Cast once so the `supabase-js` typing lines up.
+      const { error } = await supabase
+        .schema('sync')
+        .from('dead_letter')
+        .insert({
+          queue: queueName,
+          message_id: messageId,
+          payload: payload as unknown as Json,
+          error: reason,
+        });
+      if (error) {
+        throw new QueueError(
+          `dead_letter insert failed for ${queueName}: ${error.message}`,
+          queueName,
+          { cause: error },
+        );
+      }
     },
 
     async depth(queueName) {

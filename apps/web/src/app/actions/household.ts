@@ -1,0 +1,151 @@
+/**
+ * Server actions for household lifecycle.
+ *
+ * Each function is a thin wrapper over `@homehub/auth-server`:
+ *   1. Read the current user from the session cookie.
+ *   2. Zod-parse the raw FormData / typed input.
+ *   3. Call the corresponding auth-server flow under the service-role
+ *      client (the flows enforce authorization in application code and
+ *      the RLS policies in the database act as the backstop).
+ *   4. Wrap the return value in an `ActionResult<T>` envelope.
+ *
+ * All logic-of-consequence lives in `@homehub/auth-server`; these
+ * actions are the Next.js entry points and the place where we convert
+ * thrown errors into `{ ok: false, error }`.
+ */
+
+'use server';
+
+import {
+  type AcceptInvitationResult,
+  type CreateHouseholdResult,
+  type InviteMemberResult,
+  type ListHouseholdsResult,
+  UnauthorizedError,
+  acceptInvitation as baseAcceptInvitation,
+  createHousehold as baseCreateHousehold,
+  createServiceClient,
+  getUser,
+  inviteMember as baseInviteMember,
+  listHouseholds as baseListHouseholds,
+} from '@homehub/auth-server';
+import { z } from 'zod';
+
+import { type ActionResult, ok, toErr } from './_envelope';
+
+import { nextCookieAdapter } from '@/lib/auth/cookies';
+import { authEnv } from '@/lib/auth/env';
+
+const segmentSchema = z.enum(['financial', 'food', 'fun', 'social', 'system']);
+const accessSchema = z.enum(['none', 'read', 'write']);
+const roleSchema = z.enum(['owner', 'adult', 'child', 'guest']);
+
+const createHouseholdFormSchema = z.object({
+  name: z.string().min(1).max(200),
+  timezone: z.string().min(1).max(64).optional(),
+  currency: z.string().length(3).optional(),
+  weekStart: z.enum(['sunday', 'monday']).optional(),
+});
+
+export async function createHouseholdAction(
+  input: z.input<typeof createHouseholdFormSchema>,
+): Promise<ActionResult<CreateHouseholdResult>> {
+  try {
+    const env = authEnv();
+    const cookies = await nextCookieAdapter();
+    const user = await getUser(env, cookies);
+    if (!user) throw new UnauthorizedError('no session');
+
+    const parsed = createHouseholdFormSchema.parse(input);
+    const service = createServiceClient(env);
+
+    const result = await baseCreateHousehold(
+      service,
+      env,
+      { userId: user.id, ...parsed },
+      { email: user.email, displayName: null },
+    );
+    return ok(result);
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const inviteMemberFormSchema = z.object({
+  householdId: z.string().uuid(),
+  email: z.string().email(),
+  role: roleSchema,
+  grants: z.array(z.object({ segment: segmentSchema, access: accessSchema })).default([]),
+});
+
+export async function inviteMemberAction(
+  input: z.input<typeof inviteMemberFormSchema>,
+): Promise<ActionResult<InviteMemberResult>> {
+  try {
+    const env = authEnv();
+    const cookies = await nextCookieAdapter();
+    const user = await getUser(env, cookies);
+    if (!user) throw new UnauthorizedError('no session');
+
+    const parsed = inviteMemberFormSchema.parse(input);
+    const service = createServiceClient(env);
+
+    // Resolve the user's member-id in the target household.
+    const { resolveMemberId } = await import('@homehub/auth-server');
+    const memberId = await resolveMemberId(service, parsed.householdId, user.id);
+    if (!memberId) throw new UnauthorizedError('not a member of this household');
+
+    const result = await baseInviteMember(service, env, {
+      householdId: parsed.householdId,
+      inviterMemberId: memberId,
+      email: parsed.email,
+      role: parsed.role,
+      grants: parsed.grants,
+    });
+    return ok(result);
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const acceptInvitationFormSchema = z.object({
+  token: z.string().min(1),
+});
+
+export async function acceptInvitationAction(
+  input: z.input<typeof acceptInvitationFormSchema>,
+): Promise<ActionResult<AcceptInvitationResult>> {
+  try {
+    const env = authEnv();
+    const cookies = await nextCookieAdapter();
+    const user = await getUser(env, cookies);
+    if (!user) throw new UnauthorizedError('no session');
+
+    const parsed = acceptInvitationFormSchema.parse(input);
+    const service = createServiceClient(env);
+    const result = await baseAcceptInvitation(
+      service,
+      env,
+      { token: parsed.token, userId: user.id },
+      { email: user.email },
+    );
+    return ok(result);
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+export async function listHouseholdsAction(): Promise<ActionResult<ListHouseholdsResult[]>> {
+  try {
+    const env = authEnv();
+    const cookies = await nextCookieAdapter();
+    const user = await getUser(env, cookies);
+    if (!user) throw new UnauthorizedError('no session');
+
+    const service = createServiceClient(env);
+    const result = await baseListHouseholds(service, env, { userId: user.id });
+    return ok(result);
+  } catch (err) {
+    return toErr(err);
+  }
+}

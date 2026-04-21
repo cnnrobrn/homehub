@@ -11,10 +11,11 @@
  *     logging.
  *   - `specs/01-architecture/stack.md` — OpenRouter is the gateway.
  *
- * The `model_calls` table doesn't exist yet (lands in M1). We keep the
- * write attempt behind a try/catch that logs once and becomes a no-op
- * so the interface is stable today — call sites don't change when the
- * migration ships.
+ * The `app.model_calls` table landed in M1 (migration 0009). The
+ * recorder below inserts one row per call and logs at `warn` on a DB
+ * error — a transient Postgres outage must not fail the model call
+ * itself. Repeated failures continue to log so operators can detect
+ * a chronic issue; this is instrumentation, not critical path.
  */
 
 import { type HouseholdId } from '@homehub/shared';
@@ -102,12 +103,14 @@ function extractText(response: ChatCompletionResponse): string {
 }
 
 /**
- * One-shot `model_calls` insert. The table doesn't exist yet — M1 adds
- * it. We issue the call through Supabase RPC because the shape of the
- * write doesn't change whether it's a direct insert or via a helper
- * function; until the migration lands, every call silently becomes a
- * no-op after the first warning. When the table arrives, no call site
- * needs to change.
+ * One-shot `app.model_calls` insert. Fire-and-forget: any error inside
+ * the recorder is logged at `warn` and swallowed so a transient DB
+ * outage does not fail the model call itself. This is telemetry, not
+ * critical path.
+ *
+ * Note on bypass: workers use the service-role client here. The RLS
+ * policy on `app.model_calls` lets only owners read, and only service-
+ * role writes — both of which we respect.
  */
 function createModelCallsRecorder(
   supabase: ServiceSupabaseClient | undefined,
@@ -122,43 +125,20 @@ function createModelCallsRecorder(
   latency_ms: number;
   at: string;
 }) => Promise<void> {
-  let warned = false;
-  let disabled = false;
-
   return async (row) => {
-    if (!supabase || disabled) return;
+    if (!supabase) return;
     try {
-      const { error } = await supabase
-        .schema('app')
-        // TODO(M1): `app.model_calls` lands in the model-routing migration.
-        .from('model_calls' as never)
-        .insert(row as never);
+      const { error } = await supabase.schema('app').from('model_calls').insert(row);
       if (error) {
-        // 42P01 = undefined_table; any other error should still surface.
-        const code = (error as unknown as { code?: string }).code ?? '';
-        if (code === '42P01' || code === 'PGRST205') {
-          if (!warned) {
-            logger.warn(
-              'app.model_calls table not yet provisioned; cost tracking disabled until M1',
-              { code },
-            );
-            warned = true;
-          }
-          disabled = true;
-          return;
-        }
-        logger.warn('model_calls insert failed', { error: error.message });
+        logger.warn('model_calls insert failed', {
+          error: error.message,
+          code: (error as unknown as { code?: string }).code,
+        });
       }
     } catch (err) {
-      // First failure: warn and disable. We never want the recorder to
-      // break a model call.
-      if (!warned) {
-        logger.warn('model_calls recorder disabled after unexpected error', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-        warned = true;
-      }
-      disabled = true;
+      logger.warn('model_calls recorder threw', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 }
