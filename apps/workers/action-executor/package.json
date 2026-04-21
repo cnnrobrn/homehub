@@ -12,8 +12,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@homehub/action-executors": "workspace:*",
     "@homehub/approval-flow": "workspace:*",
     "@homehub/db": "workspace:*",
+    "@homehub/providers-calendar": "workspace:*",
+    "@homehub/providers-email": "workspace:*",
+    "@homehub/providers-grocery": "workspace:*",
     "@homehub/shared": "workspace:*",
     "@homehub/worker-runtime": "workspace:*"
   },

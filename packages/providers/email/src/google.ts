@@ -30,6 +30,8 @@ import { EmailSyncError, HistoryIdExpiredError, RateLimitError } from './errors.
 
 import type {
   AddLabelArgs,
+  CreateDraftArgs,
+  CreateDraftResult,
   EmailAttachmentMeta,
   EmailMessage,
   EmailProvider,
@@ -730,6 +732,55 @@ export function createGoogleMailProvider(args: CreateGoogleMailProviderArgs): Em
     }
   }
 
+  async function createDraft(opts: CreateDraftArgs): Promise<CreateDraftResult> {
+    if (!opts.to || opts.to.length === 0) {
+      throw new EmailSyncError('createDraft: at least one recipient is required');
+    }
+    const subject = opts.subject?.trim() ?? '';
+    const bodyText = opts.bodyMarkdown ?? '';
+
+    const raw = buildRfc2822Message({
+      to: opts.to,
+      ...(opts.cc ? { cc: opts.cc } : {}),
+      ...(opts.bcc ? { bcc: opts.bcc } : {}),
+      subject,
+      bodyText,
+    });
+    const encoded = Buffer.from(raw, 'utf8')
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/, '');
+
+    const message: Record<string, unknown> = { raw: encoded };
+    if (opts.threadId) message.threadId = opts.threadId;
+
+    try {
+      const data = await nango.proxy<{
+        id?: string;
+        message?: { id?: string; threadId?: string };
+      }>({
+        providerConfigKey: GOOGLE_MAIL_PROVIDER_KEY,
+        connectionId: opts.connectionId,
+        method: 'POST',
+        endpoint: '/gmail/v1/users/me/drafts',
+        data: { message },
+      });
+      if (!data.id) {
+        throw new EmailSyncError('gmail drafts.create response missing draft id');
+      }
+      const msg = data.message ?? {};
+      return {
+        draftId: data.id,
+        threadId: msg.threadId ?? '',
+        messageId: msg.id ?? '',
+      };
+    } catch (err) {
+      if (err instanceof EmailSyncError) throw err;
+      classifyNangoError(err);
+    }
+  }
+
   async function addLabel(opts: AddLabelArgs): Promise<void> {
     try {
       await nango.proxy({
@@ -753,7 +804,37 @@ export function createGoogleMailProvider(args: CreateGoogleMailProviderArgs): Em
     unwatch,
     addLabel,
     ensureLabel,
+    createDraft,
   };
+}
+
+/**
+ * Build an RFC-2822 message. Deliberately minimal — no MIME parts, no
+ * HTML. Gmail renders bare newlines as line breaks. The agent's
+ * markdown is dropped in as plain text; members can edit the draft in
+ * Gmail before sending.
+ *
+ * Subject and recipient strings are untouched — Gmail accepts UTF-8 in
+ * both. Address validation is the caller's responsibility (Zod at the
+ * executor boundary).
+ *
+ * Exported for tests via `__internal`.
+ */
+export function buildRfc2822Message(args: {
+  to: string[];
+  cc?: string[];
+  bcc?: string[];
+  subject: string;
+  bodyText: string;
+}): string {
+  const headers: string[] = [];
+  headers.push(`To: ${args.to.join(', ')}`);
+  if (args.cc && args.cc.length > 0) headers.push(`Cc: ${args.cc.join(', ')}`);
+  if (args.bcc && args.bcc.length > 0) headers.push(`Bcc: ${args.bcc.join(', ')}`);
+  headers.push(`Subject: ${args.subject}`);
+  headers.push('Content-Type: text/plain; charset="UTF-8"');
+  headers.push('MIME-Version: 1.0');
+  return `${headers.join('\r\n')}\r\n\r\n${args.bodyText}`;
 }
 
 /** Exposed for tests — see google.test.ts. */
@@ -765,4 +846,5 @@ export const __internal = {
   truncateBytes,
   extractBodyPreview,
   collectAttachments,
+  buildRfc2822Message,
 };

@@ -15,6 +15,8 @@ export {
   type CalendarAttendee,
   type CalendarEvent,
   type CalendarProvider,
+  type CreateEventArgs,
+  type CreateEventResult,
   type ListEventsArgs,
   type ListEventsPage,
   type UnwatchArgs,

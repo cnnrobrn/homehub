@@ -16,6 +16,8 @@ export { EmailSyncError, HistoryIdExpiredError, RateLimitError } from './errors.
 
 export type {
   AddLabelArgs,
+  CreateDraftArgs,
+  CreateDraftResult,
   EmailAttachmentMeta,
   EmailCategory,
   EmailMessage,
@@ -47,6 +49,7 @@ export {
 
 export {
   BODY_PREVIEW_MAX_BYTES,
+  buildRfc2822Message,
   createGoogleMailProvider,
   GOOGLE_MAIL_PROVIDER_KEY,
   HOMEHUB_INGESTED_LABEL_NAME,

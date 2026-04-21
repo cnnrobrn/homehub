@@ -63,6 +63,7 @@ function makeEmailProvider(
     unwatch: vi.fn(),
     addLabel: vi.fn(async () => {}),
     ensureLabel: vi.fn(async () => ({ labelId: 'Label_Ingested' })),
+    createDraft: vi.fn(async () => ({ draftId: 'd1', threadId: 't1', messageId: 'm1' })),
   };
   return { ...base, ...(overrides ?? {}) };
 }

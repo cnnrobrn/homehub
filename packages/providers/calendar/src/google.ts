@@ -28,6 +28,8 @@ import {
   type CalendarAttendee,
   type CalendarEvent,
   type CalendarProvider,
+  type CreateEventArgs,
+  type CreateEventResult,
   type ListEventsArgs,
   type ListEventsPage,
   type UnwatchArgs,
@@ -409,6 +411,64 @@ export function createGoogleCalendarProvider(
     }
   }
 
+  async function createEvent(opts: CreateEventArgs): Promise<CreateEventResult> {
+    const title = opts.title?.trim();
+    if (!title) {
+      throw new CalendarSyncError('createEvent: title is required');
+    }
+    if (!opts.startsAt) {
+      throw new CalendarSyncError('createEvent: startsAt is required');
+    }
+
+    // Google events.insert requires both start and end. Default to a
+    // 1-hour window if the caller omitted endsAt so the provider never
+    // 400s on a missing field.
+    const startsAt = opts.startsAt;
+    const endsAt =
+      opts.endsAt ?? new Date(new Date(opts.startsAt).getTime() + 60 * 60 * 1_000).toISOString();
+
+    // De-dup attendees by lower-cased email. The provider is tolerant
+    // of duplicates but we want deterministic output for tests.
+    const attendees = Array.from(
+      new Set((opts.attendees ?? []).map((e) => e.trim().toLowerCase()).filter(Boolean)),
+    ).map((email) => ({ email }));
+
+    const body: Record<string, unknown> = {
+      summary: title,
+      start: { dateTime: startsAt },
+      end: { dateTime: endsAt },
+    };
+    if (opts.location) body.location = opts.location;
+    if (opts.description) body.description = opts.description;
+    if (attendees.length > 0) body.attendees = attendees;
+
+    try {
+      const data = await nango.proxy<RawEvent & { htmlLink?: string }>({
+        providerConfigKey: GOOGLE_CALENDAR_PROVIDER_KEY,
+        connectionId: opts.connectionId,
+        method: 'POST',
+        endpoint: '/calendar/v3/calendars/primary/events',
+        params: {
+          // `sendUpdates=none` keeps the insert quiet; `all` mails every
+          // invitee. Default to none to match HomeHub's "draft-first"
+          // posture — the member can resend from their calendar UI.
+          sendUpdates: opts.sendUpdates ? 'all' : 'none',
+        },
+        data: body,
+      });
+      if (!data.id) {
+        throw new CalendarSyncError('google events.insert response missing id');
+      }
+      return {
+        eventId: data.id,
+        htmlLink: data.htmlLink ?? '',
+      };
+    } catch (err) {
+      if (err instanceof CalendarSyncError) throw err;
+      classifyNangoError(err);
+    }
+  }
+
   async function unwatch(opts: UnwatchArgs): Promise<void> {
     try {
       await nango.proxy({
@@ -430,7 +490,7 @@ export function createGoogleCalendarProvider(
     }
   }
 
-  return { listEvents, watch, unwatch };
+  return { listEvents, watch, unwatch, createEvent };
 }
 
 /**

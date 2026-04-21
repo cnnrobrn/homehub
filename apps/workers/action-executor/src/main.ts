@@ -25,9 +25,14 @@
 
 import { createServer } from 'node:http';
 
+import { registerAllExecutors } from '@homehub/action-executors';
+import { createGoogleCalendarProvider } from '@homehub/providers-calendar';
+import { createGoogleMailProvider } from '@homehub/providers-email';
+import { createStubGroceryProvider } from '@homehub/providers-grocery';
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
+  createNangoClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -38,6 +43,7 @@ import {
 
 import { pollOnceEvaluate } from './evaluate-handler.js';
 import { pollOnceExecute } from './execute-handler.js';
+import { registerExecutor } from './registry.js';
 
 const SERVICE_NAME = 'worker-action-executor';
 
@@ -52,6 +58,18 @@ const exitCode = await runWorker(
     initTracing(env);
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
+    const nango = createNangoClient(env);
+    const calendar = createGoogleCalendarProvider({ nango });
+    const email = createGoogleMailProvider({ nango });
+    // Grocery: Instacart API is human-gated. Ship the stub adapter by
+    // default — `createDraftOrder` returns a sentinel that the UI
+    // branches on to render a "copy this list" export.
+    const grocery = createStubGroceryProvider();
+
+    // Wire the executor registry once, before the claim loops start.
+    // Every draft-write action kind HomeHub supports registers here.
+    registerAllExecutors(registerExecutor, { supabase, calendar, email, grocery });
+    log.info('action-executor registry bootstrapped');
 
     let ready = false;
     let stopping = false;

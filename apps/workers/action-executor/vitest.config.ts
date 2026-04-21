@@ -18,6 +18,18 @@ const dbSrc = fileURLToPath(new URL('../../../packages/db/src/index.ts', import.
 const approvalFlowSrc = fileURLToPath(
   new URL('../../../packages/approval-flow/src/index.ts', import.meta.url),
 );
+const actionExecutorsSrc = fileURLToPath(
+  new URL('../../../packages/action-executors/src/index.ts', import.meta.url),
+);
+const calendarSrc = fileURLToPath(
+  new URL('../../../packages/providers/calendar/src/index.ts', import.meta.url),
+);
+const emailSrc = fileURLToPath(
+  new URL('../../../packages/providers/email/src/index.ts', import.meta.url),
+);
+const grocerySrc = fileURLToPath(
+  new URL('../../../packages/providers/grocery/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   resolve: {
@@ -26,6 +38,10 @@ export default defineConfig({
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
       '@homehub/approval-flow': approvalFlowSrc,
+      '@homehub/action-executors': actionExecutorsSrc,
+      '@homehub/providers-calendar': calendarSrc,
+      '@homehub/providers-email': emailSrc,
+      '@homehub/providers-grocery': grocerySrc,
     },
   },
 });

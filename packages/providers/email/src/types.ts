@@ -166,6 +166,43 @@ export interface EnsureLabelResult {
 }
 
 /**
+ * Args for creating a draft message.
+ *
+ * Used by the M9-B `draft_message` / `propose_book_reservation` /
+ * `cancel_subscription` / `reach_out` executors. The adapter composes
+ * an RFC-2822 message, base64url-encodes it, and calls the provider's
+ * drafts endpoint — the draft lands in the member's own Drafts folder
+ * and is never auto-sent.
+ *
+ * `bodyMarkdown` is the body as the agent authored it. Gmail renders
+ * plain text with bare newlines; we don't convert markdown here —
+ * members can tidy the draft before sending.
+ */
+export interface CreateDraftArgs {
+  connectionId: string;
+  to: string[];
+  subject: string;
+  bodyMarkdown: string;
+  /** Optional CC / BCC for reservation / settle-up style drafts. */
+  cc?: string[];
+  bcc?: string[];
+  /**
+   * When set, the draft is created within the supplied Gmail thread
+   * (threading a reply). Absent for cold-start drafts.
+   */
+  threadId?: string;
+}
+
+export interface CreateDraftResult {
+  /** Gmail draft id. */
+  draftId: string;
+  /** Gmail thread id (same as `message.threadId`). */
+  threadId: string;
+  /** Gmail message id of the draft's underlying message. */
+  messageId: string;
+}
+
+/**
  * The narrow surface every mail-provider adapter must implement.
  * Workers depend on this interface, not on a concrete provider — so a
  * future Outlook adapter drops in without touching sync code.
@@ -184,4 +221,10 @@ export interface EmailProvider {
   unwatch(args: UnwatchArgs): Promise<void>;
   addLabel(args: AddLabelArgs): Promise<void>;
   ensureLabel(args: EnsureLabelArgs): Promise<EnsureLabelResult>;
+  /**
+   * Create a draft message in the member's Drafts folder. Never sent —
+   * the member reviews + sends from Gmail themselves. Used by the M9-B
+   * `draft_message` executor family.
+   */
+  createDraft(args: CreateDraftArgs): Promise<CreateDraftResult>;
 }

@@ -88,6 +88,47 @@ export interface UnwatchArgs {
 }
 
 /**
+ * Args for creating a new event on the member's primary calendar.
+ *
+ * Used by the M9-B `add_to_calendar` executor family (draft-write
+ * approvals that the member has accepted). The adapter inserts the
+ * event via the provider's write API (Google: events.insert).
+ *
+ * Time fields:
+ *   - `startsAt` / `endsAt` accept ISO-8601 timestamps with offsets
+ *     (timed events). All-day shorthand is a future concern.
+ *   - `endsAt` is optional; when absent, the adapter defaults to a
+ *     1-hour window starting at `startsAt` so provider APIs that
+ *     require an end time stay happy.
+ *
+ * Attendees are invited via the provider's standard attendee model.
+ * The member's own email is added as the organizer implicitly by the
+ * provider — do NOT pass it in `attendees`.
+ */
+export interface CreateEventArgs {
+  connectionId: string;
+  title: string;
+  startsAt: string;
+  endsAt?: string;
+  location?: string;
+  description?: string;
+  attendees?: string[];
+  /**
+   * When true, the provider sends invitation emails to attendees. Default
+   * false to match HomeHub's "draft-first" posture — the member can
+   * decide later from their calendar UI.
+   */
+  sendUpdates?: boolean;
+}
+
+export interface CreateEventResult {
+  /** Provider's stable event id. */
+  eventId: string;
+  /** Provider-hosted URL for the event (Google: `htmlLink`). */
+  htmlLink: string;
+}
+
+/**
  * The narrow surface every calendar-provider adapter must implement.
  * Workers depend on this interface, not on a concrete provider — so a
  * future Outlook adapter drops in without touching sync code.
@@ -96,4 +137,12 @@ export interface CalendarProvider {
   listEvents(args: ListEventsArgs): AsyncIterable<ListEventsPage>;
   watch(args: WatchArgs): Promise<WatchResult>;
   unwatch(args: UnwatchArgs): Promise<void>;
+  /**
+   * Create a new event on the member's primary calendar. Returns the
+   * provider's event id + a `htmlLink` the UI can deep-link to.
+   *
+   * Used only by the M9-B `add_to_calendar` executor — the sync path
+   * is read-only and does not call this method.
+   */
+  createEvent(args: CreateEventArgs): Promise<CreateEventResult>;
 }
