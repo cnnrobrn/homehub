@@ -15,6 +15,7 @@ const dbSrc = fileURLToPath(new URL('../db/src/index.ts', import.meta.url));
 const runtimeSrc = fileURLToPath(new URL('../worker-runtime/src/index.ts', import.meta.url));
 const approvalFlowSrc = fileURLToPath(new URL('../approval-flow/src/index.ts', import.meta.url));
 const enrichmentSrc = fileURLToPath(new URL('../enrichment/src/index.ts', import.meta.url));
+const promptsSrc = fileURLToPath(new URL('../prompts/src/index.ts', import.meta.url));
 const calendarSrc = fileURLToPath(new URL('../providers/calendar/src/index.ts', import.meta.url));
 const emailSrc = fileURLToPath(new URL('../providers/email/src/index.ts', import.meta.url));
 const financialSrc = fileURLToPath(new URL('../providers/financial/src/index.ts', import.meta.url));
@@ -28,6 +29,10 @@ export default defineConfig({
       '@homehub/worker-runtime': runtimeSrc,
       '@homehub/approval-flow': approvalFlowSrc,
       '@homehub/enrichment': enrichmentSrc,
+      // enrichment/src transitively imports @homehub/prompts; without this
+      // alias Vite resolves prompts via its package.json → dist/index.js,
+      // which isn't built during `pnpm -r run test`.
+      '@homehub/prompts': promptsSrc,
       '@homehub/providers-calendar': calendarSrc,
       '@homehub/providers-email': emailSrc,
       '@homehub/providers-financial': financialSrc,

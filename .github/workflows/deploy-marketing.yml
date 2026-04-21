@@ -44,6 +44,11 @@ concurrency:
 env:
   NODE_VERSION: '20.18.0'
   PNPM_VERSION: '9.15.9'
+  # Evaluated once at workflow start. Used to skip the Cloudflare deploy
+  # and preview steps when secrets are unavailable (fork PRs, secret
+  # rotation). Without this gate, those steps fail with a non-interactive
+  # wrangler error and the job goes red even though the build succeeded.
+  HAS_CF_SECRETS: ${{ secrets.CLOUDFLARE_API_TOKEN != '' && secrets.CLOUDFLARE_ACCOUNT_ID != '' }}
 
 jobs:
   deploy:
@@ -79,7 +84,7 @@ jobs:
         run: pnpm --filter @homehub/marketing build
 
       - name: Deploy to production
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && env.HAS_CF_SECRETS == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -88,7 +93,7 @@ jobs:
           command: deploy
 
       - name: Upload preview version
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && env.HAS_CF_SECRETS == 'true'
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
@@ -98,3 +103,8 @@ jobs:
           # traffic to it — returns a preview URL of the form
           # `<version-tag>-homehub-marketing.connor-972.workers.dev`.
           command: versions upload --message "PR #${{ github.event.pull_request.number }} @ ${{ github.sha }}"
+
+      - name: Skip deploy (no Cloudflare secrets)
+        if: env.HAS_CF_SECRETS != 'true'
+        run: |
+          echo "::notice title=Skipped Cloudflare deploy::CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID not available in this context (fork PR or secret not configured). Build succeeded; deploy/preview intentionally skipped."
