@@ -1,24 +1,29 @@
 /**
  * `/` — Dashboard (authenticated).
  *
- * M1 ships a dressed stub: household name, member count, a placeholder
- * "Today" strip, and four disabled segment cards. The real dashboard
- * (Today strip with real events, alert bar, suggestion carousel, segment
- * tiles with status) lands in M2+ as each segment comes online.
+ * M2-C adds a real Today strip: horizontal list of today's events pulled
+ * via `listEvents()`. The segment cards below remain disabled
+ * placeholders for now — they come alive in M3+ as each segment's
+ * workers / summaries ship.
  *
- * Server Component — no data fetch beyond the already-resolved household
- * context from the layout (via `getHouseholdContext()`). Keep it that way
- * until a segment card needs data; once it does, the call belongs on the
- * card itself with a Suspense boundary.
+ * The realtime refresher keeps the Today strip current when the
+ * sync-gcal worker upserts events without a page reload.
  */
 
-import { Calendar, CircleDollarSign, PartyPopper, Users, Utensils } from 'lucide-react';
+import { CircleDollarSign, PartyPopper, Users, Utensils } from 'lucide-react';
+import Link from 'next/link';
 
 import { listMembersAction } from '@/app/actions/members';
+import { EventPill } from '@/components/calendar/EventPill';
+import { RealtimeEventRefresher } from '@/components/calendar/RealtimeEventRefresher';
 import { SegmentCard } from '@/components/dashboard/SegmentCard';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { getHouseholdContext } from '@/lib/auth/context';
+import { listEvents, type Segment } from '@/lib/events/listEvents';
+import { endOfToday, startOfToday } from '@/lib/events/range';
+
+const TODAY_STRIP_LIMIT = 10;
 
 export default async function DashboardPage() {
   const ctx = await getHouseholdContext();
@@ -28,8 +33,25 @@ export default async function DashboardPage() {
   const membersRes = await listMembersAction({ householdId: ctx.household.id });
   const memberCount = membersRes.ok ? membersRes.data.length : 0;
 
+  const grants = ctx.grants.map((g) => ({ segment: g.segment as Segment, access: g.access }));
+  const from = startOfToday();
+  const to = endOfToday();
+  const todayEvents = (
+    await listEvents(
+      {
+        householdId: ctx.household.id,
+        from: from.toISOString(),
+        to: to.toISOString(),
+        limit: TODAY_STRIP_LIMIT,
+      },
+      { grants },
+    )
+  ).slice(0, TODAY_STRIP_LIMIT);
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-8 p-6">
+      <RealtimeEventRefresher householdId={ctx.household.id} />
+
       <header className="flex flex-col gap-2">
         <p className="text-sm text-fg-muted">Household</p>
         <h1 className="text-3xl font-semibold tracking-tight">{ctx.household.name}</h1>
@@ -43,21 +65,46 @@ export default async function DashboardPage() {
       </header>
 
       <section aria-labelledby="today-heading" className="flex flex-col gap-3">
-        <h2 id="today-heading" className="text-lg font-medium">
-          Today
-        </h2>
-        <Card>
-          <CardHeader className="flex flex-row items-center gap-2">
-            <Calendar className="h-4 w-4 text-fg-muted" aria-hidden="true" />
-            <CardTitle className="text-sm">Nothing scheduled yet</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-fg-muted">
-              Once a member connects a calendar (Google Calendar lands in M2), today&apos;s events
-              will appear here.
-            </p>
-          </CardContent>
-        </Card>
+        <div className="flex items-baseline justify-between">
+          <h2 id="today-heading" className="text-lg font-medium">
+            Today
+          </h2>
+          <Link href="/calendar" className="text-xs text-accent underline-offset-2 hover:underline">
+            Open calendar
+          </Link>
+        </div>
+        {todayEvents.length === 0 ? (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm">No events today.</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="text-sm text-fg-muted">
+                When events land on today&apos;s date they&apos;ll show up here. Visit the{' '}
+                <Link
+                  href="/calendar"
+                  className="text-accent underline underline-offset-2 hover:no-underline"
+                >
+                  calendar
+                </Link>{' '}
+                for the full week.
+              </p>
+            </CardContent>
+          </Card>
+        ) : (
+          <ul aria-label="Today's events" className="flex gap-2 overflow-x-auto pb-2">
+            {todayEvents.map((ev) => (
+              <li key={ev.id} className="min-w-[220px] max-w-[260px] shrink-0">
+                <Link
+                  href={`/calendar?view=week&cursor=today#event-${ev.id}`}
+                  className="block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
+                >
+                  <EventPill event={ev} />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
 
       <section aria-labelledby="segments-heading" className="flex flex-col gap-3">

@@ -75,6 +75,12 @@
   --color-danger: var(--color-danger);
   --color-success: var(--color-success);
 
+  --color-segment-financial: var(--segment-financial);
+  --color-segment-food: var(--segment-food);
+  --color-segment-fun: var(--segment-fun);
+  --color-segment-social: var(--segment-social);
+  --color-segment-system: var(--segment-system);
+
   --radius-sm: var(--radius-sm);
   --radius-md: var(--radius-md);
   --radius-lg: var(--radius-lg);

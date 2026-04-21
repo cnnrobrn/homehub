@@ -8,6 +8,7 @@
 
 import {
   BookOpen,
+  Calendar,
   CircleDollarSign,
   Cog,
   LayoutDashboard,
@@ -31,6 +32,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { label: 'Dashboard', icon: <LayoutDashboard className="h-4 w-4" />, href: '/' },
+  { label: 'Calendar', icon: <Calendar className="h-4 w-4" />, href: '/calendar' },
   {
     label: 'Financial',
     icon: <CircleDollarSign className="h-4 w-4" />,
