@@ -1,9 +1,14 @@
 /**
- * `node-regen` worker entrypoint.
+ * `node-regen` worker entrypoint (M3-B).
  *
- * M0 scaffold. The runtime wires up env, tracing, Supabase, and the queue
- * client; the handler body is still a stub. This file mirrors the
- * template in sibling worker services under apps/workers/*.
+ * Polls `node_regen`, claims messages, and dispatches to
+ * `pollOnce` in `./handler.ts`. Wires the runtime's env, Supabase,
+ * queue client, logger, and the OpenRouter-backed model client.
+ *
+ * The model client is required — this worker calls it on every
+ * non-stub regeneration. If `OPENROUTER_API_KEY` is not set the
+ * worker logs at startup and stays un-ready; healthcheck reports
+ * `not_ready` so Railway drains the instance.
  */
 
 import { createServer } from 'node:http';
@@ -11,6 +16,7 @@ import { createServer } from 'node:http';
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
+  createModelClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -19,10 +25,15 @@ import {
   workerRuntimeEnvSchema,
 } from '@homehub/worker-runtime';
 
+import { pollOnce } from './handler.js';
+
 const SERVICE_NAME = 'worker-node-regen';
 
 const env = loadEnv(workerRuntimeEnvSchema);
 const log = createLogger(env, { service: SERVICE_NAME, component: 'main' });
+
+const IDLE_POLL_DELAY_MS = 2_000;
+const ERROR_POLL_DELAY_MS = 5_000;
 
 const exitCode = await runWorker(
   async () => {
@@ -30,8 +41,8 @@ const exitCode = await runWorker(
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
 
-    // Health/ready HTTP server per specs/05-agents/workers.md.
     let ready = false;
+    let stopping = false;
     const port = Number.parseInt(process.env.PORT ?? '8080', 10);
     const server = createServer((req, res) => {
       if (req.url === '/health') {
@@ -58,23 +69,63 @@ const exitCode = await runWorker(
     log.info('health server listening', { port });
 
     onShutdown(async () => {
+      stopping = true;
       await new Promise<void>((resolve) => server.close(() => resolve()));
     });
 
-    // The queue client is constructed so readiness reflects a working
-    // Supabase connection. The real consumer loop lands later.
-    void queues;
-    ready = true;
+    if (!env.OPENROUTER_API_KEY) {
+      log.error('OPENROUTER_API_KEY is not set; worker will not claim jobs');
+      // Stay un-ready so Railway drains.
+      await new Promise<void>((resolve) => {
+        const onSig = (): void => resolve();
+        process.once('SIGTERM', onSig);
+        process.once('SIGINT', onSig);
+      });
+      return;
+    }
 
-    log.info('worker started (no-op loop)');
-    // TODO(@memory-background, M3): replace with pgmq consumer for the node_regen queue.
-    await new Promise<void>((resolve) => {
-      const onSig = (): void => resolve();
-      process.once('SIGTERM', onSig);
-      process.once('SIGINT', onSig);
-    });
+    const modelClient = createModelClient(env, { logger: log, supabase });
+
+    // Readiness probe: cheap head-count on mem.node.
+    try {
+      const { error } = await supabase
+        .schema('mem')
+        .from('node')
+        .select('id', { count: 'exact', head: true });
+      if (error) throw error;
+      ready = true;
+      log.info('readiness ok; entering poll loop');
+    } catch (err) {
+      log.error('readiness probe failed; worker will not claim jobs', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    while (!stopping) {
+      try {
+        const outcome = await pollOnce({ supabase, queues, log, modelClient });
+        if (outcome === 'idle') {
+          await sleep(IDLE_POLL_DELAY_MS, () => stopping);
+        }
+      } catch (err) {
+        log.error('node-regen pollOnce threw', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        await sleep(ERROR_POLL_DELAY_MS, () => stopping);
+      }
+    }
+    log.info('node-regen main loop exited');
   },
   { shutdownTimeoutMs: 30_000 },
 );
+
+async function sleep(ms: number, cancel: () => boolean): Promise<void> {
+  const step = 100;
+  let remaining = ms;
+  while (remaining > 0 && !cancel()) {
+    await new Promise((r) => setTimeout(r, Math.min(step, remaining)));
+    remaining -= step;
+  }
+}
 
 process.exit(exitCode);

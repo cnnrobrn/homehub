@@ -18,6 +18,9 @@ const dbSrc = fileURLToPath(new URL('../../../packages/db/src/index.ts', import.
 const enrichmentSrc = fileURLToPath(
   new URL('../../../packages/enrichment/src/index.ts', import.meta.url),
 );
+const promptsSrc = fileURLToPath(
+  new URL('../../../packages/prompts/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   resolve: {
@@ -26,6 +29,7 @@ export default defineConfig({
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
       '@homehub/enrichment': enrichmentSrc,
+      '@homehub/prompts': promptsSrc,
     },
   },
 });

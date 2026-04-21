@@ -27,7 +27,10 @@ export { createLogger, type LogContext, type Logger, type LoggerOptions } from '
 
 export {
   createModelClient,
+  DEFAULT_EMBEDDING_MODEL,
   type CreateModelClientOptions,
+  type EmbedArgs,
+  type EmbedResult,
   type GenerateArgs,
   type GenerateResult,
   type ModelClient,

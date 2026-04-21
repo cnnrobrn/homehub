@@ -54,10 +54,36 @@ export interface GenerateResult<T = unknown> {
   latencyMs: number;
 }
 
+/**
+ * Input for `embed()`. `model` is optional; when unset we use the
+ * dedicated embedding model declared in `specs/05-agents/model-routing.md`.
+ */
+export interface EmbedArgs {
+  text: string;
+  household_id: HouseholdId;
+  /** Defaults to the embedding model from model-routing.md. */
+  model?: string;
+  task?: string;
+}
+
+export interface EmbedResult {
+  embedding: number[];
+  model: string;
+  inputTokens: number;
+  costUsd: number;
+  latencyMs: number;
+}
+
 export interface ModelClient {
   generate<TSchema extends z.ZodTypeAny = z.ZodTypeAny>(
     args: GenerateArgs<TSchema>,
   ): Promise<GenerateResult<z.infer<TSchema>>>;
+  /**
+   * Embed a text string for vector search. Uses OpenRouter's
+   * OpenAI-compatible `/embeddings` endpoint. Spec:
+   * `specs/05-agents/model-routing.md` § Embeddings tier.
+   */
+  embed(args: EmbedArgs): Promise<EmbedResult>;
 }
 
 export interface CreateModelClientOptions {
@@ -143,6 +169,15 @@ function createModelCallsRecorder(
   };
 }
 
+/** Default embedding model; spec: model-routing.md Embeddings tier. */
+export const DEFAULT_EMBEDDING_MODEL = 'openai/text-embedding-3-small';
+
+interface EmbeddingResponse {
+  data?: Array<{ embedding: number[] }>;
+  model?: string;
+  usage?: { prompt_tokens?: number; total_tokens?: number; cost?: number };
+}
+
 export function createModelClient(
   env: WorkerRuntimeEnv,
   options: CreateModelClientOptions,
@@ -153,6 +188,7 @@ export function createModelClient(
   const { logger, supabase, fetchImpl } = options;
   const doFetch = fetchImpl ?? globalThis.fetch;
   const endpoint = `${env.OPENROUTER_BASE_URL.replace(/\/$/, '')}/chat/completions`;
+  const embedEndpoint = `${env.OPENROUTER_BASE_URL.replace(/\/$/, '')}/embeddings`;
   const recordCall = createModelCallsRecorder(supabase, logger);
 
   async function callOnce(args: {
@@ -360,6 +396,58 @@ export function createModelClient(
         model: usedModel,
         inputTokens,
         outputTokens,
+        costUsd,
+        latencyMs,
+      };
+    },
+
+    async embed(args) {
+      const model = args.model ?? DEFAULT_EMBEDDING_MODEL;
+      const task = args.task ?? 'embedding';
+      const started = Date.now();
+
+      const res = await doFetch(embedEndpoint, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': env.OPENROUTER_HTTP_REFERER,
+          'X-Title': env.OPENROUTER_APP_TITLE,
+        },
+        body: JSON.stringify({ model, input: args.text }),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new ModelCallError(
+          `OpenRouter embed HTTP ${res.status}: ${text.slice(0, 500)}`,
+          model,
+        );
+      }
+      const json = (await res.json()) as EmbeddingResponse;
+      const first = json.data?.[0]?.embedding;
+      if (!Array.isArray(first)) {
+        throw new ModelCallError('OpenRouter embed response had no embedding', model);
+      }
+      const latencyMs = Date.now() - started;
+      const inputTokens = json.usage?.prompt_tokens ?? 0;
+      const costUsd = json.usage?.cost ?? 0;
+
+      // Log to model_calls for budget accounting.
+      void recordCall({
+        household_id: args.household_id as string,
+        task,
+        model,
+        input_tokens: inputTokens,
+        output_tokens: 0,
+        cost_usd: costUsd,
+        latency_ms: latencyMs,
+        at: new Date(started).toISOString(),
+      });
+
+      return {
+        embedding: first,
+        model,
+        inputTokens,
         costUsd,
         latencyMs,
       };

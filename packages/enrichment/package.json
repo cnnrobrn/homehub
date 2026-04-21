@@ -2,7 +2,7 @@
   "name": "@homehub/enrichment",
   "version": "0.0.0",
   "private": true,
-  "description": "Deterministic event classifier + extraction helpers used by the enrichment worker. M2 ships a regex/keyword classifier; M3 swaps in the Kimi K2 extraction path.",
+  "description": "Classifier + extraction + reconciler primitives used by the enrichment worker. M2 shipped the deterministic regex classifier; M3 adds the model-backed path (Kimi K2 via OpenRouter), the extractor, the model→deterministic fallback pipeline, and the reconciler that promotes candidates into mem.fact.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -22,7 +22,11 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@homehub/db": "workspace:*",
+    "@homehub/prompts": "workspace:*",
     "@homehub/shared": "workspace:*",
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {

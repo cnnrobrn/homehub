@@ -1,8 +1,8 @@
 {
-  "name": "@homehub/prompts",
+  "name": "@homehub/query-memory",
   "version": "0.0.0",
   "private": true,
-  "description": "HomeHub prompt library: markdown prompt files + a tiny runtime loader that parses the markdown sections into system/user templates and Zod schemas. Used by enrichment, consolidation, summary, suggestion, and reflection workers.",
+  "description": "Runtime surface for the layer-aware memory retrieval tool. Used by the foreground agent, the MCP memory tool (M3-C), and the graph browser (M3-D). Hybrid semantic + structural retrieval with recency decay and conflict surfacing.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -14,9 +14,7 @@
     }
   },
   "files": [
-    "dist",
-    "extraction",
-    "node-doc"
+    "dist"
   ],
   "scripts": {
     "build": "tsc",
@@ -24,7 +22,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@homehub/db": "workspace:*",
     "@homehub/shared": "workspace:*",
+    "@homehub/worker-runtime": "workspace:*",
+    "@supabase/supabase-js": "^2.104.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
