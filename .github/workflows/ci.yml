@@ -10,7 +10,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20.18.0'
+  # Minimum 20.19.0 because rolldown's native bindings (pulled in by
+  # vitest 4 / vite 8) require `^20.19.0 || >=22.12.0`. pnpm silently
+  # skips optional platform deps when the Node engine doesn't match,
+  # which is why Node 20.18.0 broke the Test + Web build jobs.
+  NODE_VERSION: '20.19.0'
   # Pinned Supabase CLI version. Bump deliberately; a bump can change
   # migration linter behavior or bundled Postgres extension versions.
   SUPABASE_CLI_VERSION: '2.90.0'
