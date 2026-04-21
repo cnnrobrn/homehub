@@ -54,15 +54,15 @@
 
 ## M3.5 — First-party chat
 
-- [ ] `app.conversation` + `conversation_turn` + `conversation_attachment` migrations — @infra-platform
-- [ ] Foreground model routing (OpenRouter, Sonnet-class or equiv) — @memory-background
-- [ ] `packages/tools/` — schemas + handlers for read tools: `query_memory`, `list_events`, `list_transactions`, `list_meals`, `get_pantry`, `get_grocery_list`, `get_account_balances`, `get_budget_status`, `list_suggestions`, `get_household_members` — @frontend-chat
-- [ ] Intent prefilter + slotted context assembly — @frontend-chat
-- [ ] Foreground agent loop (ingest → context → call → tool handling → stream → post-turn writes) — @frontend-chat
-- [ ] `/chat` page: history sidebar + streaming thread + tool cards + memory-trace drawer — @frontend-chat
-- [ ] `⌘K` floating launcher — @frontend-chat
-- [ ] Conversation → episode rollup on natural stopping points — @memory-background
-- [ ] Member messages → fact-candidate extraction path — @memory-background
+- [x] `app.conversation` + `conversation_turn` + `conversation_attachment` migrations — @infra-platform (ede1ba4, landed with M1-A)
+- [x] Foreground model routing (configurable via `HOMEHUB_FOREGROUND_MODEL`, default `anthropic/claude-sonnet-4.5`) — @frontend-chat (9a67912)
+- [x] `packages/tools/` — 12 read + 2 direct-write + 8 draft-write-stub tools with Zod schemas + per-segment gating — @frontend-chat (9a67912)
+- [x] Intent prefilter + slotted context assembly — @frontend-chat (9a67912)
+- [x] Foreground agent loop (ingest → context → call → serial tool handling → stream → post-turn writes) — @frontend-chat (9a67912)
+- [x] `/chat` page: history sidebar + streaming thread + tool cards + memory citations — @frontend-chat (9a67912)
+- [x] `⌘K` floating launcher — @frontend-chat (9a67912)
+- [x] Conversation → episode rollup (`rollup_conversation` queue + handler) — @memory-background (8f720fc)
+- [x] Member messages → fact-candidate extraction (`enrich_conversation` queue + handler + whisper mode honored + reconciler deletion branch + `embed_node` queue) — @memory-background (8f720fc)
 
 ## M3.7 — Consolidation & reflection
 

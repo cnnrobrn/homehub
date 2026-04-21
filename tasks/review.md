@@ -419,4 +419,55 @@ Follow-ups tracked, not blocking M3.5:
 
 Six commits: ef5d5f0 (mem.* schema + RLS + pgTAP), d5d0d65 (extraction pipeline + reconciler + node-regen + query_memory), 6ffa0f0 (MCP tools), 61a0f24 (graph browser). End-to-end path verified: `sync-gcal` upserts `app.event` → `enrich_event` queued → enrichment worker classifies, extracts episodes + fact candidates, reconciler promotes to `mem.fact` with supersession, node-regen rebuilds `mem.node.document_md`, `/memory` renders the graph, MCP tools expose it to external assistants. Every schema layer has RLS + pgTAP; every fact write goes through the candidate pool.
 
+## 2026-04-20 — M3.5 dispatched
+
+Two parallel streams:
+
+- `@frontend-chat` (M3.5-A): `packages/tools` (Zod-schema'd read tools usable by both the foreground agent and MCP), `apps/workers/foreground-agent` real implementation (intent prefilter → slotted-context assembly → streaming model call → serial tool orchestration with class enforcement), `/chat` page (history sidebar + active thread + streaming composer + tool cards + context panel + memory-trace drawer), `⌘K` launcher replacing the placeholder. Uses `@homehub/query-memory` directly; consumes M3-C's `CalendarEventRow` shape.
+- `@memory-background` (M3.5-B, in parallel): conversation → episode rollup worker (post-turn heuristic: substantive turn → enqueue `rollup_conversation` → writes `mem.episode` with `source_type='conversation'`), member-message → fact-candidate extraction path (turn text → Kimi K2 JSON mode → `mem.fact_candidate` with `source='member'` high-confidence), reconciler extension for member-sourced null-object deletion (the M3-D follow-up), optional `mem.node.embed` queue groundwork for embedding population.
+
+## 2026-04-20 — M3.5-A reviewed & accepted (commit 9a67912)
+
+Scope delivered: `@homehub/tools` package with 12 read tools + 2 direct-write + 8 draft-write stubs, per-segment + role gating, Zod-schemed both on input and output, `forModel()` emits OpenAI-compatible tool specs. Real `runConversationTurnStream` foreground-agent loop with six stages (ingest → intent prefilter → slotted context → serial tool iteration with max=5 → stream → post-turn writes). Next.js Route Handler `/api/chat/stream` with SSE transport. `/chat` page tree + `ChatSidebar` + `ChatThread` + `Composer` + `StreamingMessage` + `ToolCard` + `SuggestionCard` + `CitationChip` + real `CommandKLauncher`. 30 new tests in `@homehub/tools`, 10 in foreground-agent, 11 new in apps/web.
+
+Specialist decisions accepted:
+
+1. **In-process streaming from Next.js Route Handler** (calls `@homehub/worker-foreground-agent` directly). Eliminates an extra hop. The worker binary keeps its health server for a future edge-worker split.
+2. **Chunked token streaming** (non-streaming model call → split into `token` events) for M3.5-A. Drop-in swap to true SSE tokens on the `ForegroundModel` interface.
+3. **Draft-write tools stubbed** to `{ status: 'pending_approval', summary, preview }` + `suggestion_card` stream event. Real execution in M9.
+4. **`@`-picker + slash commands pass-through** for M3.5-A. Richer interactive pickers flagged as a follow-up; load-bearing loop + chat + ⌘K shipped atomically.
+
+Follow-ups tracked:
+
+- Interactive `@`-entity picker + `/` slash-command menu.
+- Memory-trace drawer as separate component (today evidence flows via ToolCard expand + citation chips).
+- Real model-side token streaming.
+
+## 2026-04-20 — M3.5-B reviewed & accepted (commit 8f720fc)
+
+Scope delivered: conversation-extractor + conversation-rollup in `@homehub/enrichment`, new prompt files `packages/prompts/extraction/conversation.md` + `packages/prompts/rollup/conversation.md` (versioned `2026-04-20-conversation-v1` / `-rollup-v1`), handlers for `enrich_conversation` + `rollup_conversation` + `embed_node` queues in `apps/workers/enrichment` (main.ts now fans out `Promise.all` across four `pollOnce*` calls per cycle). Reconciler soft-delete branch: member-sourced candidate with `object_value=null` + `valid_to!=null` → close canonical with `valid_to + superseded_at`, no successor, audit `mem.fact.deleted_by_member`. Embedding queue infra: `embed_node` enqueued on every new node creation + after `node-regen` document rewrites. Whisper mode honored — if `app.conversation_turn.no_memory_write = true`, the extraction path short-circuits with no `mem.*` writes.
+
+Specialist decisions accepted:
+
+1. **Whisper mode reads `app.conversation_turn.no_memory_write` directly** (first-class column from M1-A migration 0008). Cleaner than a metadata-flag passthrough.
+2. **Rollup debounce** against any `mem.episode` for `(household_id, source_type='conversation', source_id=conversation_id)` in the last 10 minutes. Simple + idempotent + no metadata JSONB scans.
+3. **Member-sourced confidence ceiling 0.85** — tighter than the spec's generic high-confidence, reasonable for model-stated member utterances where the model could over-state certainty.
+4. **Non-member null-object candidates are rejected.** The deletion branch is member-source-only; worker-authored soft-deletes must use `supersede_fact`.
+5. **`embed_node` empty-text short-circuit** — no model call for nodes without document content. Cost-correct.
+
+Follow-ups tracked, not blocking M3.7:
+
+- Optional `mem.episode` compound index `(household_id, source_type, source_id, recorded_at)` to keep rollup debounce lookups index-only as episode counts grow. Request to `@infra-platform` if volume surfaces.
+
+## 2026-04-20 — **M3.5 COMPLETE**
+
+Two commits (`9a67912`, `8f720fc`) on `main`. End-to-end: member types in `/chat` → stream handler persists `conversation_turn` → `runConversationTurnStream` runs six-stage loop → response streams to UI with tool cards + citations → post-turn writes enqueue `rollup_conversation` (substantive) + `enrich_conversation` (always) → rollup writes `mem.episode` → extraction writes `mem.fact_candidate` + `mem.rule` → reconciler promotes/supersedes/deletes → `node_regen` + `embed_node` re-enqueued. 688 tests across 26 packages.
+
+## 2026-04-20 — M3.7 dispatched
+
+Two parallel streams (no file-tree collision):
+
+- `@memory-background` (M3.7-A): nightly consolidator worker (rolls episodes from last 7d into semantic candidates, detects temporal / co-occurrence / threshold patterns, bumps reinforcement counts, writes `mem.pattern` rows), weekly reflector worker (reads episodes + new facts + pattern activity → `mem.insight` markdown), decay-aware ranking wired into `@homehub/query-memory` (layer-specific half-lives: episodic 14d / semantic 120d / procedural 365d), `pg_cron` scheduling stubs (request via @infra-platform as a trivial migration).
+- `@frontend-chat` (M3.7-B): `/settings/memory` page — pause-writes toggle, retention windows per category (raw emails / transactions / attachments) with member-visible countdowns, rule authoring UI (CRUD on `mem.rule`), per-category model budget (household setting), `mem.insight` feed ("weekly reflection") with confirm/dismiss affordances.
+
 
