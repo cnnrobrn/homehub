@@ -825,3 +825,752 @@ export async function searchMemoryAction(input: z.input<typeof searchMemorySchem
     return toErr(err);
   }
 }
+
+// ==========================================================================
+// `/settings/memory` actions (M3.7-B)
+// --------------------------------------------------------------------------
+// These live alongside the graph-browser actions because they all speak
+// to the same schemas (mem.*, app.household.settings, app.model_calls)
+// and share the same `requireMemberForHousehold` + audit plumbing.
+// Every owner-only action asserts `actor.role === 'owner'` before touching
+// household-level settings.
+// ==========================================================================
+
+interface HouseholdSettingsShape {
+  memory?: {
+    writes_paused?: boolean;
+    writes_paused_at?: string;
+    writes_paused_by_member_id?: string;
+    retention_days?: Partial<Record<RetentionCategory, number>>;
+    retention_updated_at?: Partial<Record<RetentionCategory, string>>;
+    model_budget_monthly_cents?: number;
+  };
+  [key: string]: unknown;
+}
+
+type RetentionCategory =
+  | 'raw_emails'
+  | 'raw_transactions'
+  | 'attachments'
+  | 'episodes'
+  | 'fact_candidates_expired';
+
+const RETENTION_CATEGORIES = [
+  'raw_emails',
+  'raw_transactions',
+  'attachments',
+  'episodes',
+] as const satisfies ReadonlyArray<RetentionCategory>;
+
+/**
+ * Resolve the caller's member in THEIR household (as opposed to a
+ * specific memory row's household). Used by the `/settings/memory`
+ * actions which operate at the household-settings level.
+ */
+async function requireMemberForCurrentHousehold(): Promise<AuthedActor> {
+  const env = authEnv();
+  const cookies = await nextCookieAdapter();
+  const user = await getUser(env, cookies);
+  if (!user) throw new UnauthorizedError('no session');
+  const { getHouseholdContext } = await import('@/lib/auth/context');
+  const ctx = await getHouseholdContext();
+  if (!ctx) throw new UnauthorizedError('no household context');
+  const service = createServiceClient(env);
+  return {
+    userId: user.id,
+    userEmail: user.email,
+    householdId: ctx.household.id,
+    memberId: ctx.member.id,
+    role: ctx.member.role,
+    service,
+  };
+}
+
+async function readHouseholdSettings(actor: AuthedActor): Promise<HouseholdSettingsShape> {
+  const { data, error } = await actor.service
+    .schema('app')
+    .from('household')
+    .select('settings')
+    .eq('id', actor.householdId)
+    .maybeSingle();
+  if (error) throw new Error(`readHouseholdSettings: ${error.message}`);
+  const settings = (data?.settings ?? {}) as HouseholdSettingsShape;
+  return settings;
+}
+
+async function writeHouseholdSettings(
+  actor: AuthedActor,
+  next: HouseholdSettingsShape,
+): Promise<void> {
+  const { error } = await actor.service
+    .schema('app')
+    .from('household')
+    .update({ settings: next as never })
+    .eq('id', actor.householdId);
+  if (error) throw new Error(`writeHouseholdSettings: ${error.message}`);
+}
+
+// ==========================================================================
+// toggleMemoryWritesAction
+// ==========================================================================
+
+const toggleMemoryWritesSchema = z.object({ paused: z.boolean() });
+
+/**
+ * Owner-only. Flip `household.settings.memory.writes_paused`. The
+ * reflection + extraction workers respect this flag; for M3.7-B we only
+ * persist it — the writer-side enforcement rides the existing worker
+ * contract per the dispatch.
+ */
+export async function toggleMemoryWritesAction(
+  input: z.input<typeof toggleMemoryWritesSchema>,
+): Promise<
+  ActionResult<{ paused: boolean; pausedAt: string | null; pausedByMemberId: string | null }>
+> {
+  try {
+    const parsed = toggleMemoryWritesSchema.parse(input);
+    const actor = await requireMemberForCurrentHousehold();
+    if (actor.role !== 'owner') throw new UnauthorizedError('owner-only action');
+
+    const settings = await readHouseholdSettings(actor);
+    const nowIso = new Date().toISOString();
+    const nextMemory = {
+      ...(settings.memory ?? {}),
+      writes_paused: parsed.paused,
+      ...(parsed.paused
+        ? { writes_paused_at: nowIso, writes_paused_by_member_id: actor.memberId }
+        : {}),
+    };
+    const next: HouseholdSettingsShape = { ...settings, memory: nextMemory };
+    await writeHouseholdSettings(actor, next);
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: parsed.paused ? 'mem.writes.paused' : 'mem.writes.resumed',
+      resource_type: 'household.settings.memory',
+      resource_id: actor.householdId,
+      after: { writes_paused: parsed.paused },
+    });
+
+    return ok({
+      paused: parsed.paused,
+      pausedAt: parsed.paused ? nowIso : null,
+      pausedByMemberId: parsed.paused ? actor.memberId : null,
+    });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+// ==========================================================================
+// updateRetentionWindowsAction
+// ==========================================================================
+
+const retentionCategoryEnum = z.enum(RETENTION_CATEGORIES);
+
+const updateRetentionWindowsSchema = z.object({
+  category: retentionCategoryEnum,
+  days: z.number().int().min(7).max(3_650),
+});
+
+export async function updateRetentionWindowsAction(
+  input: z.input<typeof updateRetentionWindowsSchema>,
+): Promise<ActionResult<{ category: RetentionCategory; days: number }>> {
+  try {
+    const parsed = updateRetentionWindowsSchema.parse(input);
+    const actor = await requireMemberForCurrentHousehold();
+    if (actor.role !== 'owner') throw new UnauthorizedError('owner-only action');
+
+    const settings = await readHouseholdSettings(actor);
+    const nowIso = new Date().toISOString();
+    const retention = { ...(settings.memory?.retention_days ?? {}) };
+    const retentionUpdatedAt = { ...(settings.memory?.retention_updated_at ?? {}) };
+    retention[parsed.category] = parsed.days;
+    retentionUpdatedAt[parsed.category] = nowIso;
+
+    const next: HouseholdSettingsShape = {
+      ...settings,
+      memory: {
+        ...(settings.memory ?? {}),
+        retention_days: retention,
+        retention_updated_at: retentionUpdatedAt,
+      },
+    };
+    await writeHouseholdSettings(actor, next);
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: 'mem.retention.updated',
+      resource_type: 'household.settings.memory',
+      resource_id: actor.householdId,
+      after: { category: parsed.category, days: parsed.days },
+    });
+
+    return ok({ category: parsed.category, days: parsed.days });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+// ==========================================================================
+// updateModelBudgetAction / getMonthToDateModelSpendAction
+// ==========================================================================
+
+const updateModelBudgetSchema = z.object({
+  cents: z.number().int().min(0).max(1_000_000),
+});
+
+export async function updateModelBudgetAction(
+  input: z.input<typeof updateModelBudgetSchema>,
+): Promise<ActionResult<{ cents: number }>> {
+  try {
+    const parsed = updateModelBudgetSchema.parse(input);
+    const actor = await requireMemberForCurrentHousehold();
+    if (actor.role !== 'owner') throw new UnauthorizedError('owner-only action');
+
+    const settings = await readHouseholdSettings(actor);
+    const next: HouseholdSettingsShape = {
+      ...settings,
+      memory: {
+        ...(settings.memory ?? {}),
+        model_budget_monthly_cents: parsed.cents,
+      },
+    };
+    await writeHouseholdSettings(actor, next);
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: 'mem.model_budget.updated',
+      resource_type: 'household.settings.memory',
+      resource_id: actor.householdId,
+      after: { cents: parsed.cents },
+    });
+
+    return ok({ cents: parsed.cents });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+/**
+ * Sum `app.model_calls.cost_usd` since the first of the current month
+ * for the caller's household. Readable by any member — the raw
+ * `app.model_calls` table is owner-only per RLS, but this aggregate is
+ * safe to expose to every household member on the settings page.
+ */
+export async function getMonthToDateModelSpendAction(): Promise<
+  ActionResult<{ usd: number; monthStartIso: string }>
+> {
+  try {
+    const actor = await requireMemberForCurrentHousehold();
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthStartIso = monthStart.toISOString();
+    const { data, error } = await actor.service
+      .schema('app')
+      .from('model_calls')
+      .select('cost_usd')
+      .eq('household_id', actor.householdId)
+      .gte('at', monthStartIso);
+    if (error) throw new Error(`getMonthToDateModelSpendAction: ${error.message}`);
+    const rows = (data ?? []) as Array<{ cost_usd: number | string | null }>;
+    const usd = rows.reduce((sum, r) => {
+      const v = typeof r.cost_usd === 'number' ? r.cost_usd : Number(r.cost_usd ?? 0);
+      return sum + (Number.isFinite(v) ? v : 0);
+    }, 0);
+    return ok({ usd, monthStartIso });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+// ==========================================================================
+// Rule authoring (list / create / update / delete)
+// ==========================================================================
+
+export interface HouseholdRuleSummary {
+  id: string;
+  authorMemberId: string;
+  authorDisplayName: string | null;
+  description: string;
+  predicateDsl: Record<string, unknown>;
+  active: boolean;
+  createdAt: string;
+  isMine: boolean;
+}
+
+export async function listHouseholdRulesAction(): Promise<ActionResult<HouseholdRuleSummary[]>> {
+  try {
+    const actor = await requireMemberForCurrentHousehold();
+    const { data, error } = await actor.service
+      .schema('mem')
+      .from('rule')
+      .select('id, author_member_id, description, predicate_dsl, active, created_at')
+      .eq('household_id', actor.householdId)
+      .order('created_at', { ascending: false });
+    if (error) throw new Error(`listHouseholdRulesAction: ${error.message}`);
+    const rows = (data ?? []) as Array<{
+      id: string;
+      author_member_id: string;
+      description: string;
+      predicate_dsl: unknown;
+      active: boolean;
+      created_at: string;
+    }>;
+
+    const memberIds = Array.from(new Set(rows.map((r) => r.author_member_id)));
+    const names = new Map<string, string | null>();
+    if (memberIds.length > 0) {
+      const { data: members } = await actor.service
+        .schema('app')
+        .from('member')
+        .select('id, display_name')
+        .in('id', memberIds);
+      for (const m of (members ?? []) as Array<{ id: string; display_name: string | null }>) {
+        names.set(m.id, m.display_name);
+      }
+    }
+
+    const summaries: HouseholdRuleSummary[] = rows.map((r) => ({
+      id: r.id,
+      authorMemberId: r.author_member_id,
+      authorDisplayName: names.get(r.author_member_id) ?? null,
+      description: r.description,
+      predicateDsl: (r.predicate_dsl ?? {}) as Record<string, unknown>,
+      active: r.active,
+      createdAt: r.created_at,
+      isMine: r.author_member_id === actor.memberId,
+    }));
+    return ok(summaries);
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const createRuleSchema = z.object({
+  description: z.string().min(1).max(2_000),
+  // `z.record(string, unknown)` is already "passthrough" in zod v4 —
+  // any keys are accepted. The DSL shape firms up when the M9
+  // action-executor lands.
+  predicateDsl: z.record(z.string(), z.unknown()).optional(),
+});
+
+export async function createRuleAction(
+  input: z.input<typeof createRuleSchema>,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const parsed = createRuleSchema.parse(input);
+    const actor = await requireMemberForCurrentHousehold();
+    const { data, error } = await actor.service
+      .schema('mem')
+      .from('rule')
+      .insert({
+        household_id: actor.householdId,
+        author_member_id: actor.memberId,
+        description: parsed.description,
+        predicate_dsl: (parsed.predicateDsl ?? {}) as never,
+        active: true,
+      })
+      .select('id')
+      .single();
+    if (error) throw new Error(`createRuleAction: ${error.message}`);
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: 'mem.rule.created',
+      resource_type: 'mem.rule',
+      resource_id: (data.id as string) ?? null,
+      after: { description: parsed.description },
+    });
+
+    return ok({ id: data.id as string });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const updateRuleSchema = z
+  .object({
+    ruleId: z.string().uuid(),
+    description: z.string().min(1).max(2_000).optional(),
+    // `z.record(string, unknown)` already accepts arbitrary keys in zod v4.
+    predicateDsl: z.record(z.string(), z.unknown()).optional(),
+    active: z.boolean().optional(),
+  })
+  .refine(
+    (v) => v.description !== undefined || v.predicateDsl !== undefined || v.active !== undefined,
+    { message: 'must provide at least one field to update' },
+  );
+
+export async function updateRuleAction(
+  input: z.input<typeof updateRuleSchema>,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const parsed = updateRuleSchema.parse(input);
+    const actor = await requireMemberForCurrentHousehold();
+
+    const { data: existing, error: eErr } = await actor.service
+      .schema('mem')
+      .from('rule')
+      .select('id, household_id, author_member_id')
+      .eq('id', parsed.ruleId)
+      .maybeSingle();
+    if (eErr) throw new Error(`updateRuleAction: ${eErr.message}`);
+    if (!existing)
+      throw new ValidationError('rule not found', [{ path: 'ruleId', message: 'not found' }]);
+    if (existing.household_id !== actor.householdId)
+      throw new UnauthorizedError('rule belongs to a different household');
+    if (existing.author_member_id !== actor.memberId)
+      throw new UnauthorizedError('only the author can update a rule');
+
+    const patch: Record<string, unknown> = {};
+    if (parsed.description !== undefined) patch.description = parsed.description;
+    if (parsed.predicateDsl !== undefined) patch.predicate_dsl = parsed.predicateDsl;
+    if (parsed.active !== undefined) patch.active = parsed.active;
+
+    const { error: uErr } = await actor.service
+      .schema('mem')
+      .from('rule')
+      .update(patch as never)
+      .eq('id', parsed.ruleId);
+    if (uErr) throw new Error(`updateRuleAction: ${uErr.message}`);
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: 'mem.rule.updated',
+      resource_type: 'mem.rule',
+      resource_id: parsed.ruleId,
+      after: patch as never,
+    });
+
+    return ok({ id: parsed.ruleId });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const deleteRuleSchema = z.object({ ruleId: z.string().uuid() });
+
+export async function deleteRuleAction(
+  input: z.input<typeof deleteRuleSchema>,
+): Promise<ActionResult<{ id: string }>> {
+  try {
+    const parsed = deleteRuleSchema.parse(input);
+    const actor = await requireMemberForCurrentHousehold();
+
+    const { data: existing, error: eErr } = await actor.service
+      .schema('mem')
+      .from('rule')
+      .select('id, household_id, author_member_id, description')
+      .eq('id', parsed.ruleId)
+      .maybeSingle();
+    if (eErr) throw new Error(`deleteRuleAction: ${eErr.message}`);
+    if (!existing)
+      throw new ValidationError('rule not found', [{ path: 'ruleId', message: 'not found' }]);
+    if (existing.household_id !== actor.householdId)
+      throw new UnauthorizedError('rule belongs to a different household');
+    if (existing.author_member_id !== actor.memberId)
+      throw new UnauthorizedError('only the author can delete a rule');
+
+    const { error: dErr } = await actor.service
+      .schema('mem')
+      .from('rule')
+      .delete()
+      .eq('id', parsed.ruleId);
+    if (dErr) throw new Error(`deleteRuleAction: ${dErr.message}`);
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: 'mem.rule.deleted',
+      resource_type: 'mem.rule',
+      resource_id: parsed.ruleId,
+      before: { description: (existing as { description: string }).description },
+    });
+
+    return ok({ id: parsed.ruleId });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+// ==========================================================================
+// Weekly insights feed (list / confirm / dismiss)
+// ==========================================================================
+
+export interface InsightSummary {
+  id: string;
+  weekStart: string;
+  bodyMd: string;
+  createdAt: string;
+  promotedToRuleId: string | null;
+  confirmedByMemberIds: string[];
+  dismissedByMemberIds: string[];
+}
+
+const listInsightsSchema = z.object({
+  limit: z.number().int().positive().max(50).optional(),
+});
+
+/**
+ * List recent `mem.insight` rows for the caller's household. Members
+ * read confirmations/dismissals from `audit.event`: M3.7-A did not
+ * give us a `metadata` column on `mem.insight` (follow-up tracked in
+ * the dispatch), so we surface action state by scanning the audit
+ * trail for `mem.insight.confirmed` / `mem.insight.dismissed` events.
+ * The audit table is service-role only; we read it here with the
+ * service client (the actor is already authenticated + scoped to a
+ * household).
+ */
+export async function listInsightsAction(
+  input?: z.input<typeof listInsightsSchema>,
+): Promise<ActionResult<InsightSummary[]>> {
+  try {
+    const parsed = listInsightsSchema.parse(input ?? {});
+    const actor = await requireMemberForCurrentHousehold();
+    const limit = parsed.limit ?? 10;
+
+    const { data, error } = await actor.service
+      .schema('mem')
+      .from('insight')
+      .select('id, week_start, body_md, created_at, promoted_to_rule_id')
+      .eq('household_id', actor.householdId)
+      .order('week_start', { ascending: false })
+      .limit(limit);
+    if (error) throw new Error(`listInsightsAction: ${error.message}`);
+
+    const rows = (data ?? []) as Array<{
+      id: string;
+      week_start: string;
+      body_md: string;
+      created_at: string;
+      promoted_to_rule_id: string | null;
+    }>;
+
+    // Collect confirmations / dismissals via audit events.
+    const insightIds = rows.map((r) => r.id);
+    const confirmedBy = new Map<string, Set<string>>();
+    const dismissedBy = new Map<string, Set<string>>();
+    if (insightIds.length > 0) {
+      const { data: audits } = await actor.service
+        .schema('audit')
+        .from('event')
+        .select('action, resource_id, after')
+        .eq('household_id', actor.householdId)
+        .eq('resource_type', 'mem.insight')
+        .in('resource_id', insightIds)
+        .in('action', ['mem.insight.confirmed', 'mem.insight.dismissed']);
+      for (const evt of (audits ?? []) as Array<{
+        action: string;
+        resource_id: string;
+        after: Record<string, unknown> | null;
+      }>) {
+        const target = evt.action === 'mem.insight.confirmed' ? confirmedBy : dismissedBy;
+        const set = target.get(evt.resource_id) ?? new Set<string>();
+        const memberId =
+          typeof evt.after?.member_id === 'string' ? (evt.after.member_id as string) : null;
+        if (memberId) set.add(memberId);
+        target.set(evt.resource_id, set);
+      }
+    }
+
+    const summaries: InsightSummary[] = rows.map((r) => ({
+      id: r.id,
+      weekStart: r.week_start,
+      bodyMd: r.body_md,
+      createdAt: r.created_at,
+      promotedToRuleId: r.promoted_to_rule_id,
+      confirmedByMemberIds: Array.from(confirmedBy.get(r.id) ?? []),
+      dismissedByMemberIds: Array.from(dismissedBy.get(r.id) ?? []),
+    }));
+    return ok(summaries);
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const confirmInsightSchema = z.object({ insightId: z.string().uuid() });
+
+/**
+ * Record a member confirmation of an insight. `mem.insight` has no
+ * `metadata` column in the M3.7-A migration, so we log the
+ * confirmation as `audit.event` with `after.member_id`. If the
+ * insight schema gains a `metadata` column later, this action should
+ * also patch it (see follow-ups).
+ */
+export async function confirmInsightAction(
+  input: z.input<typeof confirmInsightSchema>,
+): Promise<ActionResult<{ insightId: string }>> {
+  try {
+    const parsed = confirmInsightSchema.parse(input);
+    const actor = await requireMemberForCurrentHousehold();
+
+    const { data: existing, error: eErr } = await actor.service
+      .schema('mem')
+      .from('insight')
+      .select('id, household_id')
+      .eq('id', parsed.insightId)
+      .maybeSingle();
+    if (eErr) throw new Error(`confirmInsightAction: ${eErr.message}`);
+    if (!existing)
+      throw new ValidationError('insight not found', [{ path: 'insightId', message: 'not found' }]);
+    if ((existing as { household_id: string }).household_id !== actor.householdId)
+      throw new UnauthorizedError('insight belongs to a different household');
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: 'mem.insight.confirmed',
+      resource_type: 'mem.insight',
+      resource_id: parsed.insightId,
+      after: { member_id: actor.memberId },
+    });
+
+    return ok({ insightId: parsed.insightId });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const dismissInsightSchema = z.object({ insightId: z.string().uuid() });
+
+export async function dismissInsightAction(
+  input: z.input<typeof dismissInsightSchema>,
+): Promise<ActionResult<{ insightId: string }>> {
+  try {
+    const parsed = dismissInsightSchema.parse(input);
+    const actor = await requireMemberForCurrentHousehold();
+
+    const { data: existing, error: eErr } = await actor.service
+      .schema('mem')
+      .from('insight')
+      .select('id, household_id')
+      .eq('id', parsed.insightId)
+      .maybeSingle();
+    if (eErr) throw new Error(`dismissInsightAction: ${eErr.message}`);
+    if (!existing)
+      throw new ValidationError('insight not found', [{ path: 'insightId', message: 'not found' }]);
+    if ((existing as { household_id: string }).household_id !== actor.householdId)
+      throw new UnauthorizedError('insight belongs to a different household');
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: 'mem.insight.dismissed',
+      resource_type: 'mem.insight',
+      resource_id: parsed.insightId,
+      after: { member_id: actor.memberId },
+    });
+
+    return ok({ insightId: parsed.insightId });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+// ==========================================================================
+// Danger zone: forget-all request / cancel (owner-only)
+// --------------------------------------------------------------------------
+// The actual purge is tracked as M10 — these actions only log intent to
+// `audit.event` with a 48-hour cancellation window. `getForgetAllRequest`
+// returns the most recent unfulfilled `mem.forget_all.requested` event
+// (or null) so the UI can show an "Undo" button.
+// ==========================================================================
+
+const FORGET_ALL_WINDOW_MS = 48 * 60 * 60 * 1000; // 48 hours
+
+export interface ForgetAllRequestStatus {
+  requestedAt: string;
+  expiresAt: string;
+  requestedByMemberId: string | null;
+}
+
+export async function getForgetAllRequestAction(): Promise<
+  ActionResult<ForgetAllRequestStatus | null>
+> {
+  try {
+    const actor = await requireMemberForCurrentHousehold();
+    const windowStart = new Date(Date.now() - FORGET_ALL_WINDOW_MS).toISOString();
+
+    const { data, error } = await actor.service
+      .schema('audit')
+      .from('event')
+      .select('action, at, after')
+      .eq('household_id', actor.householdId)
+      .in('action', ['mem.forget_all.requested', 'mem.forget_all.canceled'])
+      .gte('at', windowStart)
+      .order('at', { ascending: false });
+    if (error) throw new Error(`getForgetAllRequestAction: ${error.message}`);
+
+    const events = (data ?? []) as Array<{
+      action: string;
+      at: string;
+      after: Record<string, unknown> | null;
+    }>;
+    // Most recent wins. If a cancel came after the request, there's no
+    // pending request.
+    const latest = events[0];
+    if (!latest || latest.action !== 'mem.forget_all.requested') return ok(null);
+
+    const requestedAt = latest.at;
+    const memberId =
+      typeof latest.after?.member_id === 'string' ? (latest.after.member_id as string) : null;
+    const expiresAt = new Date(
+      new Date(requestedAt).getTime() + FORGET_ALL_WINDOW_MS,
+    ).toISOString();
+    return ok({ requestedAt, expiresAt, requestedByMemberId: memberId });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+export async function requestForgetAllAction(): Promise<
+  ActionResult<{ requestedAt: string; expiresAt: string }>
+> {
+  try {
+    const actor = await requireMemberForCurrentHousehold();
+    if (actor.role !== 'owner') throw new UnauthorizedError('owner-only action');
+
+    const nowIso = new Date().toISOString();
+    const expiresAt = new Date(Date.now() + FORGET_ALL_WINDOW_MS).toISOString();
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: 'mem.forget_all.requested',
+      resource_type: 'household.memory',
+      resource_id: actor.householdId,
+      after: { member_id: actor.memberId, expires_at: expiresAt },
+    });
+
+    return ok({ requestedAt: nowIso, expiresAt });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+export async function cancelForgetAllAction(): Promise<ActionResult<{ canceledAt: string }>> {
+  try {
+    const actor = await requireMemberForCurrentHousehold();
+    if (actor.role !== 'owner') throw new UnauthorizedError('owner-only action');
+
+    const nowIso = new Date().toISOString();
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: 'mem.forget_all.canceled',
+      resource_type: 'household.memory',
+      resource_id: actor.householdId,
+      after: { member_id: actor.memberId, canceled_at: nowIso },
+    });
+
+    return ok({ canceledAt: nowIso });
+  } catch (err) {
+    return toErr(err);
+  }
+}

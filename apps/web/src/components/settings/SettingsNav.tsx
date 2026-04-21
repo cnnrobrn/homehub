@@ -29,11 +29,7 @@ const ITEMS: NavItem[] = [
     disabled: true,
     disabledLabel: 'Available in M9',
   },
-  {
-    label: 'Memory',
-    disabled: true,
-    disabledLabel: 'Available in M3',
-  },
+  { label: 'Memory', href: '/settings/memory' },
 ];
 
 export function SettingsNav() {
