@@ -1,0 +1,149 @@
+# HomeHub — local Nango stack.
+#
+# Mirrors the upstream layout at
+# https://github.com/NangoHQ/nango/blob/master/docker-compose.yaml but:
+#  - Pins `nango-server` to a specific semver tag (never `latest` or `hosted`).
+#  - Uses `restart: unless-stopped` instead of `restart: always` for dev
+#    ergonomics; `down` should actually leave things down.
+#  - Declares a named volume for Postgres data (not a bind mount) so the
+#    volume survives `docker compose down` and is only removed on an
+#    explicit `docker compose down -v`.
+#  - Declares an explicit named network so this stack is isolated from
+#    other compose projects on the same machine.
+#
+# Secrets: nothing committed here. See `.env.example` for the contract.
+# Pin bumps: treat like any dependency bump — PR with staging smoke per
+# `specs/03-integrations/nango.md` upgrade procedure, then prod.
+
+name: homehub-nango
+
+services:
+  nango-db:
+    # Nango upstream pins Postgres 16.0. We follow upstream's major here
+    # (16) so Nango's migrations stay within a known-good range; patch
+    # level (16-alpine resolves to the latest 16.x) is safe to drift.
+    image: postgres:16-alpine
+    container_name: homehub-nango-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${NANGO_DB_USER:-nango}
+      POSTGRES_PASSWORD: ${NANGO_DB_PASSWORD:-nango}
+      POSTGRES_DB: ${NANGO_DB_NAME:-nango}
+    volumes:
+      - nango-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${NANGO_DB_USER:-nango} -d ${NANGO_DB_NAME:-nango}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+    networks:
+      - nango
+
+  nango-redis:
+    # Nango uses Redis for background job queues / caching. Pinning an
+    # explicit patch because Redis semver has meaningful behavior shifts.
+    image: redis:7.2.4-alpine
+    container_name: homehub-nango-redis
+    restart: unless-stopped
+    volumes:
+      - nango-redis-data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+    networks:
+      - nango
+
+  nango-server:
+    # Pinned to Nango's current stable hosted build. Bump via PR after a
+    # staging smoke, per `specs/03-integrations/nango.md`. See
+    # https://hub.docker.com/r/nangohq/nango-server/tags for the full
+    # tag list. Nango publishes `hosted-<semver>` as their stable tag
+    # channel; `hosted` (unsuffixed) and commit-hash tags are floating.
+    image: nangohq/nango-server:hosted-0.70.1
+    container_name: homehub-nango-server
+    restart: unless-stopped
+    # Nango's image is only published for linux/amd64. On Apple Silicon
+    # Docker Desktop transparently runs this under Rosetta/qemu — slower
+    # but functional for local dev. Production on Railway runs x86_64
+    # natively.
+    platform: linux/amd64
+    depends_on:
+      nango-db:
+        condition: service_healthy
+      nango-redis:
+        condition: service_healthy
+    environment:
+      # --- Postgres ---
+      NANGO_DB_HOST: nango-db
+      NANGO_DB_PORT: 5432
+      NANGO_DB_USER: ${NANGO_DB_USER:-nango}
+      NANGO_DB_PASSWORD: ${NANGO_DB_PASSWORD:-nango}
+      NANGO_DB_NAME: ${NANGO_DB_NAME:-nango}
+      NANGO_DB_SSL: 'false'
+      # Nango uses the same DB for sync records locally; in production
+      # this can be split via RECORDS_DATABASE_URL.
+      RECORDS_DATABASE_URL: postgresql://${NANGO_DB_USER:-nango}:${NANGO_DB_PASSWORD:-nango}@nango-db:5432/${NANGO_DB_NAME:-nango}
+
+      # --- Redis ---
+      NANGO_REDIS_URL: redis://nango-redis:6379
+
+      # --- Server ---
+      SERVER_PORT: 3003
+      NANGO_SERVER_URL: ${NANGO_SERVER_URL:-http://localhost:3003}
+      NANGO_PUBLIC_SERVER_URL: ${NANGO_PUBLIC_SERVER_URL:-http://localhost:3003}
+
+      # --- Encryption ---
+      # REQUIRED. Generate once with `openssl rand -base64 32`. If this
+      # rotates, every stored provider credential must be re-encrypted;
+      # see `docs/production-deploy.md` for the rotation procedure.
+      NANGO_ENCRYPTION_KEY: ${NANGO_ENCRYPTION_KEY:?NANGO_ENCRYPTION_KEY must be set; see .env.example}
+
+      # --- Dashboard auth ---
+      # Nango's admin UI. For local dev we disable the signup flow and
+      # use basic auth dashboard creds. Flip FLAG_AUTH_ENABLED=true in
+      # prod and use the normal login flow.
+      FLAG_AUTH_ENABLED: ${FLAG_AUTH_ENABLED:-false}
+      NANGO_DASHBOARD_USERNAME: ${NANGO_DASHBOARD_USERNAME:-admin}
+      NANGO_DASHBOARD_PASSWORD: ${NANGO_DASHBOARD_PASSWORD:-admin}
+
+      # --- Connect UI (hosted auth page) ---
+      FLAG_SERVE_CONNECT_UI: 'true'
+      NANGO_CONNECT_UI_PORT: 3009
+
+      # --- Observability ---
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TELEMETRY: ${NANGO_TELEMETRY:-false}
+
+      # --- CSP ---
+      # Report-only in dev; tighten in production (see railway.toml).
+      CSP_REPORT_ONLY: 'true'
+    ports:
+      # 3003: Nango API + webhooks. 3009: Nango Connect UI (the hosted
+      # OAuth page members land on). Both are localhost-only in dev.
+      - '127.0.0.1:3003:3003'
+      - '127.0.0.1:3009:3009'
+    healthcheck:
+      # Nango exposes `/health` on the API port. Using wget because the
+      # image ships without curl.
+      test: ['CMD-SHELL', 'wget -qO- http://127.0.0.1:3003/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - nango
+
+networks:
+  nango:
+    name: homehub-nango
+    driver: bridge
+
+volumes:
+  nango-db-data:
+    name: homehub-nango-db-data
+  nango-redis-data:
+    name: homehub-nango-redis-data

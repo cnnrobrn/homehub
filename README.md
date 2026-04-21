@@ -14,6 +14,7 @@ This is a pnpm monorepo. The workspace globs are already configured; the package
 - `packages/db/` — Supabase migrations, local stack config, and generated types. See [`packages/db/README.md`](./packages/db/README.md).
 - `packages/worker-runtime/` — shared worker runtime: Supabase client, `pgmq` wrapper, Nango client, OpenRouter helper, logger, tracer (coming in M0-C).
 - `packages/shared/`, `packages/providers/`, `packages/prompts/`, `packages/tools/` — domain primitives and provider/prompt/tool catalogs.
+- `infra/nango/` — self-hosted Nango stack (docker-compose for dev, Railway spec for prod, runbook). See [`infra/nango/README.md`](./infra/nango/README.md).
 - `specs/` — design specs. Source of truth for what to build.
 - `scripts/` — launch scripts and agent briefings.
 - `tasks/` — shared task board and decision log.
@@ -46,7 +47,7 @@ Additional commands (Nango docker-compose, seed data, dev servers) arrive with l
 - Worker runtime + queue wiring: coming in M0-C.
 - Next.js app shell: ships in M0-D (`pnpm --filter @homehub/web dev`).
 - Worker + MCP service stubs: coming in M0-E.
-- Local Nango via docker-compose: coming in M0-F.
+- Local Nango via docker-compose: `infra/nango/` — see [`infra/nango/README.md`](./infra/nango/README.md).
 
 ## CI
 

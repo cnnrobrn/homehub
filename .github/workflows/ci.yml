@@ -152,6 +152,27 @@ jobs:
       - name: Build web app
         run: pnpm --filter @homehub/web build
 
+  nango-compose-validate:
+    name: Nango compose validate
+    runs-on: ubuntu-latest
+    # Syntax-checks `infra/nango/docker-compose.yml` without booting the
+    # stack. `docker compose config` parses the file, interpolates env
+    # vars, and exits non-zero on schema / interpolation errors. Cheap
+    # (no image pulls, no daemon work beyond parse) and catches the
+    # class of drift that bit us in upstream Nango's compose churn.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml
+        working-directory: infra/nango
+        # NANGO_ENCRYPTION_KEY is required by the compose file (`:?`
+        # fail-fast). Supply a dummy for parse-time only — the value
+        # never leaves the validator.
+        env:
+          NANGO_ENCRYPTION_KEY: ci-placeholder-not-a-real-key
+        run: docker compose -f docker-compose.yml config --quiet
+
   migration-lint:
     name: Migration lint
     runs-on: ubuntu-latest

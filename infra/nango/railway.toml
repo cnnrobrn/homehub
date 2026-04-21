@@ -1,0 +1,104 @@
+# Railway service config for HomeHub's production Nango deployment.
+#
+# This file is a DECLARATIVE SPEC. The human operator runs
+# `railway link` from this directory and Railway provisions / updates
+# services to match. We do NOT auto-provision from CI.
+#
+# See `docs/production-deploy.md` for the provisioning runbook, backup
+# procedure, key rotation, upgrade flow, and incident runbook.
+#
+# Principles:
+#   - Image is pinned to the same exact tag as docker-compose.yml. Bumps
+#     go through a single PR that updates both files.
+#   - Nango is reachable only via Railway's private networking from our
+#     other services (workers, webhook-ingest). The ONLY public surface
+#     is the OAuth callback / Connect UI hostname.
+#   - Every secret is a `RAILWAY_` variable set via the Railway dashboard
+#     or CLI — never in this file. This file only names variables; it
+#     does not carry values.
+
+# -----------------------------------------------------------------------
+# Environments
+# -----------------------------------------------------------------------
+# Two long-lived environments, per `specs/01-architecture/environments.md`:
+# staging (auto-deploy on merge to `main`) and production (manual
+# promote). Configure these in the Railway project UI; this TOML only
+# describes the service shape.
+
+[build]
+# Nango is not built from source — we pull the pinned image.
+builder = "dockerfile"
+
+# -----------------------------------------------------------------------
+# nango-server
+# -----------------------------------------------------------------------
+[[services]]
+name = "nango-server"
+
+  [services.source]
+  image = "nangohq/nango-server:hosted-0.70.1"
+
+  [services.deploy]
+  # Restart on crash; let Railway's orchestrator handle rollouts. Do NOT
+  # use `ALWAYS` with a bad config or you'll loop.
+  restartPolicyType = "ON_FAILURE"
+  restartPolicyMaxRetries = 10
+  # Nango's /health is the documented liveness probe. Keep the timeout
+  # generous — Nango cold-starts can take 20-30s when Postgres is cold.
+  healthcheckPath = "/health"
+  healthcheckTimeout = 30
+
+  # Variables live in Railway's variable store, not here. The names
+  # below document the contract; values are set per-environment.
+  #
+  # [services.variables]
+  #   NANGO_DB_HOST              # from Railway Postgres plugin (private DNS)
+  #   NANGO_DB_PORT              # from Railway Postgres plugin
+  #   NANGO_DB_USER              # from Railway Postgres plugin
+  #   NANGO_DB_PASSWORD          # from Railway Postgres plugin
+  #   NANGO_DB_NAME              # from Railway Postgres plugin
+  #   NANGO_DB_SSL=true
+  #   RECORDS_DATABASE_URL       # same DB or a sibling Postgres add-on
+  #   NANGO_REDIS_URL            # from Railway Redis plugin (private DNS)
+  #   SERVER_PORT=3003
+  #   NANGO_SERVER_URL           # internal URL, e.g. https://nango.railway.internal
+  #   NANGO_PUBLIC_SERVER_URL    # the ONLY public hostname, e.g. https://nango.homehub.app
+  #   NANGO_ENCRYPTION_KEY       # `openssl rand -base64 32`, rotated per runbook
+  #   FLAG_AUTH_ENABLED=true     # dashboard uses real auth in prod
+  #   FLAG_SERVE_CONNECT_UI=true
+  #   NANGO_CONNECT_UI_PORT=3009
+  #   LOG_LEVEL=info
+  #   NANGO_TELEMETRY=false
+  #   CSP_REPORT_ONLY=false      # tighter CSP in production
+
+  # Networking:
+  #  - Internal port 3003 is exposed only via Railway's private network
+  #    (`nango.railway.internal:3003`). Workers talk to it this way.
+  #  - A single public custom domain (e.g. `nango.homehub.app`) is bound
+  #    to the Connect UI / OAuth callback surface. Everything else is
+  #    firewalled.
+  # Configure the custom domain via Railway UI; this TOML does not
+  # currently express domain bindings.
+
+# -----------------------------------------------------------------------
+# nango-db (Railway Postgres add-on)
+# -----------------------------------------------------------------------
+# Railway-managed Postgres cannot be described in railway.toml today —
+# it's provisioned via the Railway UI (or `railway add postgresql`).
+# Procedure:
+#
+#   railway add --plugin postgresql --name nango-db
+#
+# Then bind its `DATABASE_URL` into `nango-server` as the suite of
+# `NANGO_DB_*` vars (Railway surfaces individual host/user/password/db
+# name/port as separate variables too).
+#
+# Version: Railway's current managed Postgres is 16.x, matching what
+# Nango's upstream compose uses. If Railway's default drifts, pin the
+# plugin version explicitly.
+
+# -----------------------------------------------------------------------
+# nango-redis (Railway Redis add-on)
+# -----------------------------------------------------------------------
+# Same story — provisioned via Railway UI / `railway add --plugin redis`.
+# Bind its `REDIS_URL` into `nango-server` as `NANGO_REDIS_URL`.
