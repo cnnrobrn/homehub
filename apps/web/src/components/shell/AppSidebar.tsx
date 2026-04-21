@@ -38,8 +38,7 @@ const NAV: NavItem[] = [
   {
     label: 'Financial',
     icon: <CircleDollarSign className="h-4 w-4" />,
-    disabled: true,
-    disabledLabel: 'Available when M2+ lands',
+    href: '/financial',
   },
   {
     label: 'Food',
