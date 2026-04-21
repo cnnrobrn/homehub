@@ -18,6 +18,9 @@ const dbSrc = fileURLToPath(new URL('../../../packages/db/src/index.ts', import.
 const promptsSrc = fileURLToPath(
   new URL('../../../packages/prompts/src/index.ts', import.meta.url),
 );
+const enrichmentSrc = fileURLToPath(
+  new URL('../../../packages/enrichment/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   resolve: {
@@ -25,10 +28,11 @@ export default defineConfig({
       '@homehub/worker-runtime': runtimeSrc,
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
-      // handler.ts imports from @homehub/prompts; without this alias
-      // Vite falls through to prompts/package.json → dist/index.js,
-      // which CI doesn't build before `pnpm -r run test`.
+      // handler.ts imports from @homehub/prompts and @homehub/enrichment;
+      // without these aliases Vite falls through to each package's
+      // dist/index.js, which CI doesn't build before `pnpm -r run test`.
       '@homehub/prompts': promptsSrc,
+      '@homehub/enrichment': enrichmentSrc,
     },
   },
 });

@@ -22,7 +22,6 @@
  * override spacing / widths without forking the component.
  */
 
-
 import { SEGMENTS } from './segment';
 
 import type { SegmentId } from './segment';
