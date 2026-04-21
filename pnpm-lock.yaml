@@ -53,6 +53,9 @@ importers:
       '@homehub/db':
         specifier: workspace:*
         version: link:../../../packages/db
+      '@homehub/query-memory':
+        specifier: workspace:*
+        version: link:../../../packages/query-memory
       '@homehub/shared':
         specifier: workspace:*
         version: link:../../../packages/shared
@@ -62,6 +65,9 @@ importers:
       '@modelcontextprotocol/sdk':
         specifier: ^1.29.0
         version: 1.29.0(zod@4.3.6)
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
     devDependencies:
       tsx:
         specifier: ^4.19.2

@@ -19,12 +19,12 @@
  */
 
 import { type Database } from '@homehub/db';
+import { SEGMENTS, type CalendarEventRow, type Segment } from '@homehub/shared';
 import { z } from 'zod';
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-export const SEGMENTS = ['financial', 'food', 'fun', 'social', 'system'] as const;
-export type Segment = (typeof SEGMENTS)[number];
+export { SEGMENTS, type CalendarEventRow, type Segment };
 
 const isoDateTime = z.string().refine((s) => !Number.isNaN(new Date(s).getTime()), {
   message: 'must be a valid ISO-8601 date-time',
@@ -39,21 +39,6 @@ export const listEventsArgsSchema = z.object({
 });
 
 export type ListEventsArgs = z.infer<typeof listEventsArgsSchema>;
-
-export interface CalendarEventRow {
-  id: string;
-  householdId: string;
-  segment: Segment;
-  kind: string;
-  title: string;
-  startsAt: string;
-  endsAt: string | null;
-  allDay: boolean;
-  location: string | null;
-  provider: string | null;
-  ownerMemberId: string | null;
-  metadata: Record<string, unknown>;
-}
 
 export interface SegmentGrant {
   segment: Segment;

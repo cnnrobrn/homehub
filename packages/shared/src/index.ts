@@ -46,3 +46,5 @@ export {
   type FactSource,
   type NodeType,
 } from './memory/node-types.js';
+
+export { SEGMENTS, type CalendarEventRow, type Segment } from './events/types.js';

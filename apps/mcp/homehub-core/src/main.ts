@@ -1,53 +1,117 @@
 /**
- * `homehub-core` MCP server entrypoint.
+ * `mcp-homehub-core` MCP server entrypoint.
  *
- * Runs behind a streamable-HTTP transport on Railway. The server exposes
- * the standard MCP handshake + listTools (empty catalog) at M0; real
- * tool registrations land in M3 under @integrations, pulling handler
- * implementations from @frontend-chat (UI-adjacent tools) and
- * @memory-background (graph/retrieval tools).
+ * Runs behind a streamable-HTTP transport on Railway. The server
+ * registers the M3-C tool catalog (`query_memory`, `list_events`,
+ * `get_node`, `get_episode_timeline`) and validates every request's
+ * `Authorization` bearer token at the HTTP layer via
+ * `createAuthMiddleware`. The resolved `AuthContext` is attached to
+ * the Node HTTP request under `req.auth.extra.context`, which the
+ * transport forwards to the tool handlers as `extra.authInfo`.
  *
- * See `specs/13-conversation/tools.md` for the planned catalog.
+ * Auth failure → HTTP 401 and we never forward the request to the MCP
+ * transport. Scope failure → HTTP 403. Everything else (including
+ * `NotYetImplementedError` for the production pre-migration path) is
+ * treated as a 501 so callers see the upgrade path.
+ *
+ * Specs:
+ *   - `specs/03-integrations/mcp.md`
+ *   - `specs/04-memory-network/retrieval.md`
+ *   - `specs/13-conversation/tools.md`
  */
 
 import { randomUUID } from 'node:crypto';
-import { createServer as createHttpServer } from 'node:http';
+import { type IncomingMessage, createServer as createHttpServer } from 'node:http';
 
+import { createQueryMemory } from '@homehub/query-memory';
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
+  createModelClient,
+  createServiceClient,
   initTracing,
+  NotYetImplementedError,
   onShutdown,
   runWorker,
-  workerRuntimeEnvSchema,
 } from '@homehub/worker-runtime';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 
+import { mcpCoreEnvSchema } from './env.js';
+import { ForbiddenError, InvalidTokenError } from './errors.js';
 import { createServer as createMcpServer } from './handler.js';
+import { type AuthContext, createAuthMiddleware } from './middleware/auth.js';
 
 const SERVICE_NAME = 'mcp-homehub-core';
 
-const env = loadEnv(workerRuntimeEnvSchema);
+interface AuthedRequest extends IncomingMessage {
+  auth?: {
+    token: string;
+    clientId: string;
+    scopes: string[];
+    extra: { context: AuthContext };
+  };
+}
+
+function toHeaderMap(req: IncomingMessage): Record<string, string | undefined> {
+  const out: Record<string, string | undefined> = {};
+  for (const [k, v] of Object.entries(req.headers)) {
+    if (typeof v === 'string') {
+      out[k] = v;
+    } else if (Array.isArray(v)) {
+      out[k] = v[0];
+    }
+  }
+  return out;
+}
+
+const env = loadEnv(mcpCoreEnvSchema);
 const log = createLogger(env, { service: SERVICE_NAME, component: 'main' });
 
 const exitCode = await runWorker(
   async () => {
     initTracing(env);
 
-    const mcp = createMcpServer();
+    const supabase = createServiceClient(env);
+    const modelClient = createModelClient(env, {
+      logger: log.child({ component: 'model-client' }),
+      supabase,
+    });
+    const queryMemory = createQueryMemory({
+      supabase,
+      modelClient,
+      log: log.child({ component: 'query-memory' }),
+    });
+    const auth = createAuthMiddleware({ env });
+
+    const mcp = createMcpServer({
+      supabase,
+      queryMemory,
+      resolveAuth: (extra) => {
+        // The transport forwards `req.auth` as `extra.authInfo`; we
+        // stashed the validated `AuthContext` under `extra.context`
+        // when we accepted the request. Missing = programmer error;
+        // surface loudly.
+        const ctx = extra.authInfo?.extra?.['context'] as AuthContext | undefined;
+        if (!ctx) {
+          throw new InvalidTokenError('no auth context on request');
+        }
+        return ctx;
+      },
+    });
+
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
     });
-    // The SDK's Transport interface uses optional properties that aren't
-    // declared `| undefined`; that clashes with our exactOptionalPropertyTypes
-    // setting. Cast here rather than relax the TS config — the constructor
-    // above is the true shape check.
+    // SDK's Transport interface uses optional properties that aren't
+    // declared `| undefined`; that clashes with our
+    // exactOptionalPropertyTypes setting. Cast here rather than relax
+    // the TS config — the constructor above is the true shape check.
     await mcp.connect(transport as unknown as Parameters<typeof mcp.connect>[0]);
 
     let ready = false;
-    const port = Number.parseInt(process.env.PORT ?? '8080', 10);
+    const port = Number.parseInt(process.env['PORT'] ?? '8080', 10);
 
-    const server = createHttpServer(async (req, res) => {
+    const httpServer = createHttpServer(async (req: AuthedRequest, res) => {
       const url = req.url ?? '/';
       if (url === '/health') {
         res.writeHead(200, { 'content-type': 'application/json' });
@@ -60,6 +124,39 @@ const exitCode = await runWorker(
         return;
       }
       if (url === '/mcp' || url.startsWith('/mcp?') || url.startsWith('/mcp/')) {
+        // --- Auth ---------------------------------------------------
+        let ctx: AuthContext;
+        try {
+          ctx = auth.authenticate(toHeaderMap(req));
+        } catch (err) {
+          if (err instanceof InvalidTokenError) {
+            res.writeHead(401, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: { code: err.code, message: err.message } }));
+            return;
+          }
+          if (err instanceof ForbiddenError) {
+            res.writeHead(403, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: { code: err.code, message: err.message } }));
+            return;
+          }
+          if (err instanceof NotYetImplementedError) {
+            res.writeHead(501, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ error: { code: err.code, message: err.message } }));
+            return;
+          }
+          log.error('mcp auth failed with unexpected error', { err });
+          res.writeHead(500, { 'content-type': 'application/json' });
+          res.end(JSON.stringify({ error: { code: 'MCP_AUTH_ERROR', message: 'auth failed' } }));
+          return;
+        }
+
+        req.auth = {
+          token: 'redacted',
+          clientId: ctx.kind === 'member' ? ctx.memberId : ctx.serviceName,
+          scopes: [...ctx.scopes],
+          extra: { context: ctx },
+        };
+
         try {
           await transport.handleRequest(req, res);
         } catch (err) {
@@ -76,24 +173,21 @@ const exitCode = await runWorker(
     });
 
     await new Promise<void>((resolve, reject) => {
-      server.once('error', reject);
-      server.listen(port, () => {
-        server.off('error', reject);
+      httpServer.once('error', reject);
+      httpServer.listen(port, () => {
+        httpServer.off('error', reject);
         resolve();
       });
     });
     log.info('mcp http transport listening', { port });
 
     onShutdown(async () => {
-      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await new Promise<void>((resolve) => httpServer.close(() => resolve()));
       await mcp.close();
     });
 
     ready = true;
 
-    // TODO(@integrations, M3): register the HomeHub tool catalog per
-    // specs/13-conversation/tools.md. Implementations come from
-    // @frontend-chat and @memory-background; this file owns the wiring.
     await new Promise<void>((resolve) => {
       const onSig = (): void => resolve();
       process.once('SIGTERM', onSig);
