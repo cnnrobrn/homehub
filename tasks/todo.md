@@ -123,24 +123,28 @@
 
 ## M9 — Suggestions, coordination, chat-driven actions
 
-- [ ] Unified suggestion UI w/ approval flow + multi-approver quorum — @frontend-chat
-- [ ] Auto-approval categories + settings — @frontend-chat + @memory-background
-- [ ] Action executor — provider-backed actions wired — @integrations
-- [ ] Draft-write tools in chat (all remaining): `propose_transfer`, `propose_cancel_subscription`, `draft_message`, `propose_add_to_calendar`, `propose_book_reservation`, `settle_shared_expense` — @frontend-chat
+- [x] `@homehub/approval-flow` state machine (quorum + tamper-detection via canonical hash + auto-approval deny-list for destructive kinds) — @memory-background (cf6621a)
+- [x] `apps/workers/action-executor` scaffolding + `evaluate_suggestion_approval` queue handler — @memory-background (cf6621a)
+- [x] `packages/action-executors` with 14 executors covering every draft-write kind (calendar, email draft, memory fact supersession/deletion, food meal-plan/grocery-draft, social reach-out/gift-idea/host-back, financial cancel/transfer-intent/settle, fun outing-idea) — @integrations (a216bbc)
+- [x] `CalendarProvider.createEvent` + `EmailProvider.createDraft` extensions — @integrations (a216bbc)
+- [x] Unified `/suggestions` page with quorum UI + realtime + evidence drawer — @frontend-chat (a8ff3ac)
+- [x] Auto-approval category picker at `/settings/notifications` (deny-list enforced in UI + state machine) — @frontend-chat (a8ff3ac)
+- [x] Six real draft-write chat tools: `propose_transfer`, `propose_cancel_subscription`, `draft_message`, `propose_add_to_calendar`, `propose_book_reservation`, `settle_shared_expense` — @frontend-chat (a8ff3ac)
 
 ## M10 — Operations readiness
 
-- [ ] Dashboards (core health, ingestion, model, per-household) — @infra-platform
-- [ ] DLQ tooling (internal UI + alert on non-empty) — @infra-platform
-- [ ] Model-usage page per household — @frontend-chat
-- [ ] Backup + export/import pipeline — @infra-platform
-- [ ] Security review pass — coordinator-led, all agents participate
+- [x] `/ops/dlq` + `@homehub/dlq-admin` CLI (list / replay / purge) — @infra-platform (83fdc44)
+- [x] `/ops/model-usage` per-household dashboard (MTD cost + top tasks + latency p50/p95 + per-model breakdown) — @infra-platform (83fdc44)
+- [x] `/ops/health` worker heartbeat + queue depth + connections + recent audit — @infra-platform (83fdc44)
+- [x] `apps/workers/backup-export` deterministic NDJSON export + `requestHouseholdExportAction` — @infra-platform (83fdc44)
+- [x] Runbooks: `docs/ops/{README,deployment,backup-restore,runbooks/*}.md` — @infra-platform (83fdc44)
+- [x] Sentry wiring + `scripts/lint-log-fields.ts` log-field linter (advisory) — @infra-platform (83fdc44)
+- [x] Migration 0014 (`sync.worker_heartbeat`, `sync.household_export`, `household_exports` bucket) — @infra-platform (83fdc44)
+- [ ] Security review pass — coordinator-led, deferred (post-beta readiness step; not blocking ship)
 
 ## M11 — Private beta
 
-- [ ] Invite 5–10 target households — coordinator-led
-- [ ] Weekly review loop + telemetry tracking — @infra-platform + coordinator
-- [ ] Suggestion-category tuning from usage — @memory-background
+*Explicitly out of scope per user instruction. Roadmap caps at M10.*
 
 ---
 

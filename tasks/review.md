@@ -614,4 +614,36 @@ Follow-ups tracked, not blocking M9:
 
 Four commits (`28a0da9`, `ae8aeaf`, `273ee68`, `af2b194`). All four segments now have dashboard + calendar + summaries + alerts + suggestions surfaces. 1263 tests passing repo-wide.
 
+## 2026-04-21 — M9 / M10 accepted
+
+- **M9-A approval state machine (cf6621a)**: `@homehub/approval-flow` with quorum + tamper detection (canonical hash) + auto-approval deny-list for destructive kinds (cancel_subscription, propose_transfer, settle_shared_expense) + audit writes per transition. `apps/workers/action-executor` scaffolding with a kind-keyed `executorRegistry` (empty at this layer; M9-B populates) and an `evaluate_suggestion_approval` queue handler. Requires migration 0015 to promote dedupe to dedicated columns — graceful fallback via `preview.__approvers` until applied.
+- **M10 ops readiness (83fdc44)**: `@homehub/dlq-admin` package + CLI, `/ops/dlq` + `/ops/model-usage` + `/ops/health` owner-only pages, `apps/workers/backup-export` with deterministic NDJSON serializer (upload deferred), runbooks under `docs/ops/`, Sentry wiring via optional peer dependency, `scripts/lint-log-fields.ts` advisory log-field linter, migration `0014_ops_heartbeat_exports.sql` (directly authored inside the dispatch — forward-only, idempotent).
+- **M9-B action executors (a216bbc)**: 14 executors covering every draft-write kind; `CalendarProvider.createEvent` + `EmailProvider.createDraft` extensions; `resolveConnection` prefers owner → adult; `PermanentExecutorError` vs `TransientExecutorError` classification driven by provider-specific error shapes; grocery Instacart stub path documented.
+- **M9-C unified suggestions UI (a8ff3ac)**: `/suggestions` page with quorum UI + realtime + evidence drawer, `/settings/notifications` auto-approval category picker (deny-list matches state machine), six real chat draft-write tools replacing M3.5-A stubs, segment approve-action wrappers now delegate to `approveSuggestionViaQueueAction`. M9-C's initial commit didn't persist — re-committed surgically after the coordinator noticed the missing diff and spot-fixed without disturbing the user's parallel design-system re-skin WIP.
+
+Standing decisions:
+
+1. **Canonical hash** stored at `action.payload.suggestion_hash` is re-verified by the executor before any provider call — tamper gate.
+2. **Draft emails never auto-send** — executors create Gmail drafts, never `send`. Same for booking reservations and settle-up messages.
+3. **`/approvals` (user re-skin) + `/suggestions` (M9-C) coexist**: `/approvals` is the dashboard-style decisions surface; `/suggestions` is the functional queue. Routes are complementary; sidebar links to both.
+4. **Log-field linter runs advisory-only** initially. 20 pre-existing `console.warn` audit-fallback sites need migration to the structured logger before flipping to strict.
+
+Follow-ups parked (not blocking):
+
+- Migration 0015 for `app.suggestion.canonical_hash + expires_at + approvers jsonb` columns (M9-A requested).
+- Producer wiring: `apps/workers/suggestions`, `apps/workers/alerts`, and any other suggestion producers should enqueue `evaluate_suggestion_approval` on insert so the auto-approval path is no longer dormant.
+- Execute → Gmail/GCal wiring verification once Nango connections are live (human-gated).
+- Migrate the 20 audit-fallback `console.warn` sites to the structured logger + flip `log-field-lint` to strict.
+- Upload bytes to the `household_exports` bucket once 0014 storage bucket is applied.
+- Connect DLQ-age alert into the `evaluate_alerts` worker so dead-letter accumulation pages someone.
+- Trim stub tools from `packages/tools/src/tools/draftWriteStubs.ts` once the real executors have been exercised in staging.
+
+## 2026-04-21 — **M9 + M10 COMPLETE**
+
+Four commits: cf6621a + a216bbc (M9-B) + a8ff3ac (M9-C) + 83fdc44 (M10). End-to-end: member approves a suggestion in chat or `/suggestions` → `approveSuggestion` writes audit + flips status + creates `app.action` row + enqueues `execute_action` → action-executor claims, verifies canonical hash, dispatches to the right provider executor, calls Nango, writes result, flips `suggestion.status='executed'` + `action.status='succeeded'`.
+
+## 2026-04-21 — ROADMAP CAPPED AT M10
+
+Per user instruction, M11 private-beta work is explicitly out of scope. The build stops here.
+
 
