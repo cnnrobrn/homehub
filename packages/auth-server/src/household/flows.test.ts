@@ -23,10 +23,13 @@ import {
   createHousehold,
   inviteMember,
   listHouseholds,
+  listInvitations,
   listMembers,
+  previewInvitation,
   resolveMemberId,
   revokeMember,
   transferOwnership,
+  updateHousehold,
 } from './flows.js';
 
 const ENV = {
@@ -461,5 +464,190 @@ describe('resolveMemberId', () => {
     const owner = await createHousehold(supa, ENV, { userId: uuid('1'), name: 'H' });
     const id = await resolveMemberId(supa, owner.household.id, uuid('9'));
     expect(id).toBeNull();
+  });
+});
+
+describe('previewInvitation', () => {
+  it('returns household + role + status=valid for a live token', async () => {
+    const owner = await createHousehold(supa, ENV, { userId: uuid('1'), name: 'Preview H' });
+    const inv = await inviteMember(supa, ENV, {
+      householdId: owner.household.id,
+      inviterMemberId: owner.member.id,
+      email: 'p@example.com',
+      role: 'adult',
+      grants: [],
+    });
+    const res = await previewInvitation(supa, ENV, { token: inv.token });
+    expect(res).not.toBeNull();
+    expect(res!.status).toBe('valid');
+    expect(res!.household.name).toBe('Preview H');
+    expect(res!.role).toBe('adult');
+    expect(res!.email).toBe('p@example.com');
+    expect(res!.inviterName).toBe(owner.member.display_name);
+  });
+
+  it('returns null for an unknown token', async () => {
+    const res = await previewInvitation(supa, ENV, { token: 'nope' });
+    expect(res).toBeNull();
+  });
+
+  it('reports status=expired for stale invitations', async () => {
+    const owner = await createHousehold(supa, ENV, { userId: uuid('1'), name: 'H' });
+    const inv = await inviteMember(supa, ENV, {
+      householdId: owner.household.id,
+      inviterMemberId: owner.member.id,
+      email: 'e@example.com',
+      role: 'adult',
+      grants: [],
+    });
+    store.app.household_invitation!.rows[0]!.expires_at = new Date(Date.now() - 1000).toISOString();
+    const res = await previewInvitation(supa, ENV, { token: inv.token });
+    expect(res!.status).toBe('expired');
+  });
+
+  it('reports status=accepted after acceptance', async () => {
+    const owner = await createHousehold(supa, ENV, { userId: uuid('1'), name: 'H' });
+    const inv = await inviteMember(supa, ENV, {
+      householdId: owner.household.id,
+      inviterMemberId: owner.member.id,
+      email: 'a@example.com',
+      role: 'adult',
+      grants: [],
+    });
+    await acceptInvitation(supa, ENV, { token: inv.token, userId: uuid('2') });
+    const res = await previewInvitation(supa, ENV, { token: inv.token });
+    expect(res!.status).toBe('accepted');
+  });
+});
+
+describe('updateHousehold', () => {
+  it('owner can patch name + settings; audit written', async () => {
+    const owner = await createHousehold(supa, ENV, {
+      userId: uuid('1'),
+      name: 'Old Name',
+      timezone: 'America/New_York',
+    });
+    const res = await updateHousehold(supa, ENV, {
+      householdId: owner.household.id,
+      actorMemberId: owner.member.id,
+      name: 'New Name',
+      currency: 'EUR',
+    });
+    expect(res.household.name).toBe('New Name');
+    expect(res.household.settings).toMatchObject({
+      timezone: 'America/New_York',
+      currency: 'EUR',
+    });
+    expect(store.audit.event!.rows.some((r) => r.action === 'household.update')).toBe(true);
+  });
+
+  it('non-owner rejected with Forbidden', async () => {
+    const owner = await createHousehold(supa, ENV, { userId: uuid('1'), name: 'H' });
+    const adultId = uuid('a');
+    store.app.member!.rows.push({
+      id: adultId,
+      household_id: owner.household.id,
+      user_id: uuid('2'),
+      display_name: 'A',
+      role: 'adult',
+      joined_at: new Date().toISOString(),
+      email: null,
+    });
+    await expect(
+      updateHousehold(supa, ENV, {
+        householdId: owner.household.id,
+        actorMemberId: adultId,
+        name: 'X',
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
+  });
+
+  it('rejects bogus inputs', async () => {
+    await expect(
+      updateHousehold(supa, ENV, {
+        householdId: 'not-a-uuid',
+        actorMemberId: uuid('1'),
+      } as never),
+    ).rejects.toBeInstanceOf(ValidationError);
+  });
+});
+
+describe('listInvitations', () => {
+  it('returns pending invitations newest first', async () => {
+    const owner = await createHousehold(supa, ENV, { userId: uuid('1'), name: 'H' });
+    const inv1 = await inviteMember(supa, ENV, {
+      householdId: owner.household.id,
+      inviterMemberId: owner.member.id,
+      email: 'one@example.com',
+      role: 'adult',
+      grants: [],
+    });
+    // Force oldest created_at so sort is deterministic.
+    store.app.household_invitation!.rows[0]!.created_at = '2026-01-01T00:00:00Z';
+    const inv2 = await inviteMember(supa, ENV, {
+      householdId: owner.household.id,
+      inviterMemberId: owner.member.id,
+      email: 'two@example.com',
+      role: 'adult',
+      grants: [],
+    });
+    store.app.household_invitation!.rows[1]!.created_at = '2026-02-01T00:00:00Z';
+    // Touch inv1+inv2 so lint doesn't flag them unused.
+    expect(inv1.token.length).toBeGreaterThan(0);
+    expect(inv2.token.length).toBeGreaterThan(0);
+
+    const res = await listInvitations(supa, ENV, {
+      householdId: owner.household.id,
+      requestorMemberId: owner.member.id,
+    });
+    expect(res).toHaveLength(2);
+    expect(res[0]!.email).toBe('two@example.com');
+    expect(res[1]!.email).toBe('one@example.com');
+    // Token must never be exposed on list.
+    expect(res[0]!.token).toBeNull();
+  });
+
+  it('excludes accepted invitations', async () => {
+    const owner = await createHousehold(supa, ENV, { userId: uuid('1'), name: 'H' });
+    const inv = await inviteMember(supa, ENV, {
+      householdId: owner.household.id,
+      inviterMemberId: owner.member.id,
+      email: 'x@example.com',
+      role: 'adult',
+      grants: [],
+    });
+    await acceptInvitation(supa, ENV, { token: inv.token, userId: uuid('2') });
+    const res = await listInvitations(supa, ENV, {
+      householdId: owner.household.id,
+      requestorMemberId: owner.member.id,
+    });
+    expect(res).toHaveLength(0);
+  });
+
+  it('excludes expired invitations', async () => {
+    const owner = await createHousehold(supa, ENV, { userId: uuid('1'), name: 'H' });
+    await inviteMember(supa, ENV, {
+      householdId: owner.household.id,
+      inviterMemberId: owner.member.id,
+      email: 'z@example.com',
+      role: 'adult',
+      grants: [],
+    });
+    store.app.household_invitation!.rows[0]!.expires_at = new Date(Date.now() - 1000).toISOString();
+    const res = await listInvitations(supa, ENV, {
+      householdId: owner.household.id,
+      requestorMemberId: owner.member.id,
+    });
+    expect(res).toHaveLength(0);
+  });
+
+  it('forbids non-members', async () => {
+    const owner = await createHousehold(supa, ENV, { userId: uuid('1'), name: 'H' });
+    await expect(
+      listInvitations(supa, ENV, {
+        householdId: owner.household.id,
+        requestorMemberId: uuid('9'),
+      }),
+    ).rejects.toBeInstanceOf(ForbiddenError);
   });
 });

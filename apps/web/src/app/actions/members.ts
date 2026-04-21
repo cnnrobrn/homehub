@@ -9,10 +9,12 @@
 'use server';
 
 import {
+  type ListInvitationsResult,
   type ListMembersResult,
   UnauthorizedError,
   createServiceClient,
   getUser,
+  listInvitations as baseListInvitations,
   listMembers as baseListMembers,
   resolveMemberId,
   revokeMember as baseRevokeMember,
@@ -76,6 +78,34 @@ export async function revokeMemberAction(
       householdId: parsed.householdId,
       actorMemberId,
       targetMemberId: parsed.targetMemberId,
+    });
+    return ok(result);
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const listInvitationsFormSchema = z.object({
+  householdId: z.string().uuid(),
+});
+
+export async function listInvitationsAction(
+  input: z.input<typeof listInvitationsFormSchema>,
+): Promise<ActionResult<ListInvitationsResult[]>> {
+  try {
+    const env = authEnv();
+    const cookies = await nextCookieAdapter();
+    const user = await getUser(env, cookies);
+    if (!user) throw new UnauthorizedError('no session');
+
+    const parsed = listInvitationsFormSchema.parse(input);
+    const service = createServiceClient(env);
+    const memberId = await resolveMemberId(service, parsed.householdId, user.id);
+    if (!memberId) throw new UnauthorizedError('not a member of this household');
+
+    const result = await baseListInvitations(service, env, {
+      householdId: parsed.householdId,
+      requestorMemberId: memberId,
     });
     return ok(result);
   } catch (err) {

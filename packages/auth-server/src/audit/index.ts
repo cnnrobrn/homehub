@@ -20,6 +20,7 @@ import { type SupabaseClient } from '@supabase/supabase-js';
 
 export const AuditAction = {
   HouseholdCreate: 'household.create',
+  HouseholdUpdate: 'household.update',
   HouseholdInvite: 'household.invite',
   HouseholdAcceptInvite: 'household.invite.accept',
   HouseholdRevokeMember: 'household.member.revoke',

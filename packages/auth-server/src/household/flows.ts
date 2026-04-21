@@ -47,16 +47,22 @@ import {
   type CreateHouseholdInput,
   type InviteMemberInput,
   type ListHouseholdsInput,
+  type ListInvitationsInput,
   type ListMembersInput,
+  type PreviewInvitationInput,
   type RevokeMemberInput,
   type TransferOwnershipInput,
+  type UpdateHouseholdInput,
   acceptInvitationInputSchema,
   createHouseholdInputSchema,
   inviteMemberInputSchema,
   listHouseholdsInputSchema,
+  listInvitationsInputSchema,
   listMembersInputSchema,
+  previewInvitationInputSchema,
   revokeMemberInputSchema,
   transferOwnershipInputSchema,
+  updateHouseholdInputSchema,
 } from './schemas.js';
 
 /**
@@ -858,4 +864,275 @@ export async function resolveMemberId(
     throw new InternalError(`resolveMemberId failed: ${error.message}`, { cause: error });
   }
   return data?.id ?? null;
+}
+
+// ---------------------------------------------------------------------------
+// previewInvitation
+// ---------------------------------------------------------------------------
+//
+// Added to support the `(public)/invite/[token]` accept-invitation flow in
+// `@homehub/web`. Callers often need to render "You've been invited to
+// <household> as <role>" BEFORE the invitee signs in, so the preview has
+// to work without a session. Lookup is by hashed token — the same hash we
+// already index on. This is a pure read; no audit event, no mutation.
+
+export type InvitationStatus = 'valid' | 'expired' | 'accepted';
+
+export interface PreviewInvitationResult {
+  household: { id: string; name: string };
+  role: 'owner' | 'adult' | 'child' | 'guest';
+  email: string;
+  inviterName: string | null;
+  expiresAt: string;
+  status: InvitationStatus;
+}
+
+export async function previewInvitation(
+  service: FlowServiceClient,
+  env: Pick<AuthServerEnv, 'INVITATION_TOKEN_SECRET'>,
+  raw: PreviewInvitationInput,
+): Promise<PreviewInvitationResult | null> {
+  const parse = previewInvitationInputSchema.safeParse(raw);
+  if (!parse.success) {
+    throw zodFail('invalid previewInvitation input', parse.error);
+  }
+  const input = parse.data;
+
+  const tokenHash = hashInvitationToken(input.token, env.INVITATION_TOKEN_SECRET);
+
+  const { data: invRow, error: invErr } = await service
+    .schema('app')
+    .from('household_invitation')
+    .select('id, household_id, email, role, expires_at, accepted_at, invited_by')
+    .eq('token_hash', tokenHash)
+    .maybeSingle();
+  if (invErr) {
+    throw new InternalError(`invitation lookup failed: ${invErr.message}`, { cause: invErr });
+  }
+  if (!invRow) {
+    return null;
+  }
+
+  const { data: household, error: hErr } = await service
+    .schema('app')
+    .from('household')
+    .select('id, name')
+    .eq('id', invRow.household_id)
+    .maybeSingle();
+  if (hErr) {
+    throw new InternalError(`household lookup failed: ${hErr.message}`, { cause: hErr });
+  }
+  if (!household) {
+    // FK guarantees this row exists; absence means the household was
+    // hard-deleted — treat the invite as stale.
+    return null;
+  }
+
+  let inviterName: string | null = null;
+  if (invRow.invited_by) {
+    const { data: inviter } = await service
+      .schema('app')
+      .from('member')
+      .select('display_name')
+      .eq('id', invRow.invited_by)
+      .maybeSingle();
+    inviterName = (inviter?.display_name as string | undefined) ?? null;
+  }
+
+  let status: InvitationStatus;
+  if (invRow.accepted_at) {
+    status = 'accepted';
+  } else if (new Date(invRow.expires_at).getTime() < Date.now()) {
+    status = 'expired';
+  } else {
+    status = 'valid';
+  }
+
+  return {
+    household: { id: household.id as string, name: household.name as string },
+    role: invRow.role as PreviewInvitationResult['role'],
+    email: invRow.email as string,
+    inviterName,
+    expiresAt: invRow.expires_at as string,
+    status,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// updateHousehold
+// ---------------------------------------------------------------------------
+//
+// Owner-only patch of the household row (name + settings fields the
+// `(app)/settings/household` page exposes). We merge into the existing
+// `settings` JSON rather than replace it so unrelated keys added by other
+// features (approval policies in M5, notification prefs in M9) survive.
+
+export interface UpdateHouseholdResult {
+  household: Pick<HouseholdRow, 'id' | 'name' | 'settings'>;
+}
+
+export async function updateHousehold(
+  service: FlowServiceClient,
+  env: Pick<AuthServerEnv, never>,
+  raw: UpdateHouseholdInput,
+): Promise<UpdateHouseholdResult> {
+  void env;
+  const parse = updateHouseholdInputSchema.safeParse(raw);
+  if (!parse.success) {
+    throw zodFail('invalid updateHousehold input', parse.error);
+  }
+  const input = parse.data;
+
+  const { data: actor } = await service
+    .schema('app')
+    .from('member')
+    .select('id, role, user_id')
+    .eq('id', input.actorMemberId)
+    .eq('household_id', input.householdId)
+    .maybeSingle();
+  if (!actor || actor.role !== 'owner') {
+    throw new ForbiddenError('only owners can update household settings');
+  }
+
+  const { data: current, error: cErr } = await service
+    .schema('app')
+    .from('household')
+    .select('id, name, settings')
+    .eq('id', input.householdId)
+    .maybeSingle();
+  if (cErr) {
+    throw new InternalError(`household lookup failed: ${cErr.message}`, { cause: cErr });
+  }
+  if (!current) {
+    throw new NotFoundError('household not found');
+  }
+
+  const settings: Record<string, Json> = {
+    ...((current.settings as Record<string, Json> | null) ?? {}),
+  };
+  if (input.timezone) settings.timezone = input.timezone;
+  if (input.currency) settings.currency = input.currency;
+  if (input.weekStart) settings.week_start = input.weekStart;
+
+  const patch: Database['app']['Tables']['household']['Update'] = {
+    settings: settings as Json,
+  };
+  if (input.name) patch.name = input.name;
+
+  const { data: updated, error: uErr } = await service
+    .schema('app')
+    .from('household')
+    .update(patch)
+    .eq('id', input.householdId)
+    .select('id, name, settings')
+    .single();
+  if (uErr || !updated) {
+    throw new InternalError(`household update failed: ${uErr?.message ?? 'no row'}`, {
+      cause: uErr,
+    });
+  }
+
+  await writeAuditEvent(
+    service,
+    {
+      household_id: input.householdId,
+      actor_user_id: actor.user_id,
+      action: AuditAction.HouseholdUpdate,
+      resource_type: 'household',
+      resource_id: input.householdId,
+      before: { name: current.name, settings: current.settings } as Json,
+      after: { name: updated.name, settings: updated.settings } as Json,
+    },
+    (err) => warn('audit write failed (household.update)', { err: String(err) }),
+  );
+
+  return {
+    household: {
+      id: updated.id as HouseholdRow['id'],
+      name: updated.name as HouseholdRow['name'],
+      settings: updated.settings as HouseholdRow['settings'],
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
+// listInvitations
+// ---------------------------------------------------------------------------
+//
+// List pending (unaccepted, unexpired) invitations for a household. Used by
+// the settings/members page to render "Pending" next to the "Invite" form.
+// Any member can see the list; owner-only controls live in the UI layer.
+
+export interface ListInvitationsResult {
+  id: string;
+  email: string;
+  role: 'owner' | 'adult' | 'child' | 'guest';
+  expiresAt: string;
+  createdAt: string;
+  invitedByDisplayName: string | null;
+  token: null;
+}
+
+export async function listInvitations(
+  service: FlowServiceClient,
+  env: Pick<AuthServerEnv, never>,
+  raw: ListInvitationsInput,
+): Promise<ListInvitationsResult[]> {
+  void env;
+  const parse = listInvitationsInputSchema.safeParse(raw);
+  if (!parse.success) {
+    throw zodFail('invalid listInvitations input', parse.error);
+  }
+  const input = parse.data;
+
+  const { data: requester } = await service
+    .schema('app')
+    .from('member')
+    .select('id')
+    .eq('id', input.requestorMemberId)
+    .eq('household_id', input.householdId)
+    .maybeSingle();
+  if (!requester) {
+    throw new ForbiddenError('requestor is not a member of this household');
+  }
+
+  const { data: rows, error } = await service
+    .schema('app')
+    .from('household_invitation')
+    .select('id, email, role, expires_at, created_at, accepted_at, invited_by')
+    .eq('household_id', input.householdId)
+    .is('accepted_at', null)
+    .order('created_at', { ascending: false });
+  if (error) {
+    throw new InternalError(`invitation list failed: ${error.message}`, { cause: error });
+  }
+
+  // Resolve inviter display names in a second query. Small N; no join.
+  const inviterIds = Array.from(
+    new Set((rows ?? []).map((r) => r.invited_by).filter((x): x is string => !!x)),
+  );
+  const nameById = new Map<string, string>();
+  if (inviterIds.length > 0) {
+    const { data: inviters } = await service
+      .schema('app')
+      .from('member')
+      .select('id, display_name')
+      .in('id', inviterIds);
+    for (const i of inviters ?? []) {
+      nameById.set(i.id as string, (i.display_name as string | null) ?? '');
+    }
+  }
+
+  const nowMs = Date.now();
+  return (rows ?? [])
+    .filter((r) => new Date(r.expires_at as string).getTime() >= nowMs)
+    .map((r) => ({
+      id: r.id as string,
+      email: r.email as string,
+      role: r.role as ListInvitationsResult['role'],
+      expiresAt: r.expires_at as string,
+      createdAt: r.created_at as string,
+      invitedByDisplayName: r.invited_by ? (nameById.get(r.invited_by as string) ?? null) : null,
+      token: null,
+    }));
 }

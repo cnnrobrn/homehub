@@ -1,0 +1,53 @@
+/**
+ * Top bar on every authenticated page.
+ *
+ * Server Component wrapping a few thin client islands:
+ *   - Household switcher (listHouseholdsAction → DropdownMenu radio)
+ *   - User menu (sign out + email)
+ *   - ⌘K placeholder button
+ *
+ * Receives the already-resolved household + user from the parent layout
+ * so this component never touches Supabase directly.
+ */
+
+import type { Role } from '@homehub/auth-server';
+
+import { listHouseholdsAction } from '@/app/actions/household';
+import { CommandKPlaceholder } from '@/components/shell/CommandKPlaceholder';
+import { HouseholdSwitcher } from '@/components/shell/HouseholdSwitcher';
+import { UserMenu } from '@/components/shell/UserMenu';
+
+interface TopBarProps {
+  householdName: string;
+  householdId: string;
+  userEmail: string | null;
+  memberRole: Role;
+}
+
+export async function TopBar({ householdName, householdId, userEmail, memberRole }: TopBarProps) {
+  const listRes = await listHouseholdsAction();
+  const households = listRes.ok ? listRes.data : [];
+
+  return (
+    <header className="flex h-14 items-center gap-3 border-b border-border bg-surface px-4">
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:rounded-md focus:bg-accent focus:px-2 focus:py-1 focus:text-accent-fg"
+      >
+        Skip to main content
+      </a>
+      <HouseholdSwitcher
+        activeId={householdId}
+        activeName={householdName}
+        households={households.map((h) => ({
+          id: String(h.household.id),
+          name: h.household.name,
+          role: h.membership.role,
+        }))}
+      />
+      <div className="flex-1" />
+      <CommandKPlaceholder />
+      <UserMenu email={userEmail} role={memberRole} />
+    </header>
+  );
+}

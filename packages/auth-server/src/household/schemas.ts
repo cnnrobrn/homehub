@@ -70,3 +70,24 @@ export const transferOwnershipInputSchema = z.object({
   newOwnerMemberId: uuidSchema,
 });
 export type TransferOwnershipInput = z.infer<typeof transferOwnershipInputSchema>;
+
+export const previewInvitationInputSchema = z.object({
+  token: z.string().min(1),
+});
+export type PreviewInvitationInput = z.infer<typeof previewInvitationInputSchema>;
+
+export const updateHouseholdInputSchema = z.object({
+  householdId: uuidSchema,
+  actorMemberId: uuidSchema,
+  name: z.string().min(1).max(200).optional(),
+  timezone: z.string().min(1).max(64).optional(),
+  currency: z.string().length(3).optional(),
+  weekStart: z.enum(['sunday', 'monday']).optional(),
+});
+export type UpdateHouseholdInput = z.infer<typeof updateHouseholdInputSchema>;
+
+export const listInvitationsInputSchema = z.object({
+  householdId: uuidSchema,
+  requestorMemberId: uuidSchema,
+});
+export type ListInvitationsInput = z.infer<typeof listInvitationsInputSchema>;

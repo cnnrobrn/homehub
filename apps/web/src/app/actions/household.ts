@@ -21,6 +21,8 @@ import {
   type CreateHouseholdResult,
   type InviteMemberResult,
   type ListHouseholdsResult,
+  type PreviewInvitationResult,
+  type UpdateHouseholdResult,
   UnauthorizedError,
   acceptInvitation as baseAcceptInvitation,
   createHousehold as baseCreateHousehold,
@@ -28,6 +30,8 @@ import {
   getUser,
   inviteMember as baseInviteMember,
   listHouseholds as baseListHouseholds,
+  previewInvitation as basePreviewInvitation,
+  updateHousehold as baseUpdateHousehold,
 } from '@homehub/auth-server';
 import { z } from 'zod';
 
@@ -144,6 +148,68 @@ export async function listHouseholdsAction(): Promise<ActionResult<ListHousehold
 
     const service = createServiceClient(env);
     const result = await baseListHouseholds(service, env, { userId: user.id });
+    return ok(result);
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const previewInvitationFormSchema = z.object({
+  token: z.string().min(1),
+});
+
+/**
+ * Read-only invitation preview. Intentionally NOT gated by a session:
+ * the `(public)/invite/[token]` page renders "you're invited to X as Y"
+ * before the invitee signs in. The hashed-token lookup is the entire
+ * authorization model — guessing an unhashed token buys you nothing.
+ */
+export async function previewInvitationAction(
+  input: z.input<typeof previewInvitationFormSchema>,
+): Promise<ActionResult<PreviewInvitationResult | null>> {
+  try {
+    const env = authEnv();
+    const parsed = previewInvitationFormSchema.parse(input);
+    const service = createServiceClient(env);
+    const result = await basePreviewInvitation(service, env, parsed);
+    return ok(result);
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+const updateHouseholdFormSchema = z.object({
+  householdId: z.string().uuid(),
+  name: z.string().min(1).max(200).optional(),
+  timezone: z.string().min(1).max(64).optional(),
+  currency: z.string().length(3).optional(),
+  weekStart: z.enum(['sunday', 'monday']).optional(),
+});
+
+export async function updateHouseholdAction(
+  input: z.input<typeof updateHouseholdFormSchema>,
+): Promise<ActionResult<UpdateHouseholdResult>> {
+  try {
+    const env = authEnv();
+    const cookies = await nextCookieAdapter();
+    const user = await getUser(env, cookies);
+    if (!user) throw new UnauthorizedError('no session');
+
+    const parsed = updateHouseholdFormSchema.parse(input);
+    const service = createServiceClient(env);
+
+    const { resolveMemberId } = await import('@homehub/auth-server');
+    const memberId = await resolveMemberId(service, parsed.householdId, user.id);
+    if (!memberId) throw new UnauthorizedError('not a member of this household');
+
+    const result = await baseUpdateHousehold(service, env, {
+      householdId: parsed.householdId,
+      actorMemberId: memberId,
+      ...(parsed.name !== undefined ? { name: parsed.name } : {}),
+      ...(parsed.timezone !== undefined ? { timezone: parsed.timezone } : {}),
+      ...(parsed.currency !== undefined ? { currency: parsed.currency } : {}),
+      ...(parsed.weekStart !== undefined ? { weekStart: parsed.weekStart } : {}),
+    });
     return ok(result);
   } catch (err) {
     return toErr(err);
