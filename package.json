@@ -18,6 +18,14 @@
     "typecheck": "pnpm -r --if-present run typecheck",
     "prepare": "husky"
   },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "@swc/core",
+      "esbuild",
+      "protobufjs",
+      "unrs-resolver"
+    ]
+  },
   "devDependencies": {
     "@commitlint/cli": "^19.5.0",
     "@commitlint/config-conventional": "^19.5.0",
