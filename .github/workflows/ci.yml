@@ -10,7 +10,12 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20.18.0'
+  # Minimum 20.19.0 because rolldown's native bindings (pulled in by
+  # vitest 4 / vite 8) require `^20.19.0 || >=22.12.0`. pnpm silently
+  # skips optional platform deps when the Node engine doesn't match,
+  # which silently dropped @rolldown/binding-linux-x64-gnu on 20.18.0
+  # and broke test/build with "Cannot find native binding".
+  NODE_VERSION: '20.19.0'
   # pnpm version is taken from the root package.json `packageManager`
   # field (pinned with integrity hash). pnpm/action-setup@v4 reads that
   # automatically — specifying `with.version` here would clash and fail
@@ -167,7 +172,12 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build web app
-        run: pnpm --filter @homehub/web build
+        # `pnpm build` runs `pnpm -r --if-present run build`, which
+        # topologically builds every workspace package including
+        # `@homehub/web`. Building the deps first is required because
+        # Next's webpack resolves `@homehub/*` through each package's
+        # `exports` field, which points at `./dist/index.js`.
+        run: pnpm build
 
   nango-compose-validate:
     name: Nango compose validate

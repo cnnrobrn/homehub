@@ -21,6 +21,9 @@ const enrichmentSrc = fileURLToPath(
 const promptsSrc = fileURLToPath(
   new URL('../../../packages/prompts/src/index.ts', import.meta.url),
 );
+const providersEmailSrc = fileURLToPath(
+  new URL('../../../packages/providers/email/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   resolve: {
@@ -30,6 +33,7 @@ export default defineConfig({
       '@homehub/db': dbSrc,
       '@homehub/enrichment': enrichmentSrc,
       '@homehub/prompts': promptsSrc,
+      '@homehub/providers-email': providersEmailSrc,
     },
   },
 });

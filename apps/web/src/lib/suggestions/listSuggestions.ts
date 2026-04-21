@@ -27,7 +27,6 @@ import {
 
 import { createClient, type ServerSupabaseClient } from '@/lib/supabase/server';
 
-
 type SuggestionRowDb = Database['app']['Tables']['suggestion']['Row'];
 type ActionRowDb = Database['app']['Tables']['action']['Row'];
 type MemberRowDb = Database['app']['Tables']['member']['Row'];

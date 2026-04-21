@@ -14,7 +14,6 @@ import { getHouseholdContext } from '@/lib/auth/context';
 import { cn } from '@/lib/cn';
 import { hasSocialRead, type SegmentGrant } from '@/lib/social';
 
-
 export const metadata = {
   title: 'Social — HomeHub',
 };
