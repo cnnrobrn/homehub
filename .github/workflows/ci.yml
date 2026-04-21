@@ -10,7 +10,13 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  NODE_VERSION: '20.18.0'
+  # Node 20.19.0 is the minimum that satisfies rolldown's native-binding
+  # engine constraint (`^20.19.0 || >=22.12.0`). Vitest 4 uses rolldown,
+  # and pnpm silently skips installing optional deps whose `engines` the
+  # current Node rejects — so older Node 20.x causes every vitest run to
+  # die with "Cannot find native binding @rolldown/binding-<os>-<cpu>".
+  # Still within the project's `<21` engines bound in package.json.
+  NODE_VERSION: '20.19.0'
   # pnpm version is taken from the root package.json `packageManager`
   # field (pinned with integrity hash). pnpm/action-setup@v4 reads that
   # automatically — specifying `with.version` here would clash and fail

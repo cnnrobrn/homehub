@@ -42,7 +42,11 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
-  NODE_VERSION: '20.18.0'
+  # Must be >=20.19.0 so rolldown's native binding satisfies its engine
+  # constraint (`^20.19.0 || >=22.12.0`) during `pnpm install`; otherwise
+  # pnpm skips the binding as optional and vitest/next-build die at
+  # startup. See ci.yml for the longer comment.
+  NODE_VERSION: '20.19.0'
   # pnpm version is taken from the root package.json `packageManager`
   # field. pnpm/action-setup@v4 reads that automatically — specifying
   # `with.version` here would clash and fail with
