@@ -1,0 +1,100 @@
+name: Deploy marketing
+
+# Builds `@homehub/marketing` as a static Next.js export and ships it to
+# Cloudflare Workers Static Assets. Runs only when files under
+# `apps/marketing/**` change, so product PRs aren't slowed down and this
+# job doesn't redeploy on unrelated pushes.
+#
+# Preview path (pull_request): builds + runs `wrangler versions upload`,
+# which uploads a named version that does *not* take production traffic
+# and returns a unique preview URL on the worker's `*.workers.dev`
+# hostname. The URL is published as a PR comment by wrangler-action.
+#
+# Production path (push to main): builds + runs `wrangler deploy`, which
+# promotes the new version to take all traffic on the configured
+# routes / `*.workers.dev` URL.
+#
+# Required repo secrets:
+#   - CLOUDFLARE_API_TOKEN   (scoped: Workers Scripts Edit,
+#                             Account Settings Read,
+#                             Workers Routes Edit,
+#                             User Details Read)
+#   - CLOUDFLARE_ACCOUNT_ID  (972180638c4d6814ed5d7e00fede2e1c)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'apps/marketing/**'
+      - '.github/workflows/deploy-marketing.yml'
+      - 'pnpm-lock.yaml'
+  pull_request:
+    paths:
+      - 'apps/marketing/**'
+      - '.github/workflows/deploy-marketing.yml'
+      - 'pnpm-lock.yaml'
+
+concurrency:
+  # Serialize deploys per-branch so a fast follow-up commit can't race
+  # an in-flight deploy. `cancel-in-progress: false` on main means every
+  # production commit actually ships.
+  group: deploy-marketing-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  NODE_VERSION: '20.18.0'
+  PNPM_VERSION: '9.15.9'
+
+jobs:
+  deploy:
+    name: Build & deploy
+    runs-on: ubuntu-latest
+    # Minimum permissions: wrangler-action needs `pull-requests: write`
+    # to post the preview URL comment on PRs. No other write scopes.
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: Install dependencies
+        # `--filter @homehub/marketing...` installs only what the
+        # marketing app and its transitive workspace deps need — no
+        # reason to hydrate the full monorepo for this job.
+        run: pnpm install --frozen-lockfile --filter @homehub/marketing...
+
+      - name: Build (static export)
+        run: pnpm --filter @homehub/marketing build
+
+      - name: Deploy to production
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/marketing
+          command: deploy
+
+      - name: Upload preview version
+        if: github.event_name == 'pull_request'
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          workingDirectory: apps/marketing
+          # `versions upload` stages a new version without routing
+          # traffic to it — returns a preview URL of the form
+          # `<version-tag>-homehub-marketing.connor-972.workers.dev`.
+          command: versions upload --message "PR #${{ github.event.pull_request.number }} @ ${{ github.sha }}"

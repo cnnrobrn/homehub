@@ -12,12 +12,15 @@
  *
  * Post-sign-in redirect logic lives in the `/auth/callback` route handler
  * since it's the one place that actually has a session; this page only
- * collects credentials.
+ * collects credentials. Visual language follows the marketing site's
+ * indie-software system: lowercase wordmark, mono eyebrow, calm copy.
  */
 
 import type { Metadata } from 'next';
 
 import { LoginForm } from '@/components/auth/LoginForm';
+import { HomeHubMark } from '@/components/design-system';
+
 
 export const metadata: Metadata = {
   title: 'Sign in',
@@ -29,20 +32,30 @@ interface LoginPageProps {
 
 export default async function LoginPage({ searchParams }: LoginPageProps) {
   const { next } = await searchParams;
-  // Normalize the `next` here — the form is a client component and we
-  // don't want it to trust whatever URL the browser sent. Same shape as
-  // `safeNextPath` in the server action but scoped to this page; the
-  // server action re-validates on submit, so this is belt + braces.
   const nextPath =
     next && next.startsWith('/') && !next.startsWith('//') && !next.includes('\\') ? next : '/';
 
   return (
-    <div className="mx-auto flex min-h-svh max-w-sm flex-col items-center justify-center gap-8 px-6">
-      <div className="flex flex-col items-center gap-2 text-center">
-        <h1 className="text-4xl font-semibold tracking-tight">HomeHub</h1>
-        <p className="text-sm text-fg-muted">Sign in to your household.</p>
+    <div className="mx-auto flex min-h-svh w-full max-w-[380px] flex-col justify-center gap-8 px-6 py-12">
+      <div className="flex flex-col gap-5">
+        <div className="flex items-center gap-2">
+          <HomeHubMark size={18} className="text-fg" />
+          <span className="text-[15px] font-semibold tracking-[-0.01em]">homehub</span>
+        </div>
+        <div className="flex flex-col gap-3">
+          <div className="font-mono text-[11px] tracking-[1px] text-fg-muted">{'// SIGN IN'}</div>
+          <h1 className="text-[28px] leading-[1.1] font-semibold tracking-[-0.5px] text-balance">
+            welcome back to your household.
+          </h1>
+          <p className="max-w-[320px] text-[14px] leading-[1.55] text-fg-muted">
+            A link in your inbox is all it takes. No password, no fuss.
+          </p>
+        </div>
       </div>
       <LoginForm next={nextPath} />
+      <div className="font-mono text-[11px] tracking-[0.5px] text-fg-muted">
+        no password · signed in for 30 days
+      </div>
     </div>
   );
 }

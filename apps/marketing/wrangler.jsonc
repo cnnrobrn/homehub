@@ -1,0 +1,29 @@
+{
+  "$schema": "https://unpkg.com/wrangler@4/config-schema.json",
+  "name": "homehub-marketing",
+  "compatibility_date": "2025-04-01",
+  // Keep the `*.workers.dev` preview URL reachable. Wrangler's default
+  // flips this to `false` whenever `routes` is set and this flag is
+  // omitted, so pin it explicitly — we want the preview URL live even
+  // after a custom domain is attached.
+  "workers_dev": true,
+  "assets": {
+    "directory": "./out",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash",
+  },
+  "observability": {
+    "enabled": true,
+  },
+  // Custom domain is attached out-of-band once the zone is added to the
+  // Cloudflare account. To re-enable automated binding, add the zone in
+  // the Cloudflare dashboard, then append a `routes` array here, e.g.:
+  //
+  //   "routes": [
+  //     { "pattern": "househub.ing", "custom_domain": true },
+  //     { "pattern": "www.househub.ing", "custom_domain": true }
+  //   ]
+  //
+  // Wrangler will error with code 10082 ("Can't infer zone from route")
+  // if the zone isn't present in the account when `wrangler deploy` runs.
+}
