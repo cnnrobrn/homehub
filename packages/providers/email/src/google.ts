@@ -37,6 +37,8 @@ import type {
   EnsureLabelResult,
   FetchAttachmentArgs,
   FetchAttachmentResult,
+  FetchFullBodyArgs,
+  FetchFullBodyResult,
   FetchMessageArgs,
   ListRecentMessagesArgs,
   ListRecentMessagesPage,
@@ -286,6 +288,31 @@ function findFirstTextPart(part: RawMessagePart | undefined, mime: string): stri
   return undefined;
 }
 
+/**
+ * Full-body variant of `findFirstTextPart` that also surfaces the part's
+ * Content-Type charset. Returns `undefined` when no matching part is
+ * found.
+ */
+function findFirstTextPartWithCharset(
+  part: RawMessagePart | undefined,
+  mime: string,
+): { data: string; charset?: string } | undefined {
+  if (!part) return undefined;
+  if (part.mimeType === mime && part.body?.data) {
+    const contentType = headerValue(part.headers, 'Content-Type');
+    const charsetMatch = contentType?.match(/charset\s*=\s*"?([^";\s]+)"?/i);
+    return {
+      data: part.body.data,
+      ...(charsetMatch ? { charset: charsetMatch[1] } : {}),
+    };
+  }
+  for (const child of part.parts ?? []) {
+    const hit = findFirstTextPartWithCharset(child, mime);
+    if (hit) return hit;
+  }
+  return undefined;
+}
+
 function stripHtml(input: string): string {
   // Intentionally loose — we only need a preview, not a rendering.
   return input
@@ -384,6 +411,43 @@ export function createGoogleMailProvider(args: CreateGoogleMailProviderArgs): Em
       labelCache.set(connectionId, cache);
     }
     return cache;
+  }
+
+  async function fetchFullBody(opts: FetchFullBodyArgs): Promise<FetchFullBodyResult> {
+    try {
+      // format=FULL returns the complete MIME tree with base64url-
+      // encoded body data per part. The extraction worker pulls this
+      // on-demand; the sync worker continues to use METADATA and the
+      // 2KB preview. Body is held in a local variable by the caller
+      // and never persisted.
+      const data = await nango.proxy<RawMessage>({
+        providerConfigKey: GOOGLE_MAIL_PROVIDER_KEY,
+        connectionId: opts.connectionId,
+        method: 'GET',
+        endpoint: `/gmail/v1/users/me/messages/${encodeURIComponent(opts.messageId)}`,
+        params: {
+          format: 'FULL',
+        },
+      });
+
+      const plain = findFirstTextPartWithCharset(data.payload, 'text/plain');
+      const html = findFirstTextPartWithCharset(data.payload, 'text/html');
+
+      const plainText = plain ? decodeBase64Url(plain.data) : '';
+      const htmlText = html ? decodeBase64Url(html.data) : '';
+
+      const bodyText = plainText || (htmlText ? stripHtml(htmlText) : '');
+      const charset = plain?.charset ?? html?.charset;
+
+      return {
+        bodyText,
+        ...(htmlText ? { bodyHtml: htmlText } : {}),
+        ...(charset ? { charset } : {}),
+      };
+    } catch (err) {
+      if (err instanceof EmailSyncError) throw err;
+      classifyNangoError(err);
+    }
   }
 
   async function fetchMessage(opts: FetchMessageArgs): Promise<EmailMessage> {
@@ -683,6 +747,7 @@ export function createGoogleMailProvider(args: CreateGoogleMailProviderArgs): Em
   return {
     listRecentMessages,
     fetchMessage,
+    fetchFullBody,
     fetchAttachment,
     watch,
     unwatch,

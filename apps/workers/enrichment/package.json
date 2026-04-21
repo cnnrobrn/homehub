@@ -15,6 +15,7 @@
     "@homehub/db": "workspace:*",
     "@homehub/enrichment": "workspace:*",
     "@homehub/prompts": "workspace:*",
+    "@homehub/providers-email": "workspace:*",
     "@homehub/shared": "workspace:*",
     "@homehub/worker-runtime": "workspace:*",
     "@supabase/supabase-js": "^2.104.0"

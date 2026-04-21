@@ -85,6 +85,35 @@ export interface FetchMessageArgs {
   messageId: string;
 }
 
+/**
+ * Ephemeral full-body fetch for extraction. Distinct from
+ * `fetchMessage`: the sync worker never calls this path, so the 2KB
+ * body cap on `EmailMessage.bodyPreview` stays the source of truth for
+ * what lands in `app.email`. Extractors call this on-demand, hold the
+ * text in a local variable for the duration of the extraction, and let
+ * it go out of scope — never persisted.
+ *
+ * Spec: `specs/03-integrations/google-workspace.md` § Storage of bodies.
+ */
+export interface FetchFullBodyArgs {
+  connectionId: string;
+  messageId: string;
+}
+
+export interface FetchFullBodyResult {
+  /**
+   * Plain-text body when the MIME tree contains a `text/plain` part;
+   * otherwise an HTML-tag-stripped render of the `text/html` part.
+   * Empty string when neither is present (e.g. calendar invite with
+   * only an `.ics` attachment).
+   */
+  bodyText: string;
+  /** Raw `text/html` body when present; omitted otherwise. */
+  bodyHtml?: string;
+  /** Charset label from the body part's Content-Type, when known. */
+  charset?: string;
+}
+
 export interface FetchAttachmentArgs {
   connectionId: string;
   messageId: string;
@@ -144,6 +173,12 @@ export interface EnsureLabelResult {
 export interface EmailProvider {
   listRecentMessages(args: ListRecentMessagesArgs): AsyncIterable<ListRecentMessagesPage>;
   fetchMessage(args: FetchMessageArgs): Promise<EmailMessage>;
+  /**
+   * Ephemeral full-body fetch used by the M4-B extraction worker. Body
+   * is never persisted by the sync layer; extractors hold it in a local
+   * variable for the duration of extraction only.
+   */
+  fetchFullBody(args: FetchFullBodyArgs): Promise<FetchFullBodyResult>;
   fetchAttachment(args: FetchAttachmentArgs): Promise<FetchAttachmentResult>;
   watch(args: WatchArgs): Promise<WatchResult>;
   unwatch(args: UnwatchArgs): Promise<void>;

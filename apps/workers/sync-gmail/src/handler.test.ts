@@ -53,6 +53,7 @@ function makeEmailProvider(
   const base: EmailProvider = {
     listRecentMessages: () => pages,
     fetchMessage: vi.fn(),
+    fetchFullBody: vi.fn(async () => ({ bodyText: '' })),
     fetchAttachment: vi.fn(async () => ({
       contentBase64: Buffer.from('hello').toString('base64'),
       contentType: 'application/pdf',

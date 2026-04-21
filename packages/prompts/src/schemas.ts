@@ -226,3 +226,75 @@ export const weeklyReflectionSchema = z.object({
   cited_patterns: z.array(z.string()),
 });
 export type WeeklyReflectionResponse = z.infer<typeof weeklyReflectionSchema>;
+
+/**
+ * Episode emitted by the email extractor (M4-B). `kind` tags the
+ * heuristic category that drove the episode; `subject_reference` is a
+ * HomeHub node-reference string (e.g. `merchant:Trader Joe's`,
+ * `place:Giulia's`) that the worker resolves to `mem.node` rows.
+ * `attributes` is a free-form JSON blob per kind (merchant/amount/
+ * party_size/tracking_number/…).
+ */
+export const emailExtractionEpisodeSchema = z.object({
+  kind: z.enum(['receipt', 'reservation', 'bill', 'invite', 'shipment']),
+  occurred_at: z.iso.datetime({ offset: true }),
+  ends_at: z.iso.datetime({ offset: true }).optional(),
+  title: z.string().min(1),
+  summary: z.string(),
+  subject_reference: z.string().min(1),
+  attributes: z.record(z.string(), z.unknown()),
+});
+export type EmailExtractionEpisode = z.infer<typeof emailExtractionEpisodeSchema>;
+
+/**
+ * Atomic fact emitted by the email extractor. Same triple shape as the
+ * event extractor, but without `qualifier` (email sources rarely need
+ * it; add if we see real demand). Evidence is a short quote / para-
+ * phrase drawn from the email.
+ */
+export const emailExtractionFactSchema = z.object({
+  id: z.string().min(1),
+  subject: z.string().min(1),
+  predicate: z.string().min(1),
+  object_value: z.unknown().optional(),
+  object_node_reference: z.string().optional(),
+  confidence: z.number().min(0).max(1),
+  evidence: z.string(),
+  valid_from: z.union([z.iso.datetime({ offset: true }), z.literal('inferred')]),
+});
+export type EmailExtractionFact = z.infer<typeof emailExtractionFactSchema>;
+
+/**
+ * Member-visible suggestion drafted by the email extractor. M4-B only
+ * ships `add_to_calendar`; future milestones extend this with
+ * bill-payment / shipping-arrival / subscription-renewal kinds. The
+ * worker stamps `source_email_id` server-side — the model doesn't see
+ * it, so the schema omits the field.
+ */
+export const emailSuggestionSchema = z.object({
+  kind: z.literal('add_to_calendar'),
+  title: z.string().min(1),
+  starts_at: z.iso.datetime({ offset: true }),
+  ends_at: z.iso.datetime({ offset: true }).optional(),
+  location: z.string().optional(),
+  attendees: z.array(z.string()),
+  rationale: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+});
+export type EmailSuggestion = z.infer<typeof emailSuggestionSchema>;
+
+/**
+ * The full email-extraction response envelope. Shape mirrors
+ * `eventExtractionSchema` plus a `suggestions[]` channel that the
+ * handler fans into `app.suggestion` rows with `status='pending'`.
+ *
+ * An empty response (`{episodes: [], facts: [], suggestions: []}`) is a
+ * valid, expected output — many emails (newsletters, marketing) produce
+ * nothing useful.
+ */
+export const emailExtractionSchema = z.object({
+  episodes: z.array(emailExtractionEpisodeSchema),
+  facts: z.array(emailExtractionFactSchema),
+  suggestions: z.array(emailSuggestionSchema),
+});
+export type EmailExtractionResponse = z.infer<typeof emailExtractionSchema>;

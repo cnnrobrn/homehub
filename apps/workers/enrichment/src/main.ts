@@ -28,10 +28,12 @@
 
 import { createServer } from 'node:http';
 
+import { createGoogleMailProvider, type EmailProvider } from '@homehub/providers-email';
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
   createModelClient,
+  createNangoClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -42,6 +44,7 @@ import {
 } from '@homehub/worker-runtime';
 
 import { pollOnceConversation } from './conversation-handler.js';
+import { pollOnceEmail } from './email-handler.js';
 import { pollOnceEmbed } from './embed-handler.js';
 import { pollOnce as pollOnceEvent } from './handler.js';
 import { pollOnceRollup } from './rollup-handler.js';
@@ -66,7 +69,21 @@ const exitCode = await runWorker(
     } else {
       log.warn(
         'OPENROUTER_API_KEY is not set; enrich_event falls back to deterministic classification only. ' +
-          'enrich_conversation / rollup_conversation / embed_node messages will be dead-lettered.',
+          'enrich_conversation / enrich_email / rollup_conversation / embed_node messages will be dead-lettered.',
+      );
+    }
+
+    // Email provider is optional: when Nango env isn't wired the email
+    // handler falls back to the stored body_preview (lower quality but
+    // functional). Missing Nango does not starve the queue.
+    let emailProvider: EmailProvider | undefined;
+    try {
+      const nango = createNangoClient(env);
+      emailProvider = createGoogleMailProvider({ nango });
+    } catch (err) {
+      log.warn(
+        'Nango client not constructed; enrich_email will fall back to app.email.body_preview for extraction',
+        { error: err instanceof Error ? err.message : String(err) },
       );
     }
 
@@ -126,6 +143,13 @@ const exitCode = await runWorker(
       try {
         const outcomes = await Promise.all([
           pollOnceEvent({ supabase, queues, log, ...(modelClient ? { modelClient } : {}) }),
+          pollOnceEmail({
+            supabase,
+            queues,
+            log,
+            ...(modelClient ? { modelClient } : {}),
+            ...(emailProvider ? { emailProvider } : {}),
+          }),
           pollOnceConversation({
             supabase,
             queues,

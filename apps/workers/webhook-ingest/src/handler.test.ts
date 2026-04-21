@@ -58,6 +58,7 @@ function makeEmail(): EmailProvider {
   return {
     listRecentMessages: vi.fn(),
     fetchMessage: vi.fn(),
+    fetchFullBody: vi.fn().mockResolvedValue({ bodyText: '' }),
     fetchAttachment: vi.fn(),
     watch: vi.fn().mockResolvedValue({
       historyId: '5555',

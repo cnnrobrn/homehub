@@ -52,6 +52,18 @@ export {
   type CreateKimiEventExtractorOptions,
 } from './model-extractor.js';
 
+// --- Model-backed email extractor (M4-B) --------------------------------
+export {
+  createKimiEmailExtractor,
+  EMAIL_EXTRACTOR_PROMPT_VERSION,
+  EMAIL_BODY_TRUNCATE_BYTES,
+  type ModelEmailExtractor,
+  type EmailExtractionResult,
+  type EmailInput,
+  type EmailHouseholdContext,
+  type CreateKimiEmailExtractorOptions,
+} from './email-extractor.js';
+
 // --- Pipeline (M3) ------------------------------------------------------
 export {
   createEnrichmentPipeline,

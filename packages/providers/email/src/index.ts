@@ -24,6 +24,8 @@ export type {
   EnsureLabelResult,
   FetchAttachmentArgs,
   FetchAttachmentResult,
+  FetchFullBodyArgs,
+  FetchFullBodyResult,
   FetchMessageArgs,
   ListRecentMessagesArgs,
   ListRecentMessagesPage,

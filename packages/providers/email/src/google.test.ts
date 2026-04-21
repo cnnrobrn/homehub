@@ -489,3 +489,81 @@ describe('addLabel / watch / unwatch', () => {
     ).rejects.toBeInstanceOf(EmailSyncError);
   });
 });
+
+describe('fetchFullBody', () => {
+  it('fetches format=FULL and returns decoded plain-text body', async () => {
+    const calls: Array<{ endpoint: string; params?: Record<string, unknown> }> = [];
+    const nango = makeNango((opts) => {
+      calls.push({
+        endpoint: opts.endpoint,
+        ...(opts.params ? { params: opts.params } : {}),
+      });
+      return {
+        id: 'm1',
+        threadId: 't1',
+        payload: {
+          mimeType: 'multipart/alternative',
+          parts: [
+            {
+              mimeType: 'text/plain',
+              headers: [{ name: 'Content-Type', value: 'text/plain; charset="UTF-8"' }],
+              body: { data: base64urlEncode('Full plaintext body lives here.') },
+            },
+            {
+              mimeType: 'text/html',
+              headers: [{ name: 'Content-Type', value: 'text/html; charset="UTF-8"' }],
+              body: {
+                data: base64urlEncode('<p>Full <b>HTML</b> body lives here.</p>'),
+              },
+            },
+          ],
+        },
+      };
+    });
+    const provider = createGoogleMailProvider({ nango });
+    const result = await provider.fetchFullBody({ connectionId: 'c1', messageId: 'm1' });
+
+    expect(result.bodyText).toBe('Full plaintext body lives here.');
+    expect(result.bodyHtml).toBe('<p>Full <b>HTML</b> body lives here.</p>');
+    expect(result.charset).toBe('UTF-8');
+    expect(calls[0]?.endpoint).toBe('/gmail/v1/users/me/messages/m1');
+    expect((calls[0]?.params as { format?: string } | undefined)?.format).toBe('FULL');
+  });
+
+  it('falls back to HTML stripped of tags when text/plain is absent', async () => {
+    const nango = makeNango(() => ({
+      id: 'm1',
+      threadId: 't1',
+      payload: {
+        parts: [
+          {
+            mimeType: 'text/html',
+            body: { data: base64urlEncode('<p>Hello <b>world</b></p>') },
+          },
+        ],
+      },
+    }));
+    const provider = createGoogleMailProvider({ nango });
+    const result = await provider.fetchFullBody({ connectionId: 'c1', messageId: 'm1' });
+    expect(result.bodyText).toBe('Hello world');
+    expect(result.bodyHtml).toBe('<p>Hello <b>world</b></p>');
+  });
+
+  it('returns empty bodyText when neither text/plain nor text/html is present', async () => {
+    const nango = makeNango(() => ({ id: 'm1', threadId: 't1', payload: {} }));
+    const provider = createGoogleMailProvider({ nango });
+    const result = await provider.fetchFullBody({ connectionId: 'c1', messageId: 'm1' });
+    expect(result.bodyText).toBe('');
+    expect(result.bodyHtml).toBeUndefined();
+  });
+
+  it('maps 429 to RateLimitError', async () => {
+    const nango = makeNango(() => {
+      throw makeNangoError(429, { error: { code: 429 } }, { 'retry-after': '12' });
+    });
+    const provider = createGoogleMailProvider({ nango });
+    await expect(
+      provider.fetchFullBody({ connectionId: 'c1', messageId: 'm1' }),
+    ).rejects.toBeInstanceOf(RateLimitError);
+  });
+});
