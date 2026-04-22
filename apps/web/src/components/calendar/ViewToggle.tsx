@@ -1,6 +1,9 @@
 /**
  * Week / month toggle. Writes `?view=week|month` into the URL so the
  * calendar page (a Server Component) can read it on the next render.
+ *
+ * V2 Indie styling: hairline-bordered inline segmented control. The
+ * active option becomes ink-on-surface; inactives are quiet mono text.
  */
 
 'use client';
@@ -10,8 +13,8 @@ import { useTransition } from 'react';
 
 import type { CalendarView } from '@/lib/events/range';
 
-import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/cn';
+
 
 export interface ViewToggleProps {
   current: CalendarView;
@@ -39,21 +42,26 @@ export function ViewToggle({ current }: ViewToggleProps) {
     <div
       role="radiogroup"
       aria-label="Calendar view"
-      className="inline-flex items-center gap-1 rounded-md border border-border bg-surface p-0.5"
+      className="inline-flex items-center rounded-[3px] border border-border bg-surface p-0.5"
     >
-      {VIEWS.map((v) => (
-        <Button
-          key={v}
-          role="radio"
-          aria-checked={current === v}
-          variant={current === v ? 'secondary' : 'ghost'}
-          size="sm"
-          className={cn('capitalize', current === v && 'bg-bg text-fg')}
-          onClick={() => setView(v)}
-        >
-          {v}
-        </Button>
-      ))}
+      {VIEWS.map((v) => {
+        const active = current === v;
+        return (
+          <button
+            key={v}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            onClick={() => setView(v)}
+            className={cn(
+              'cursor-pointer rounded-[2px] px-2.5 py-1 font-mono text-[11px] uppercase tracking-[0.06em] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+              active ? 'bg-surface-soft text-fg' : 'text-fg-muted hover:text-fg',
+            )}
+          >
+            {v}
+          </button>
+        );
+      })}
     </div>
   );
 }

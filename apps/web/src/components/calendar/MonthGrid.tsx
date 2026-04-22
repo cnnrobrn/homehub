@@ -3,7 +3,12 @@
  * rendered range by expanding from the first-of-month backwards to the
  * week-start and forwards to the week-end after the last day, padding
  * with out-of-month days to keep the grid rectangular.
+ *
+ * V2 Indie styling: mono weekday headers with subtle surface-soft wash,
+ * hairline borders between cells, and warm card shadow wrapping the
+ * whole grid.
  */
+
 
 import { DayCell } from './DayCell';
 
@@ -48,7 +53,7 @@ export function MonthGrid({ cursor, weekStart, events }: MonthGridProps) {
   // Day-of-week headers.
   const headers = cells
     .slice(0, 7)
-    .map((d) => d.toLocaleDateString(undefined, { weekday: 'short' }));
+    .map((d) => d.toLocaleDateString(undefined, { weekday: 'short' }).toLowerCase());
 
   // Bucket events by their calendar-day (use the event start's local day
   // for placement; multi-day events show on their first visible day only
@@ -67,14 +72,14 @@ export function MonthGrid({ cursor, weekStart, events }: MonthGridProps) {
     <div
       role="grid"
       aria-label="Monthly calendar"
-      className="overflow-hidden rounded-lg border border-border bg-surface"
+      className="overflow-hidden rounded-[6px] border border-border bg-surface shadow-card"
     >
-      <div role="row" className="grid grid-cols-7 border-b border-border bg-bg/60">
+      <div role="row" className="grid grid-cols-7 border-b border-border bg-surface-soft/60">
         {headers.map((h) => (
           <div
             key={h}
             role="columnheader"
-            className="border-r border-border px-2 py-2 text-xs font-medium text-fg-muted last:border-r-0"
+            className="border-r border-border/70 px-3 py-2 font-mono text-[10.5px] uppercase tracking-[0.06em] text-fg-muted last:border-r-0"
           >
             {h}
           </div>

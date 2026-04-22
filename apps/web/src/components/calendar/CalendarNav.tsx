@@ -2,22 +2,28 @@
  * Prev / Today / Next navigation. Writes `?cursor=YYYY-MM-DD` and
  * (optionally) `?view=…` to the URL. The week/month step is derived
  * from the current view so month-view arrows don't move by one day.
+ *
+ * V2 Indie styling: ghost WarmButtons with the lowercase, typographic
+ * arrows the handoff uses (`← last week` / `next week →`). The title
+ * lives in the page header rather than here, so this row stays a
+ * compact chrome strip.
  */
 
 'use client';
 
-import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
 import { useTransition } from 'react';
 
 import type { CalendarView } from '@/lib/events/range';
 
-import { Button } from '@/components/ui/button';
+import { WarmButton } from '@/components/design-system';
 import { formatISODate } from '@/lib/events/range';
+
 
 export interface CalendarNavProps {
   view: CalendarView;
   cursor: string; // ISO date YYYY-MM-DD
+  /** Page-level caption (e.g. "Apr 19 – 25, 2026"). Rendered `aria-live`. */
   title: string;
 }
 
@@ -47,35 +53,40 @@ export function CalendarNav({ view, cursor, title }: CalendarNavProps) {
     });
   }
 
+  const prevLabel = view === 'week' ? 'last week' : 'last month';
+  const nextLabel = view === 'week' ? 'next week' : 'next month';
+
   return (
-    <div className="flex items-center gap-2">
-      <Button
-        variant="outline"
+    <div className="flex items-center gap-1.5">
+      <WarmButton
+        variant="ghost"
         size="sm"
         aria-label={`Previous ${view}`}
         onClick={() => goTo(shiftCursor(cursor, view, -1))}
       >
-        <ChevronLeft className="h-4 w-4" aria-hidden="true" />
-      </Button>
-      <Button
-        variant="outline"
+        <span aria-hidden="true">{'←'}</span>
+        <span>{prevLabel}</span>
+      </WarmButton>
+      <WarmButton
+        variant="ghost"
         size="sm"
         onClick={() => goTo(formatISODate(new Date()))}
         aria-label="Jump to today"
       >
-        Today
-      </Button>
-      <Button
-        variant="outline"
+        today
+      </WarmButton>
+      <WarmButton
+        variant="ghost"
         size="sm"
         aria-label={`Next ${view}`}
         onClick={() => goTo(shiftCursor(cursor, view, 1))}
       >
-        <ChevronRight className="h-4 w-4" aria-hidden="true" />
-      </Button>
-      <h2 className="ml-2 text-base font-medium tracking-tight" aria-live="polite">
+        <span>{nextLabel}</span>
+        <span aria-hidden="true">{'→'}</span>
+      </WarmButton>
+      <span className="sr-only" aria-live="polite">
         {title}
-      </h2>
+      </span>
     </div>
   );
 }

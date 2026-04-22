@@ -5,6 +5,10 @@
  * this button a Client Component so we can reuse `useRouter()` /
  * `useSearchParams()` without forcing the whole `DayCell` out of the
  * server render path.
+ *
+ * Styled in the V2 Indie voice: mono weekday tag + large day number, no
+ * color chip on the number. The "today" state uses a thin accent
+ * underline on the number instead of a filled pill.
  */
 
 'use client';
@@ -26,6 +30,8 @@ export function DayCellNavButton({ cursor, label, isToday }: DayCellNavButtonPro
   const searchParams = useSearchParams();
   const [, startTransition] = useTransition();
 
+  const [weekday, dayNumber] = label.split(' ');
+
   function jumpToWeek() {
     const params = new URLSearchParams(searchParams?.toString() ?? '');
     params.set('view', 'week');
@@ -41,12 +47,21 @@ export function DayCellNavButton({ cursor, label, isToday }: DayCellNavButtonPro
       type="button"
       onClick={jumpToWeek}
       className={cn(
-        'rounded-sm px-1 py-0.5 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
-        isToday && 'bg-accent text-accent-fg',
+        'group flex items-baseline gap-1.5 rounded-[3px] px-0.5 py-0.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent',
       )}
       aria-label={`Open week view for ${label}`}
     >
-      {label}
+      <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-fg-muted">
+        {weekday}
+      </span>
+      <span
+        className={cn(
+          'text-[13.5px] tabular-nums text-fg',
+          isToday ? 'font-semibold text-accent' : 'font-normal',
+        )}
+      >
+        {dayNumber}
+      </span>
     </button>
   );
 }

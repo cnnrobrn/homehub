@@ -1,10 +1,16 @@
 /**
- * Single event chip used inside week/month grids and the dashboard Today
- * strip. Server Component — no state, no interactivity. A left-border
- * accent encodes the segment (color + icon is handled by the parent
- * `<SegmentFilter>` legend; the pill itself shows time + title and the
- * colored bar so the palette isn't the only signal).
+ * Single event chip used inside week/month grids.
+ *
+ * V2 Indie rendering: a small card with a 2px segment-colored left
+ * stripe, mono time on top, sans title below. Matches the reference in
+ * `project/app/view-calendar.jsx` (the week grid chips). Stays a Server
+ * Component — no state, no interactivity.
+ *
+ * The accessible description combines segment, title, time, and location
+ * so screen readers don't rely on color alone — color is an augmenting
+ * signal on top of the always-present label.
  */
+
 
 import { SEGMENT_BORDER_CLASS, SEGMENT_LABEL } from './segmentStyles';
 
@@ -40,9 +46,9 @@ export function EventPill({ event, compact = false, className }: EventPillProps)
       data-testid={`event-pill-${event.segment}`}
       aria-describedby={descId}
       className={cn(
-        'flex flex-col gap-0.5 rounded-sm border-l-2 bg-surface/80 px-2 py-1 text-left text-xs text-fg',
+        'flex flex-col gap-0.5 rounded-[3px] border border-border border-l-2 bg-surface px-2 py-1.5 text-left text-fg',
         borderClass,
-        compact && 'py-0.5 text-[11px] leading-tight',
+        compact && 'px-1.5 py-1',
         className,
       )}
     >
@@ -50,16 +56,20 @@ export function EventPill({ event, compact = false, className }: EventPillProps)
         {segmentLabel}: {event.title} at {time}
         {event.location ? ` (${event.location})` : ''}
       </span>
-      <span className="flex items-center gap-1.5 truncate">
-        <span className="font-medium tabular-nums text-fg-muted" aria-hidden="true">
-          {time}
-        </span>
-        <span className="truncate" aria-hidden="true">
-          {event.title}
-        </span>
+      <span aria-hidden="true" className="font-mono text-[10px] tracking-[0.04em] text-fg-muted">
+        {time}
+      </span>
+      <span
+        aria-hidden="true"
+        className={cn('truncate text-[12.5px] leading-[1.3] text-fg', compact && 'text-[11.5px]')}
+      >
+        {event.title}
       </span>
       {!compact && event.location ? (
-        <span className="truncate text-[11px] text-fg-muted" aria-hidden="true">
+        <span
+          aria-hidden="true"
+          className="truncate font-mono text-[10px] tracking-[0.02em] text-fg-muted"
+        >
           {event.location}
         </span>
       ) : null}

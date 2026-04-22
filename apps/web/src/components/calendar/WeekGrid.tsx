@@ -1,25 +1,29 @@
 /**
- * Week view: 7 day columns × 24 hours, plus a top "all day" strip.
+ * Week view — a calm, 7-column grid across the week.
  *
- * Rendering strategy:
- *   - All-day + multi-day events live in the top strip.
- *   - Timed events are positioned absolutely within their day column
- *     using `top` + `height` percentages derived from start/end minutes.
- *   - Events that overlap the column boundary on either side clamp to
- *     the visible range (0–24h) so a Sunday-evening event that extends
- *     into Monday morning doesn't bleed across columns.
+ * V2 Indie rendering: each day is a single stacked column with a mono
+ * day-of-week label, a bold day number, and a vertical list of event
+ * chips ordered by start time. A 1px hairline separates days. The
+ * "today" column gets the `--surface-note` tint in its header cell and
+ * a lighter body tint so the current day stands out without noise.
  *
- * Server Component — read only. Interactivity (prev/next, filters) lives
- * outside the grid on the page-level controls.
+ * Events are bucketed per visible day; an event that spans multiple
+ * days (or is marked all-day) appears on each day it overlaps so the
+ * grid reads naturally across the week. Ordering inside a day puts
+ * all-day events first, then timed events sorted by `startsAt`.
+ *
+ * Server Component — read only. Interactivity (prev/next, filters)
+ * lives outside the grid on the page-level controls.
  */
 
 import { EventPill } from './EventPill';
-import { SEGMENT_BORDER_CLASS } from './segmentStyles';
 
 import type { CalendarEventRow } from '@/lib/events/listEvents';
 
 import { cn } from '@/lib/cn';
 import { daysInRange } from '@/lib/events/range';
+
+
 
 export interface WeekGridProps {
   from: Date;
@@ -27,20 +31,8 @@ export interface WeekGridProps {
   events: CalendarEventRow[];
 }
 
-const MINUTES_IN_DAY = 24 * 60;
-
-function isAllDayOrMultiDay(ev: CalendarEventRow, dayStart: Date, dayEnd: Date): boolean {
-  if (ev.allDay) return true;
-  const start = new Date(ev.startsAt);
-  const end = ev.endsAt ? new Date(ev.endsAt) : start;
-  return start < dayStart && end > dayEnd;
-}
-
-function minutesFromMidnight(d: Date, reference: Date): number {
-  const ref = new Date(reference);
-  ref.setHours(0, 0, 0, 0);
-  return Math.max(0, Math.min(MINUTES_IN_DAY, (d.getTime() - ref.getTime()) / 60_000));
-}
+/** Highlighted friday-body tint from the design handoff. */
+const FRIDAY_BG = '#fbf8f2';
 
 function isSameDay(a: Date, b: Date): boolean {
   return (
@@ -50,179 +42,92 @@ function isSameDay(a: Date, b: Date): boolean {
   );
 }
 
+function eventOverlapsDay(ev: CalendarEventRow, day: Date): boolean {
+  const start = new Date(ev.startsAt);
+  const end = ev.endsAt ? new Date(ev.endsAt) : start;
+  const dayStart = new Date(day);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = new Date(day);
+  dayEnd.setHours(23, 59, 59, 999);
+  return !(end < dayStart || start > dayEnd);
+}
+
+function compareByStart(a: CalendarEventRow, b: CalendarEventRow): number {
+  if (a.allDay && !b.allDay) return -1;
+  if (!a.allDay && b.allDay) return 1;
+  return new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime();
+}
+
 export function WeekGrid({ from, to, events }: WeekGridProps) {
   const days = daysInRange(from, to);
   const today = new Date();
-  const hours = Array.from({ length: 24 }, (_, i) => i);
-
-  // Bucket events by day.
-  const byDay = new Map<string, CalendarEventRow[]>();
-  const allDay: Array<{ event: CalendarEventRow; day: Date }> = [];
-
-  for (const day of days) {
-    const key = day.toDateString();
-    byDay.set(key, []);
-  }
-
-  for (const ev of events) {
-    const start = new Date(ev.startsAt);
-    const end = ev.endsAt ? new Date(ev.endsAt) : start;
-    for (const day of days) {
-      const dayStart = new Date(day);
-      dayStart.setHours(0, 0, 0, 0);
-      const dayEnd = new Date(day);
-      dayEnd.setHours(23, 59, 59, 999);
-
-      // Event overlaps this day at all?
-      if (end < dayStart || start > dayEnd) continue;
-
-      if (isAllDayOrMultiDay(ev, dayStart, dayEnd)) {
-        // Only add to the all-day strip once per event per visible day
-        // it overlaps. For simplicity, anchor on the first matching day
-        // so the pill isn't repeated across the week.
-        if (
-          !allDay.some((a) => a.event.id === ev.id) &&
-          isSameDay(dayStart, new Date(Math.max(start.getTime(), from.getTime())))
-        ) {
-          allDay.push({ event: ev, day });
-        }
-      } else {
-        byDay.get(day.toDateString())?.push(ev);
-      }
-    }
-  }
 
   return (
     <div
       role="grid"
       aria-label="Weekly calendar"
-      className="flex flex-col overflow-hidden rounded-lg border border-border bg-surface"
+      className="grid grid-cols-1 overflow-hidden rounded-[6px] border border-border bg-surface shadow-card sm:grid-cols-7"
     >
-      {/* Header row: day names */}
-      <div
-        role="row"
-        className="grid grid-cols-[auto_repeat(7,minmax(0,1fr))] border-b border-border bg-bg/60"
-      >
-        <div className="w-14 border-r border-border px-2 py-2 text-[11px] text-fg-muted" />
-        {days.map((d) => (
+      {days.map((day, i) => {
+        const dayEvents = events
+          .filter((ev) => eventOverlapsDay(ev, day))
+          .slice()
+          .sort(compareByStart);
+        const isToday = isSameDay(day, today);
+        const isFriday = day.getDay() === 5;
+        const weekday = day.toLocaleDateString(undefined, { weekday: 'short' }).toLowerCase();
+        const aria = day.toLocaleDateString(undefined, {
+          weekday: 'long',
+          month: 'long',
+          day: 'numeric',
+        });
+
+        return (
           <div
-            key={d.toISOString()}
-            role="columnheader"
+            key={day.toISOString()}
+            role="gridcell"
+            aria-label={aria}
             className={cn(
-              'flex flex-col gap-0.5 border-r border-border px-2 py-2 text-xs last:border-r-0',
-              isSameDay(d, today) && 'bg-accent/10 text-fg',
+              'flex min-h-[360px] flex-col gap-2 px-3 pt-3.5 pb-4',
+              // Hairline between days; first column has no leading rule,
+              // and on mobile we stack so a top border replaces the left.
+              i > 0 && 'border-t border-border sm:border-t-0 sm:border-l sm:border-border',
+              isToday && !isFriday && 'bg-surface-note',
             )}
+            style={isFriday ? { background: FRIDAY_BG } : undefined}
           >
-            <span className="font-medium">
-              {d.toLocaleDateString(undefined, { weekday: 'short' })}
-            </span>
-            <span className="tabular-nums text-fg-muted">{d.getDate()}</span>
-          </div>
-        ))}
-      </div>
-
-      {/* All-day strip */}
-      {allDay.length > 0 ? (
-        <div
-          role="row"
-          className="grid grid-cols-[auto_repeat(7,minmax(0,1fr))] border-b border-border"
-        >
-          <div className="w-14 border-r border-border px-2 py-1 text-[11px] text-fg-muted">
-            All day
-          </div>
-          {days.map((day) => {
-            const dayStart = new Date(day);
-            dayStart.setHours(0, 0, 0, 0);
-            const dayEnd = new Date(day);
-            dayEnd.setHours(23, 59, 59, 999);
-            const list = allDay.filter(({ event }) => {
-              const start = new Date(event.startsAt);
-              const end = event.endsAt ? new Date(event.endsAt) : start;
-              return end >= dayStart && start <= dayEnd;
-            });
-            return (
-              <div
-                key={day.toISOString()}
-                role="gridcell"
-                className="flex flex-col gap-0.5 border-r border-border p-1 last:border-r-0"
+            <div className="mb-0.5 flex items-baseline gap-1.5">
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.06em] text-fg-muted">
+                {weekday}
+              </span>
+              <span
+                className={cn(
+                  'text-[15px] tabular-nums text-fg',
+                  isToday ? 'font-semibold' : 'font-normal',
+                )}
               >
-                {list.map(({ event }) => (
-                  <EventPill key={`${event.id}-${day.toISOString()}`} event={event} compact />
-                ))}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
-
-      {/* Time grid */}
-      <div
-        role="row"
-        className="relative grid grid-cols-[auto_repeat(7,minmax(0,1fr))]"
-        style={{ minHeight: '720px' }}
-      >
-        {/* Hour labels (first column) */}
-        <div className="flex w-14 flex-col border-r border-border">
-          {hours.map((h) => (
-            <div
-              key={h}
-              className="h-8 border-b border-border/60 px-2 pt-0.5 text-[10px] text-fg-muted"
-            >
-              {h === 0 ? '' : `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'a' : 'p'}`}
+                {day.getDate()}
+              </span>
+              {isToday ? (
+                <span className="ml-auto font-mono text-[9.5px] uppercase tracking-[0.08em] text-accent">
+                  today
+                </span>
+              ) : null}
             </div>
-          ))}
-        </div>
 
-        {/* 7 day columns */}
-        {days.map((day) => {
-          const dayEvents = byDay.get(day.toDateString()) ?? [];
-          const dayStart = new Date(day);
-          dayStart.setHours(0, 0, 0, 0);
-          return (
-            <div
-              key={day.toISOString()}
-              role="gridcell"
-              className={cn(
-                'relative border-r border-border last:border-r-0',
-                isSameDay(day, today) && 'bg-accent/[0.04]',
-              )}
-              aria-label={day.toLocaleDateString(undefined, {
-                weekday: 'long',
-                month: 'long',
-                day: 'numeric',
-              })}
-            >
-              {/* 24 hour gridlines */}
-              {hours.map((h) => (
-                <div key={h} className="h-8 border-b border-border/60" aria-label={`${h}:00`} />
-              ))}
-              {/* Absolutely-positioned events */}
-              {dayEvents.map((ev) => {
-                const start = new Date(ev.startsAt);
-                const end = ev.endsAt
-                  ? new Date(ev.endsAt)
-                  : new Date(start.getTime() + 30 * 60_000);
-                const startMin = minutesFromMidnight(start, dayStart);
-                const endMin = minutesFromMidnight(end, dayStart);
-                const topPct = (startMin / MINUTES_IN_DAY) * 100;
-                const heightPct = Math.max(2, ((endMin - startMin) / MINUTES_IN_DAY) * 100);
-                return (
-                  <div
-                    key={ev.id}
-                    className={cn(
-                      'absolute inset-x-0.5 overflow-hidden rounded-sm border-l-2 bg-bg/80 px-1 py-0.5 text-[11px]',
-                      SEGMENT_BORDER_CLASS[ev.segment],
-                    )}
-                    style={{ top: `${topPct}%`, height: `${heightPct}%` }}
-                  >
-                    <EventPill event={ev} compact className="border-l-0 bg-transparent p-0" />
-                  </div>
-                );
-              })}
-            </div>
-          );
-        })}
-      </div>
+            {dayEvents.length === 0 ? (
+              <span
+                aria-hidden="true"
+                className="font-mono text-[10px] tracking-[0.04em] text-fg-muted/70"
+              >
+                {'—'}
+              </span>
+            ) : (
+              dayEvents.map((ev) => <EventPill key={`${ev.id}-${day.toISOString()}`} event={ev} />)
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

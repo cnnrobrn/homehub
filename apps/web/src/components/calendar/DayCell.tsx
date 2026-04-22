@@ -1,9 +1,13 @@
 /**
- * Month-view day cell. Rendered as a button so keyboard users can drill
- * into the week view by selecting a day. Shows up to `maxEvents` pills
- * and a "+N more" overflow — the pills themselves are non-interactive
- * chrome (no create/edit in M2-C) so we don't need to nest buttons.
+ * Month-view day cell. The day-of-month header is a click target that
+ * deep-links into the week view for that day (see `DayCellNavButton`).
+ * Shows up to `maxEvents` chips and a mono "+N more" overflow.
+ *
+ * V2 Indie styling: warm hairline borders, quiet mono accents, the
+ * "today" cell picks up the `--surface-note` wash so it reads without
+ * needing a heavy pill on the number.
  */
+
 
 import { DayCellNavButton } from './DayCellNavButton';
 import { EventPill } from './EventPill';
@@ -35,8 +39,9 @@ export function DayCell({ date, events, isCurrentMonth, isToday, maxEvents = 3 }
         day: 'numeric',
       })}
       className={cn(
-        'flex min-h-[96px] flex-col gap-1 border-b border-r border-border/60 p-1.5 text-xs',
-        !isCurrentMonth && 'bg-surface/40 text-fg-muted/70',
+        'flex min-h-[108px] flex-col gap-1.5 border-r border-b border-border/70 p-2',
+        !isCurrentMonth && 'bg-surface/60 text-fg-muted',
+        isToday && 'bg-surface-note',
       )}
     >
       <div className="flex items-center justify-between">
@@ -46,7 +51,7 @@ export function DayCell({ date, events, isCurrentMonth, isToday, maxEvents = 3 }
           isToday={isToday}
         />
       </div>
-      <ul className="flex flex-col gap-0.5">
+      <ul className="flex flex-col gap-1">
         {visible.map((ev) => (
           <li key={ev.id}>
             <EventPill event={ev} compact />
@@ -54,7 +59,10 @@ export function DayCell({ date, events, isCurrentMonth, isToday, maxEvents = 3 }
         ))}
       </ul>
       {overflow > 0 ? (
-        <span className="mt-auto text-[11px] text-fg-muted" aria-label={`${overflow} more events`}>
+        <span
+          className="mt-auto font-mono text-[10px] tracking-[0.04em] text-fg-muted"
+          aria-label={`${overflow} more events`}
+        >
           +{overflow} more
         </span>
       ) : null}
