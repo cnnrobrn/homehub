@@ -1,39 +1,45 @@
 /**
- * `/memory/[type]/[nodeId]` — node detail page (M3-D).
+ * `/memory/[type]/[nodeId]` — node detail page (warm restyle shell).
  *
  * Server Component. Loads the node + its facts / episodes / edges
- * in one round-trip and renders the four-tab layout from
- * `specs/07-frontend/pages.md`.
- *
- * Tabs:
+ * in one round-trip and renders the four-tab layout:
  *   - Document: `document_md` markdown + editable `manual_notes_md`.
  *   - Facts: atomic facts with per-row affordances.
  *   - Episodes: time-ordered episodes.
  *   - Edges: outgoing edges grouped by edge-type.
  *
- * Owner-only actions (Merge, Delete) are rendered next to the
- * header; merge candidates are pre-resolved (same type, different
- * node, same household) server-side.
+ * The surrounding chrome — left category rail, warm header, page
+ * padding — matches the /memory index. The panel bodies themselves
+ * keep their existing affordances intact; restyling them fully is
+ * a follow-up outside the "What we know" reshape scope.
  */
 
 import { NODE_TYPES, type NodeType } from '@homehub/shared';
 import { notFound } from 'next/navigation';
 
+import { PageHeader } from '@/components/design-system';
 import { EdgesPanel } from '@/components/memory/EdgesPanel';
 import { EpisodesPanel } from '@/components/memory/EpisodesPanel';
 import { FactsPanel } from '@/components/memory/FactsPanel';
 import { ManualNotesEditor } from '@/components/memory/ManualNotesEditor';
+import { MemoryCategoryRail } from '@/components/memory/MemoryCategoryRail';
 import { MemoryRealtimeRefresher } from '@/components/memory/MemoryRealtimeRefresher';
 import { NeedsReviewToggle } from '@/components/memory/NeedsReviewToggle';
-import { NodeHeader } from '@/components/memory/NodeHeader';
 import { NodeOwnerMenu } from '@/components/memory/NodeOwnerMenu';
-import { NodeTypeRail } from '@/components/memory/NodeTypeRail';
+import { NODE_TYPE_LABEL } from '@/components/memory/nodeTypeStyles';
+import { PinButton } from '@/components/memory/PinButton';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { requireHouseholdContext } from '@/lib/auth/context';
 import { getNode, listNodes, type NodeRow } from '@/lib/memory/query';
 
 export interface NodeDetailPageProps {
   params: Promise<{ type: string; nodeId: string }>;
+}
+
+function shortWhen(iso: string): string {
+  return new Date(iso)
+    .toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+    .toLowerCase();
 }
 
 export default async function MemoryNodeDetailPage({ params }: NodeDetailPageProps) {
@@ -48,7 +54,10 @@ export default async function MemoryNodeDetailPage({ params }: NodeDetailPagePro
   const memberId = ctx.member.id;
   const isOwner = ctx.member.role === 'owner';
 
-  const detail = await getNode({ householdId, nodeId });
+  const [detail, railNodes] = await Promise.all([
+    getNode({ householdId, nodeId }),
+    listNodes({ householdId, limit: 100 }),
+  ]);
   if (!detail || detail.node.type !== nodeType) {
     notFound();
   }
@@ -66,13 +75,17 @@ export default async function MemoryNodeDetailPage({ params }: NodeDetailPagePro
   neighborIds.delete(nodeId);
 
   const nodeLookup = new Map<string, NodeRow>();
-  if (neighborIds.size > 0) {
-    // Use `listNodes` without type filter to resolve any referenced node.
-    const neighbors = await listNodes({
+  for (const n of railNodes) {
+    if (neighborIds.has(n.id)) nodeLookup.set(n.id, n);
+  }
+  // Any still-missing neighbors: one extra fetch to resolve them.
+  const missing = Array.from(neighborIds).filter((id) => !nodeLookup.has(id));
+  if (missing.length > 0) {
+    const extra = await listNodes({
       householdId,
-      limit: Math.max(100, neighborIds.size + 10),
+      limit: Math.max(100, missing.length + 10),
     });
-    for (const n of neighbors) {
+    for (const n of extra) {
       if (neighborIds.has(n.id)) nodeLookup.set(n.id, n);
     }
   }
@@ -98,54 +111,47 @@ export default async function MemoryNodeDetailPage({ params }: NodeDetailPagePro
   const pinned = pinnedList.includes(memberId);
 
   return (
-    <div className="mx-auto flex max-w-7xl gap-6 p-6">
+    <div className="grid min-h-full grid-cols-1 lg:grid-cols-[260px_1fr]">
       <MemoryRealtimeRefresher householdId={householdId} />
 
-      <aside className="hidden w-56 shrink-0 lg:block">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-          Node types
-        </h2>
-        <NodeTypeRail activeType={nodeType} />
+      <aside className="hidden lg:block">
+        <MemoryCategoryRail nodes={railNodes} activeType={nodeType} />
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col gap-6">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <NodeHeader node={detail.node} pinned={pinned} />
-          <div className="flex items-center gap-2">
-            <NeedsReviewToggle nodeId={detail.node.id} initialValue={detail.node.needs_review} />
-            {isOwner ? (
-              <NodeOwnerMenu
-                nodeId={detail.node.id}
-                nodeLabel={detail.node.canonical_name}
-                mergeCandidates={mergeCandidates}
-              />
-            ) : null}
-          </div>
+      <section className="mx-auto w-full max-w-[760px] px-8 pt-10 pb-20 lg:px-12">
+        <PageHeader
+          eyebrow={
+            <>
+              {NODE_TYPE_LABEL[nodeType].toLowerCase()} · noted {shortWhen(detail.node.updated_at)}
+            </>
+          }
+          title={<>{detail.node.canonical_name}</>}
+          sub={
+            detail.node.needs_review
+              ? "Flagged for a second look — something here didn't line up."
+              : undefined
+          }
+        />
+
+        <div className="mb-7 -mt-4 flex flex-wrap items-center gap-2">
+          <PinButton nodeId={detail.node.id} initialPinned={pinned} />
+          <NeedsReviewToggle nodeId={detail.node.id} initialValue={detail.node.needs_review} />
+          {isOwner ? (
+            <NodeOwnerMenu
+              nodeId={detail.node.id}
+              nodeLabel={detail.node.canonical_name}
+              mergeCandidates={mergeCandidates}
+            />
+          ) : null}
         </div>
 
-        <Tabs defaultValue="document" className="flex min-w-0 flex-col">
+        <Tabs defaultValue="facts" className="flex min-w-0 flex-col">
           <TabsList>
-            <TabsTrigger value="document">Document</TabsTrigger>
             <TabsTrigger value="facts">Facts ({detail.facts.length})</TabsTrigger>
             <TabsTrigger value="episodes">Episodes ({detail.episodes.length})</TabsTrigger>
             <TabsTrigger value="edges">Edges ({detail.edges.length})</TabsTrigger>
+            <TabsTrigger value="document">Notes</TabsTrigger>
           </TabsList>
-
-          <TabsContent value="document" className="flex flex-col gap-6">
-            {detail.node.document_md ? (
-              <article className="rounded-md border border-border bg-surface p-4 text-sm leading-6">
-                <pre className="whitespace-pre-wrap font-sans">{detail.node.document_md}</pre>
-              </article>
-            ) : (
-              <p className="rounded-md border border-border bg-surface p-4 text-sm text-fg-muted">
-                No canonical document yet. Consolidation will generate one as more data arrives.
-              </p>
-            )}
-            <ManualNotesEditor
-              nodeId={detail.node.id}
-              initialMarkdown={detail.node.manual_notes_md}
-            />
-          </TabsContent>
 
           <TabsContent value="facts">
             <FactsPanel
@@ -161,6 +167,22 @@ export default async function MemoryNodeDetailPage({ params }: NodeDetailPagePro
 
           <TabsContent value="edges">
             <EdgesPanel focusNodeId={detail.node.id} edges={detail.edges} nodeLookup={nodeLookup} />
+          </TabsContent>
+
+          <TabsContent value="document" className="flex flex-col gap-6">
+            {detail.node.document_md ? (
+              <article className="rounded-[6px] border border-border bg-surface p-4 text-[13.5px] leading-[1.6] shadow-[0_8px_24px_-8px_rgba(0,0,0,0.06)]">
+                <pre className="whitespace-pre-wrap font-sans">{detail.node.document_md}</pre>
+              </article>
+            ) : (
+              <p className="rounded-[6px] border border-border bg-surface p-4 text-[13.5px] text-fg-muted">
+                No canonical document yet. Consolidation will generate one as more data arrives.
+              </p>
+            )}
+            <ManualNotesEditor
+              nodeId={detail.node.id}
+              initialMarkdown={detail.node.manual_notes_md}
+            />
           </TabsContent>
         </Tabs>
       </section>

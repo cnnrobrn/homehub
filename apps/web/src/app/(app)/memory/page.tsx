@@ -1,129 +1,113 @@
 /**
- * `/memory` — graph browser index (M3-D).
+ * `/memory` — "What we know" (warm restyle).
  *
- * Server Component. Renders:
- *   - Left rail: node-type navigator.
- *   - Center: search island + empty-state (pinned + recent
- *     episodes) or prompt to search.
- *   - Right rail: conflict feed (facts with
- *     `conflict_status != 'none'`).
+ * Server Component. Renders the Claude Design "V2 Indie" memory
+ * surface:
  *
- * The search results panel lives inside the client island
- * (`MemorySearch`) — it mutates local state without a URL round
- * trip so the UX feels snappy.
+ *  - Left rail: notebook header + bucketed list of people / places /
+ *    things / topics — the friendly framing of the underlying
+ *    NodeTypes.
+ *  - Middle: a stream of recently-picked-up facts and episodes shown
+ *    as subtle cards with mono timestamps and middot-separated meta.
+ *  - Bottom: a calm "how this works" note explaining that anything
+ *    wrong can be corrected, and the old version is kept quietly.
+ *
+ * The underlying queries (listNodes / queryHouseholdMemory) are
+ * unchanged — only the presentation has been reshaped.
  */
 
-import Link from 'next/link';
-
-import { ConflictBadge } from '@/components/memory/ConflictBadge';
+import { PageHeader, NoteCallout } from '@/components/design-system';
+import { FactStream, type StreamEntry } from '@/components/memory/FactStream';
+import { MemoryCategoryRail } from '@/components/memory/MemoryCategoryRail';
 import { MemoryRealtimeRefresher } from '@/components/memory/MemoryRealtimeRefresher';
 import { MemorySearch } from '@/components/memory/MemorySearch';
-import { NodeList } from '@/components/memory/NodeList';
-import { NodeTypeRail } from '@/components/memory/NodeTypeRail';
 import { requireHouseholdContext } from '@/lib/auth/context';
-import { listNodes, queryHouseholdMemory } from '@/lib/memory/query';
+import { listNodes, queryHouseholdMemory, type NodeRow } from '@/lib/memory/query';
 
 export default async function MemoryPage() {
   const ctx = await requireHouseholdContext();
   const householdId = ctx.household.id;
 
-  // Empty-state content: top pinned / recently-touched nodes + a
-  // sampling of recent episodes.
+  // Pull a broad slice of nodes for the category rail + lookup, and
+  // the recent episodic layer for the stream. Both calls already
+  // scope by household.
   const [allNodes, recent] = await Promise.all([
-    listNodes({ householdId, limit: 25 }),
+    listNodes({ householdId, limit: 100 }),
     queryHouseholdMemory({
       householdId,
       query: 'recent activity',
-      layers: ['episodic'],
-      limit: 10,
+      layers: ['episodic', 'semantic'],
+      limit: 40,
     }),
   ]);
 
-  const pinned = allNodes.filter((n) => n.pinned);
-  const conflicts = recent.conflicts.slice(0, 8);
+  // Build a name lookup once for the stream (subject / object / place).
+  const nodeLookup = new Map<string, NodeRow>();
+  for (const n of allNodes) nodeLookup.set(n.id, n);
+  for (const n of recent.nodes) nodeLookup.set(n.id, n);
+
+  // Merge facts + episodes into a single time-ordered stream.
+  const entries: StreamEntry[] = [
+    ...recent.facts.map((fact) => ({ kind: 'fact' as const, fact })),
+    ...recent.episodes.map((episode) => ({ kind: 'episode' as const, episode })),
+  ]
+    .sort((a, b) => {
+      const at = a.kind === 'fact' ? a.fact.recorded_at : a.episode.occurred_at;
+      const bt = b.kind === 'fact' ? b.fact.recorded_at : b.episode.occurred_at;
+      return Date.parse(bt) - Date.parse(at);
+    })
+    .slice(0, 18);
+
+  const pickedUpCount = entries.length;
 
   return (
-    <div className="mx-auto flex max-w-7xl gap-6 p-6">
+    <div className="grid min-h-full grid-cols-1 lg:grid-cols-[260px_1fr]">
       <MemoryRealtimeRefresher householdId={householdId} />
 
-      <aside className="hidden w-56 shrink-0 lg:block">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-          Node types
-        </h2>
-        <NodeTypeRail />
+      <aside className="hidden lg:block">
+        <MemoryCategoryRail nodes={allNodes} />
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col gap-6">
-        <header className="flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold tracking-tight">Memory</h1>
-          <p className="text-sm text-fg-muted">
-            Search, browse, and correct what HomeHub remembers about your household.
-          </p>
-        </header>
+      <section className="mx-auto w-full max-w-[760px] px-8 pt-10 pb-20 lg:px-12">
+        <PageHeader
+          eyebrow={<>what we know · {allNodes.length} entries</>}
+          title={<>Here&apos;s what I&apos;ve picked up.</>}
+          sub={
+            pickedUpCount > 0
+              ? "Small things the house noticed from your calendar, receipts, and notes. If anything's off, you can fix it — the old version stays around quietly."
+              : 'Nothing yet. As integrations sync — calendar, email, receipts — small facts will land here.'
+          }
+        />
 
-        <MemorySearch householdId={householdId} />
-
-        <div className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
-            {pinned.length > 0 ? 'Pinned' : 'Recently updated'}
-          </h2>
-          <NodeList
-            nodes={pinned.length > 0 ? pinned : allNodes.slice(0, 10)}
-            emptyMessage="Nothing here yet. As integrations sync, nodes will appear."
-          />
+        <div className="mb-8">
+          <MemorySearch householdId={householdId} />
         </div>
 
-        {recent.episodes.length > 0 ? (
-          <div className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold uppercase tracking-wide text-fg-muted">
-              Recent episodes
-            </h2>
-            <ol className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface">
-              {recent.episodes.map((ep) => (
-                <li
-                  key={ep.id}
-                  className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-                >
-                  <span className="truncate font-medium">{ep.title}</span>
-                  <time className="text-xs text-fg-muted tabular-nums" dateTime={ep.occurred_at}>
-                    {new Date(ep.occurred_at).toLocaleDateString()}
-                  </time>
-                </li>
-              ))}
-            </ol>
-          </div>
-        ) : null}
-      </section>
+        <div className="mb-3 flex items-baseline gap-2.5">
+          <h2 className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.12em] text-fg">
+            recently picked up
+          </h2>
+          {pickedUpCount > 0 ? (
+            <span className="font-mono text-[10.5px] tracking-[0.04em] text-fg-muted">
+              · {pickedUpCount} notes
+            </span>
+          ) : null}
+        </div>
 
-      <aside className="hidden w-72 shrink-0 xl:block">
-        <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-          Needs attention
-        </h2>
-        {conflicts.length === 0 ? (
-          <p className="rounded-md border border-border bg-surface p-3 text-sm text-fg-muted">
-            No conflicts right now.
-          </p>
-        ) : (
-          <ul className="flex flex-col divide-y divide-border rounded-md border border-border bg-surface">
-            {conflicts.map((f) => (
-              <li key={f.id} className="flex flex-col gap-1 px-3 py-2 text-sm">
-                <div className="flex items-center justify-between gap-2">
-                  <Link
-                    href={`/memory/person/${f.subject_node_id}` as never}
-                    className="truncate font-medium hover:underline"
-                  >
-                    {f.predicate}
-                  </Link>
-                  <ConflictBadge status={f.conflict_status} />
-                </div>
-                <span className="truncate text-xs text-fg-muted">
-                  confidence {Math.round(f.confidence * 100)}%
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </aside>
+        <FactStream entries={entries} nodeLookup={nodeLookup} />
+
+        <div className="mt-10">
+          <NoteCallout>
+            <div className="text-fg">
+              Anything here look wrong? You can fix it, and the house will remember the correction.
+              The old version is kept quietly, just in case.
+            </div>
+            <div className="mt-2 font-mono text-[11px] tracking-[0.04em] text-fg-muted">
+              ask about anything here — i&apos;ll point at the fact.
+            </div>
+          </NoteCallout>
+        </div>
+      </section>
     </div>
   );
 }
