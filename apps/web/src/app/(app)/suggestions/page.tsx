@@ -1,27 +1,36 @@
 /**
- * `/suggestions` — unified suggestion inbox.
+ * `/suggestions` — Decisions (approvals inbox).
  *
- * Server Component. Lists pending + recently-resolved suggestions
- * across every segment for the current household, with filters for
- * segment + kind + status. Each row renders a `SuggestionApprovalPill`
- * (Approve / Reject + quorum progress) and an evidence drawer.
+ * The route key stays `suggestions` for link stability, but the human
+ * label throughout the UI is "Decisions" — matching the V2 Indie
+ * handoff voice: "a few small things, not urgent."
  *
- * Filters are URL-encoded so the server render is deterministic:
- *   ?segment=financial&kind=cancel_subscription&status=pending
+ * Server Component. Reads pending + recently-resolved suggestions
+ * across every segment for the current household and stacks them as
+ * `DecisionCard`s — one draft per row, with the originating draft
+ * previewed in a soft-callout, a short "why · " rationale line, and the
+ * existing approve / reject mechanics wrapped in the card's action
+ * slot.
  *
- * A realtime refresher subscribes to `app.suggestion` + `app.action`
- * filtered by household so approvals by other members update
- * immediately without a manual reload.
+ * Filters are URL-encoded (`?segment=food&status=approved`) so the
+ * server render is deterministic and deep-links work without client JS.
+ *
+ * Realtime via `SuggestionsRealtimeRefresher` — approvals by other
+ * household members update the list without a manual reload.
  */
 
-import { SuggestionListRow } from '@/components/suggestions/SuggestionListRow';
+import Link from 'next/link';
+
+import { PageHeader, SectionHead, type SegmentId } from '@/components/design-system';
+import { DecisionItem } from '@/components/suggestions/DecisionItem';
+import { DecisionsFilterBar } from '@/components/suggestions/DecisionsFilterBar';
 import { SuggestionsRealtimeRefresher } from '@/components/suggestions/SuggestionsRealtimeRefresher';
 import { requireHouseholdContext } from '@/lib/auth/context';
 import {
   listPendingSuggestions,
   listRecentSuggestions,
-  type SuggestionSegment,
   type SuggestionRowView,
+  type SuggestionSegment,
 } from '@/lib/suggestions';
 
 export const dynamic = 'force-dynamic';
@@ -36,13 +45,39 @@ interface PageProps {
 
 const SEGMENTS: readonly SuggestionSegment[] = ['financial', 'food', 'fun', 'social', 'system'];
 const RESOLVED_STATUSES = ['approved', 'rejected', 'executed', 'expired'] as const;
+const APP_SEGMENTS: readonly SegmentId[] = ['financial', 'food', 'fun', 'social'];
 
 function isSegment(x: string | undefined): x is SuggestionSegment {
   return !!x && (SEGMENTS as readonly string[]).includes(x);
 }
 
+function isAppSegment(x: SuggestionSegment | undefined | null): x is SegmentId {
+  return !!x && (APP_SEGMENTS as readonly string[]).includes(x);
+}
+
 function isResolvedStatus(x: string | undefined): x is (typeof RESOLVED_STATUSES)[number] {
   return !!x && (RESOLVED_STATUSES as readonly string[]).includes(x);
+}
+
+/**
+ * Calm waiting count: "a few small things, not urgent" when we have
+ * some pending rows, and a gentler line when the inbox is empty or the
+ * member is browsing recently-decided items.
+ */
+function subCopyFor(params: {
+  status: 'pending' | (typeof RESOLVED_STATUSES)[number];
+  pendingCount: number;
+}): string {
+  if (params.status !== 'pending') {
+    return 'A look at what you decided recently. Nothing here is waiting on you.';
+  }
+  if (params.pendingCount === 0) {
+    return 'Nothing waiting on you right now. Drafts land here whenever they need a yes.';
+  }
+  if (params.pendingCount <= 3) {
+    return 'A few small things, not urgent. Decide whenever — they wait a day or two, then quietly let go.';
+  }
+  return 'A handful of small things to weigh in on. None of them are urgent — take your time.';
 }
 
 export default async function SuggestionsPage({ searchParams }: PageProps) {
@@ -51,8 +86,10 @@ export default async function SuggestionsPage({ searchParams }: PageProps) {
 
   const segmentFilter = isSegment(params.segment) ? params.segment : undefined;
   const kindFilter = params.kind && params.kind.length > 0 ? params.kind : undefined;
-  const statusFilter =
-    params.status === 'pending' || isResolvedStatus(params.status) ? params.status : 'pending';
+  const statusFilter: 'pending' | (typeof RESOLVED_STATUSES)[number] =
+    params.status === 'pending' || isResolvedStatus(params.status)
+      ? (params.status as 'pending' | (typeof RESOLVED_STATUSES)[number])
+      : 'pending';
 
   let pending: SuggestionRowView[] = [];
   let recent: SuggestionRowView[] = [];
@@ -66,7 +103,8 @@ export default async function SuggestionsPage({ searchParams }: PageProps) {
         ...(kindFilter ? { kind: kindFilter } : {}),
         limit: 100,
       });
-      // Also pull a small recent list for context.
+      // Small recent-approved tail so the footer line has something to
+      // count when the inbox is near-empty.
       recent = await listRecentSuggestions({
         householdId: ctx.household.id,
         status: 'approved',
@@ -83,131 +121,117 @@ export default async function SuggestionsPage({ searchParams }: PageProps) {
     loadError = err instanceof Error ? err.message : String(err);
   }
 
-  const activeFilters = [
-    segmentFilter ? `segment=${segmentFilter}` : null,
-    kindFilter ? `kind=${kindFilter}` : null,
-    statusFilter && statusFilter !== 'pending' ? `status=${statusFilter}` : null,
-  ].filter((x): x is string => x !== null);
+  const filterSegment = isAppSegment(segmentFilter) ? segmentFilter : null;
+  const pendingCount = pending.length;
+  const subCopy = subCopyFor({ status: statusFilter, pendingCount });
+  const eyebrow =
+    statusFilter === 'pending'
+      ? pendingCount === 0
+        ? 'nothing waiting'
+        : `${pendingCount} waiting`
+      : 'recently decided';
 
   return (
-    <div className="mx-auto flex w-full max-w-4xl flex-col gap-6 p-6">
+    <div className="mx-auto flex w-full max-w-[860px] flex-col px-10 pt-9 pb-20">
       <SuggestionsRealtimeRefresher householdId={ctx.household.id} />
-      <header className="flex flex-col gap-1">
-        <h1 className="text-2xl font-semibold tracking-tight">Suggestions</h1>
-        <p className="text-sm text-fg-muted">
-          Proposed actions from HomeHub. Approve to execute; reject to discard.
-        </p>
-      </header>
 
-      {/* Filters — server-rendered via URL params so deep-links work. */}
-      <section aria-label="Filters" className="flex flex-col gap-3">
-        <form className="flex flex-wrap items-end gap-3" method="GET" action="/suggestions">
-          <label className="flex flex-col gap-1 text-xs text-fg-muted">
-            Segment
-            <select
-              name="segment"
-              defaultValue={segmentFilter ?? ''}
-              className="rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg"
-            >
-              <option value="">All</option>
-              {SEGMENTS.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-fg-muted">
-            Kind
-            <input
-              name="kind"
-              defaultValue={kindFilter ?? ''}
-              placeholder="e.g. cancel_subscription"
-              className="rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-fg-muted">
-            Status
-            <select
-              name="status"
-              defaultValue={statusFilter}
-              className="rounded-md border border-border bg-surface px-2 py-1 text-sm text-fg"
-            >
-              <option value="pending">Pending</option>
-              <option value="approved">Approved</option>
-              <option value="rejected">Rejected</option>
-              <option value="executed">Executed</option>
-              <option value="expired">Expired</option>
-            </select>
-          </label>
-          <button
-            type="submit"
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-accent-fg hover:bg-accent/90"
-          >
-            Filter
-          </button>
-          {activeFilters.length > 0 ? (
-            <a
-              href="/suggestions"
-              className="text-xs text-fg-muted underline-offset-2 hover:underline"
-            >
-              Clear
-            </a>
-          ) : null}
-        </form>
+      <PageHeader eyebrow={eyebrow} title="Decisions" sub={subCopy} />
+
+      <section aria-label="Filters" className="mb-8">
+        <DecisionsFilterBar
+          segment={filterSegment}
+          status={statusFilter}
+          kind={kindFilter ?? null}
+        />
       </section>
 
       {loadError ? (
         <div
           role="alert"
-          className="rounded-md border border-danger/50 bg-danger/5 p-3 text-sm text-danger"
+          className="mb-6 rounded-[6px] border border-danger/40 bg-surface px-4 py-3 text-[13.5px] text-danger"
         >
-          Failed to load suggestions: {loadError}
+          Couldn&apos;t load decisions: {loadError}
         </div>
       ) : null}
 
       {statusFilter === 'pending' ? (
-        <section aria-labelledby="pending-heading" className="flex flex-col gap-2">
-          <div className="flex items-baseline justify-between">
-            <h2 id="pending-heading" className="text-lg font-medium">
-              Pending ({pending.length})
-            </h2>
-          </div>
+        <section aria-labelledby="pending-heading">
+          <SectionHead>
+            <span id="pending-heading">Waiting on you</span>
+          </SectionHead>
           {pending.length === 0 ? (
-            <p className="rounded-lg border border-border bg-surface p-6 text-center text-sm text-fg-muted">
-              No pending suggestions.
-            </p>
+            <EmptyDecisions
+              title="Nothing to decide right now."
+              body="When HomeHub drafts something for you — a note to send, a subscription to sort out, a swap on the meal plan — it'll land here. Until then, it's quiet."
+            />
           ) : (
-            <ul className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3.5">
               {pending.map((s) => (
-                <SuggestionListRow key={s.id} suggestion={s} />
+                <DecisionItem key={s.id} suggestion={s} />
               ))}
-            </ul>
+            </div>
           )}
         </section>
       ) : null}
 
-      {statusFilter !== 'pending' || recent.length > 0 ? (
-        <section aria-labelledby="recent-heading" className="flex flex-col gap-2">
-          <h2 id="recent-heading" className="text-lg font-medium">
-            {statusFilter === 'pending'
-              ? 'Recently approved'
-              : `${statusFilter[0]!.toUpperCase()}${statusFilter.slice(1)}`}{' '}
-            ({recent.length})
-          </h2>
+      {statusFilter !== 'pending' ? (
+        <section aria-labelledby="recent-heading">
+          <SectionHead sub={`${recent.length}`}>
+            <span id="recent-heading">
+              {statusFilter === 'approved'
+                ? 'Approved'
+                : statusFilter === 'rejected'
+                  ? 'Set aside'
+                  : statusFilter === 'executed'
+                    ? 'Done'
+                    : 'Quietly let go'}
+            </span>
+          </SectionHead>
           {recent.length === 0 ? (
-            <p className="rounded-lg border border-border bg-surface p-6 text-center text-sm text-fg-muted">
-              Nothing to show.
-            </p>
+            <EmptyDecisions
+              title="Nothing to show here."
+              body="When things get decided, they land in this list so you can look back."
+            />
           ) : (
-            <ul className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3.5">
               {recent.map((s) => (
-                <SuggestionListRow key={s.id} suggestion={s} />
+                <DecisionItem key={s.id} suggestion={s} />
               ))}
-            </ul>
+            </div>
           )}
         </section>
       ) : null}
+
+      {statusFilter === 'pending' && recent.length > 0 ? (
+        <footer className="mt-12 flex flex-wrap items-center gap-3 border-t border-border pt-5 font-mono text-[11px] tracking-[0.02em] text-fg-muted">
+          <span>recently decided</span>
+          <span aria-hidden="true">·</span>
+          <span>
+            {recent.length} in the last while · you said yes to{' '}
+            {recent.filter((r) => r.status === 'approved' || r.status === 'executed').length}
+          </span>
+          <div className="flex-1" />
+          <Link
+            href="/suggestions?status=approved"
+            className="text-fg-muted underline-offset-2 hover:text-fg hover:underline"
+          >
+            look back →
+          </Link>
+        </footer>
+      ) : null}
+    </div>
+  );
+}
+
+/* ── Empty state — calm, lowercase-leaning ──────────────────────── */
+
+function EmptyDecisions({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="rounded-[6px] border border-border bg-surface px-5 py-7 shadow-card">
+      <p className="m-0 text-[14.5px] font-medium leading-[1.4] tracking-[-0.01em] text-fg">
+        {title}
+      </p>
+      <p className="mt-1.5 max-w-[560px] text-[13.5px] leading-[1.6] text-fg-muted">{body}</p>
     </div>
   );
 }
