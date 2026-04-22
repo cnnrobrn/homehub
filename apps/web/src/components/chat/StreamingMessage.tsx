@@ -8,6 +8,11 @@
  * inlines tool cards + suggestion cards, and surfaces an
  * "assistant is thinking" indicator before the first token.
  *
+ * Visual language matches the static bot turn rendered in
+ * `ChatThread` — HomeHubMark avatar in a ring, prose body to the
+ * right, mono meta underneath. Streaming and event handling remain
+ * identical; only the JSX layer was restyled.
+ *
  * A11y: token chunks don't announce individually. The container is
  * `role="log"` so screen readers treat it as a live region but we
  * throttle AT updates via `aria-live="polite"` and only set
@@ -17,10 +22,13 @@
 
 import * as React from 'react';
 
+
 import { SuggestionCard } from './SuggestionCard';
 import { ToolCard, type ToolCallDisplay } from './ToolCard';
 
 import type { StreamEvent } from '@/lib/chat/streamClient';
+
+import { HomeHubMark } from '@/components/design-system';
 
 interface StreamingMessageProps {
   events: AsyncIterable<StreamEvent>;
@@ -139,23 +147,27 @@ export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
   }, [events, onFinal]);
 
   return (
-    <div className="rounded-md border border-border bg-surface p-4" role="log" aria-live="polite">
-      <div className="mb-2 flex items-center gap-2 text-xs uppercase tracking-wide text-fg-muted">
-        <span className="font-mono">assistant</span>
-        {thinking && !done ? (
-          <span className="animate-pulse text-accent" aria-label="thinking">
-            thinking…
-          </span>
-        ) : null}
+    <div className="flex items-start gap-2.5" role="log" aria-live="polite">
+      <div className="mt-0.5 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border border-border bg-surface text-fg">
+        <HomeHubMark size={12} />
       </div>
-      {calls.map((c) => (
-        <ToolCard key={c.call.id} call={c.call} streaming={c.streaming} />
-      ))}
-      {suggestions.map((s) => (
-        <SuggestionCard key={s.callId} {...s} />
-      ))}
-      <div className="whitespace-pre-wrap text-sm leading-relaxed">
-        {text || (done ? '(no response)' : '')}
+      <div className="min-w-0 flex-1">
+        {thinking && !done ? (
+          <div className="mb-1.5 font-mono text-[10.5px] tracking-[0.06em] text-fg-muted">
+            <span className="animate-pulse text-accent" aria-label="thinking">
+              thinking…
+            </span>
+          </div>
+        ) : null}
+        {calls.map((c) => (
+          <ToolCard key={c.call.id} call={c.call} streaming={c.streaming} />
+        ))}
+        {suggestions.map((s) => (
+          <SuggestionCard key={s.callId} {...s} />
+        ))}
+        <div className="whitespace-pre-wrap text-[14.5px] leading-[1.6] text-fg">
+          {text || (done ? <span className="text-fg-muted">(no response)</span> : '')}
+        </div>
       </div>
     </div>
   );

@@ -3,9 +3,10 @@
 /**
  * Collapsible tool-call card rendered inline in the assistant turn.
  *
- * Accepts a tool-call record (name, args, result, classification) and
- * renders a summary with an expand affordance. Specialized rendering
- * lives in this file too — each tool name gets a tiny formatter.
+ * Visually calm: hairline border, a mono tool name, a single-line
+ * summary, and an "open" / "close" toggle. Draft-writes get a teal
+ * accent stripe on the left edge; errors get a warmer ink tone with
+ * a subtle red tag. No emoji, no filled icons.
  */
 
 import * as React from 'react';
@@ -64,12 +65,12 @@ export function ToolCard({ call, streaming = false }: ToolCardProps) {
   return (
     <div
       className={cn(
-        'my-2 rounded-md border px-3 py-2 text-xs',
+        'my-2 rounded-[4px] border bg-surface text-[12px] text-fg',
         isError
-          ? 'border-red-600/50 bg-red-50/10 text-red-700 dark:text-red-300'
+          ? 'border-border bg-surface-note'
           : isDraftWrite
-            ? 'border-amber-600/50 bg-amber-50/10'
-            : 'border-border bg-surface',
+            ? 'border-border border-l-[3px] border-l-accent'
+            : 'border-border',
       )}
     >
       <button
@@ -81,44 +82,49 @@ export function ToolCard({ call, streaming = false }: ToolCardProps) {
             setOpen((o) => !o);
           }
         }}
-        className="flex w-full items-center justify-between gap-2 text-left"
+        className="flex w-full items-center justify-between gap-2 px-3 py-2 text-left"
         aria-expanded={open}
       >
         <span className="flex items-center gap-2">
-          {streaming ? (
-            <span className="h-2 w-2 animate-pulse rounded-full bg-accent" aria-hidden="true" />
-          ) : (
-            <span
-              className={cn(
-                'h-2 w-2 rounded-full',
-                isError ? 'bg-red-500' : isDraftWrite ? 'bg-amber-500' : 'bg-green-500',
-              )}
-              aria-hidden="true"
-            />
-          )}
-          <span className="font-mono text-[11px] uppercase tracking-wide text-fg-muted">
+          <span
+            className={cn(
+              'inline-block h-[6px] w-[6px] rounded-full',
+              streaming
+                ? 'animate-pulse bg-accent'
+                : isError
+                  ? 'bg-[oklch(0.55_0.15_25)]'
+                  : isDraftWrite
+                    ? 'bg-accent'
+                    : 'bg-fg-muted',
+            )}
+            aria-hidden="true"
+          />
+          <span className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-fg-muted">
             {call.tool}
           </span>
-          <span>{summarize(call)}</span>
+          <span className="text-fg-muted">·</span>
+          <span className="text-[12.5px] leading-[1.5] text-fg">{summarize(call)}</span>
         </span>
-        <span className="text-fg-muted">{open ? '-' : '+'}</span>
+        <span className="font-mono text-[12px] text-fg-muted">{open ? '−' : '+'}</span>
       </button>
       {open ? (
-        <div className="mt-2 border-t border-border pt-2 font-mono text-[11px] text-fg-muted">
+        <div className="border-t border-border px-3 py-2 font-mono text-[11px] text-fg-muted">
           <div>
             <span className="text-fg">args:</span>
-            <pre className="overflow-x-auto">{JSON.stringify(call.arguments, null, 2)}</pre>
+            <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap">
+              {JSON.stringify(call.arguments, null, 2)}
+            </pre>
           </div>
           {call.ok !== false ? (
-            <div className="mt-1">
+            <div className="mt-2">
               <span className="text-fg">result:</span>
-              <pre className="overflow-x-auto">
+              <pre className="mt-0.5 overflow-x-auto whitespace-pre-wrap">
                 {JSON.stringify(call.result, null, 2).slice(0, 1200)}
               </pre>
             </div>
           ) : (
-            <div className="mt-1 text-red-600">
-              <span className="text-fg">error:</span> {call.error?.code}: {call.error?.message}
+            <div className="mt-2 text-fg">
+              <span className="font-mono">error:</span> {call.error?.code}: {call.error?.message}
             </div>
           )}
         </div>

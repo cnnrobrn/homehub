@@ -1,13 +1,19 @@
 /**
  * Server-rendered conversation list for `/chat`.
  *
- * Groups conversations into "Today", "This week", "Earlier" by
- * `last_message_at`. Each row links to the active-thread page.
+ * Groups conversations into "today", "this week", "earlier" by
+ * `last_message_at`. Visual language mirrors the V2 Indie design —
+ * mono-uppercase group eyebrows, hairline dividers, a single ink
+ * accent for the active row, and a calm "+ new" link in the header.
  */
 
 import Link from 'next/link';
 
 import type { ConversationListRow } from '@/lib/chat/loadConversations';
+
+import { Eyebrow } from '@/components/design-system';
+import { cn } from '@/lib/cn';
+
 
 function bucket(dateIso: string, now: Date): 'today' | 'week' | 'earlier' {
   const d = new Date(dateIso);
@@ -20,10 +26,20 @@ function bucket(dateIso: string, now: Date): 'today' | 'week' | 'earlier' {
   return 'earlier';
 }
 
+function formatRowDate(iso: string): string {
+  return new Date(iso).toLocaleDateString(undefined, { weekday: 'short' }).toLowerCase();
+}
+
 interface ChatSidebarProps {
   conversations: ConversationListRow[];
   activeConversationId?: string | null;
 }
+
+const BUCKET_LABEL: Record<'today' | 'week' | 'earlier', string> = {
+  today: 'today',
+  week: 'earlier this week',
+  earlier: 'earlier',
+};
 
 export function ChatSidebar({ conversations, activeConversationId }: ChatSidebarProps) {
   const now = new Date();
@@ -38,41 +54,47 @@ export function ChatSidebar({ conversations, activeConversationId }: ChatSidebar
 
   return (
     <aside
-      className="flex h-full w-64 shrink-0 flex-col border-r border-border bg-surface"
+      className="flex h-full w-72 shrink-0 flex-col border-r border-border bg-surface-soft"
       aria-label="Conversation list"
     >
-      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2 text-xs font-semibold uppercase tracking-wide text-fg-muted">
-        <span>Chats</span>
+      <div className="flex items-center justify-between gap-2 px-5 pt-6 pb-3">
+        <Eyebrow>chats</Eyebrow>
         <Link
           href="/chat/new"
-          className="rounded-md border border-border px-2 py-0.5 text-[11px] font-medium hover:bg-accent hover:text-accent-fg"
+          className="rounded-[3px] border border-border bg-surface px-2 py-0.5 font-mono text-[10.5px] tracking-[0.04em] text-fg-muted transition-colors hover:bg-surface-note hover:text-fg"
         >
           + new
         </Link>
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="min-h-0 flex-1 overflow-y-auto px-2 pb-6">
         {(['today', 'week', 'earlier'] as const).map((key) => {
           const items = groups[key];
           if (items.length === 0) return null;
           return (
-            <div key={key} className="py-2">
-              <div className="px-3 pb-1 text-[10px] uppercase tracking-wide text-fg-muted">
-                {key === 'today' ? 'Today' : key === 'week' ? 'This week' : 'Earlier'}
+            <div key={key} className="mt-4 first:mt-1">
+              <div className="px-3 pb-1.5 font-mono text-[10px] uppercase tracking-[0.08em] text-fg-muted">
+                {BUCKET_LABEL[key]}
               </div>
-              <ul>
+              <ul className="flex flex-col">
                 {items.map((c) => {
                   const isActive = c.id === activeConversationId;
                   return (
                     <li key={c.id}>
                       <Link
                         href={`/chat/${c.id}`}
-                        className={`block truncate px-3 py-1.5 text-sm ${
+                        className={cn(
+                          'grid grid-cols-[38px_1fr] items-baseline gap-2 rounded-[3px] px-3 py-2 transition-colors',
                           isActive
-                            ? 'bg-accent/60 text-fg'
-                            : 'text-fg-muted hover:bg-accent/20 hover:text-fg'
-                        }`}
+                            ? 'bg-surface text-fg shadow-[inset_2px_0_0_var(--color-accent)]'
+                            : 'text-fg-muted hover:bg-surface hover:text-fg',
+                        )}
                       >
-                        {c.title ?? 'Untitled'}
+                        <span className="font-mono text-[10px] uppercase tracking-[0.06em] text-fg-muted">
+                          {formatRowDate(c.last_message_at)}
+                        </span>
+                        <span className="truncate text-[13px] leading-[1.4]">
+                          {c.title ?? 'untitled'}
+                        </span>
                       </Link>
                     </li>
                   );
@@ -82,7 +104,9 @@ export function ChatSidebar({ conversations, activeConversationId }: ChatSidebar
           );
         })}
         {conversations.length === 0 ? (
-          <div className="px-3 py-4 text-xs text-fg-muted">No conversations yet.</div>
+          <div className="px-3 py-5 text-[12.5px] leading-[1.5] text-fg-muted">
+            no conversations yet. start one and it&apos;ll land here.
+          </div>
         ) : null}
       </div>
     </aside>

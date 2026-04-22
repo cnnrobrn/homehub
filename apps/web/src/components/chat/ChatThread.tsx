@@ -4,13 +4,20 @@
  * Active conversation pane — ties together the turn list, the
  * live-streaming assistant response, and the composer.
  *
- * Prior turns are rendered from server-loaded props; new turns stream
- * via the SSE route. After a stream ends we call `router.refresh()`
- * so the Server Component re-fetches the canonical list.
+ * Visual language follows the V2 Indie "ask" view:
+ *   - user turns as right-aligned ink bubbles
+ *   - assistant turns as a left-gutter avatar + plain-prose block
+ *   - day/time dividers as centered mono middot stamps
+ *   - a calm empty state with suggestion pills so the first screen
+ *     does not feel blank
+ *
+ * Streaming via SSE, server actions, and `router.refresh()` behavior
+ * are preserved verbatim — this file only restyles the JSX layer.
  */
 
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
+
 
 import { Composer } from './Composer';
 import { StreamingMessage } from './StreamingMessage';
@@ -19,9 +26,34 @@ import { ToolCard, type ToolCallDisplay } from './ToolCard';
 import type { ConversationTurnDisplayRow } from '@/lib/chat/loadConversations';
 import type { StreamEvent } from '@/lib/chat/streamClient';
 
+import { HomeHubMark, PillPrompt } from '@/components/design-system';
+import { cn } from '@/lib/cn';
+
 interface ChatThreadProps {
   conversationId: string;
   initialTurns: ConversationTurnDisplayRow[];
+}
+
+const EXAMPLE_PROMPTS: readonly string[] = [
+  'what do i owe for the group trip?',
+  "what's for dinner tonight?",
+  'when did we last see the garcias?',
+  "did i already buy mom's gift?",
+];
+
+function formatTurnTimestamp(iso: string, now: Date): string {
+  const d = new Date(iso);
+  const today = new Date(now);
+  today.setHours(0, 0, 0, 0);
+  const turnDay = new Date(d);
+  turnDay.setHours(0, 0, 0, 0);
+  const deltaDays = Math.round((today.getTime() - turnDay.getTime()) / 86_400_000);
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (deltaDays === 0) return `today · ${time}`;
+  if (deltaDays === 1) return `yesterday · ${time}`;
+  if (deltaDays < 7)
+    return `${d.toLocaleDateString(undefined, { weekday: 'long' }).toLowerCase()} · ${time}`;
+  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toLowerCase()} · ${time}`;
 }
 
 function renderTurnBody(body: string): React.ReactElement {
@@ -39,9 +71,9 @@ function renderTurnBody(body: string): React.ReactElement {
           return (
             <span
               key={`${i}-${id}`}
-              className="mx-0.5 inline-flex items-center rounded-sm border border-border bg-surface-muted px-1 text-[11px] font-medium text-fg-muted"
+              className="mx-0.5 inline-flex items-center rounded-[3px] border border-border bg-surface-soft px-1 font-mono text-[10.5px] text-fg-muted"
             >
-              <span className="mr-1 text-[9px] uppercase">{type}</span>
+              <span className="mr-1 text-[9px] uppercase tracking-[0.06em]">{type}</span>
               {label}
             </span>
           );
@@ -56,6 +88,7 @@ export function ChatThread({ conversationId, initialTurns }: ChatThreadProps) {
   const router = useRouter();
   const [activeStream, setActiveStream] = React.useState<AsyncIterable<StreamEvent> | null>(null);
   const [streamKey, setStreamKey] = React.useState(0);
+  const [prefill, setPrefill] = React.useState<string | undefined>(undefined);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -75,54 +108,146 @@ export function ChatThread({ conversationId, initialTurns }: ChatThreadProps) {
     }, 100);
   }
 
+  const now = new Date();
+  const isEmpty = initialTurns.length === 0 && !activeStream;
+
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <div ref={scrollRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
-        {initialTurns.length === 0 && !activeStream ? (
-          <div className="rounded-md border border-dashed border-border bg-surface p-6 text-center text-sm text-fg-muted">
-            Start by asking about schedule, money, food, or someone in the household.
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-6 py-10 sm:px-12">
+        <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6">
+          {isEmpty ? <EmptyAskState /> : null}
+
+          {initialTurns.map((turn, i) => {
+            const role = turn.role;
+            const isAssistant = role === 'assistant';
+            const toolCalls = Array.isArray(turn.tool_calls)
+              ? (turn.tool_calls as ToolCallDisplay[])
+              : [];
+
+            const prev = i > 0 ? initialTurns[i - 1] : null;
+            const showStamp =
+              !prev ||
+              new Date(turn.created_at).getTime() - new Date(prev.created_at).getTime() >
+                15 * 60 * 1000;
+
+            return (
+              <React.Fragment key={turn.id}>
+                {showStamp ? <TimestampDivider iso={turn.created_at} now={now} /> : null}
+                {isAssistant ? (
+                  <BotTurn
+                    body={renderTurnBody(turn.body_md)}
+                    model={turn.model}
+                    toolCalls={toolCalls}
+                  />
+                ) : (
+                  <UserTurn body={renderTurnBody(turn.body_md)} />
+                )}
+              </React.Fragment>
+            );
+          })}
+
+          {activeStream ? (
+            <StreamingMessage key={streamKey} events={activeStream} onFinal={handleFinal} />
+          ) : null}
+        </div>
+      </div>
+
+      <div className="px-6 pt-3 pb-7 sm:px-12">
+        <div className="mx-auto w-full max-w-[640px]">
+          <Composer
+            conversationId={conversationId}
+            onStreamStart={handleStreamStart}
+            prefill={prefill}
+            onPrefillConsumed={() => setPrefill(undefined)}
+          />
+          {isEmpty ? (
+            <div className="mx-auto mt-3 flex flex-wrap gap-1.5">
+              {EXAMPLE_PROMPTS.map((q) => (
+                <PillPrompt key={q} onClick={() => setPrefill(q)}>
+                  {q}
+                </PillPrompt>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── Empty state ──────────────────────────────────────────────── */
+
+function EmptyAskState() {
+  return (
+    <div className="flex flex-col items-center gap-3 py-8 text-center">
+      <div className="flex h-10 w-10 items-center justify-center rounded-full border border-border bg-surface text-fg">
+        <HomeHubMark size={16} />
+      </div>
+      <h1 className="m-0 max-w-[460px] text-[22px] font-semibold leading-[1.25] tracking-[-0.02em]">
+        ask about anything the house knows.
+      </h1>
+      <p className="m-0 max-w-[440px] text-[14px] leading-[1.55] text-fg-muted">
+        schedule, money, food, someone you haven&apos;t seen in a while — just type. only you and
+        the house see this.
+      </p>
+    </div>
+  );
+}
+
+/* ── User turn (right-aligned ink bubble) ─────────────────────── */
+
+function UserTurn({ body }: { body: React.ReactElement }) {
+  return (
+    <div className="flex justify-end">
+      <div
+        className={cn(
+          'max-w-[82%] whitespace-pre-wrap rounded-[14px] rounded-br-[4px] bg-fg px-[14px] py-[10px]',
+          'text-[14px] leading-[1.5] text-bg',
+        )}
+      >
+        {body}
+      </div>
+    </div>
+  );
+}
+
+/* ── Assistant turn (left gutter + avatar) ────────────────────── */
+
+function BotTurn({
+  body,
+  toolCalls,
+  model,
+}: {
+  body: React.ReactElement;
+  toolCalls: ToolCallDisplay[];
+  model: string | null;
+}) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <div className="mt-0.5 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border border-border bg-surface text-fg">
+        <HomeHubMark size={12} />
+      </div>
+      <div className="min-w-0 flex-1">
+        {toolCalls.length > 0 ? toolCalls.map((c) => <ToolCard key={c.id} call={c} />) : null}
+        <div className="whitespace-pre-wrap text-[14.5px] leading-[1.6] text-fg">{body}</div>
+        {model ? (
+          <div className="mt-1.5 font-mono text-[10.5px] tracking-[0.04em] text-fg-muted">
+            via {model}
           </div>
         ) : null}
-        {initialTurns.map((turn) => {
-          const role = turn.role;
-          const isAssistant = role === 'assistant';
-          const toolCalls = Array.isArray(turn.tool_calls)
-            ? (turn.tool_calls as ToolCallDisplay[])
-            : [];
-          return (
-            <div
-              key={turn.id}
-              className={
-                isAssistant
-                  ? 'rounded-md border border-border bg-surface p-4'
-                  : 'rounded-md border border-border bg-surface/60 p-4'
-              }
-            >
-              <div className="mb-1 flex items-center gap-2 text-xs uppercase tracking-wide text-fg-muted">
-                <span className="font-mono">
-                  {isAssistant ? 'assistant' : (turn.author_display_name ?? role)}
-                </span>
-                <time dateTime={turn.created_at}>
-                  {new Date(turn.created_at).toLocaleTimeString()}
-                </time>
-                {turn.model ? <span className="font-mono text-[10px]">{turn.model}</span> : null}
-              </div>
-              {isAssistant && toolCalls.length > 0
-                ? toolCalls.map((c) => <ToolCard key={c.id} call={c} />)
-                : null}
-              <div className="whitespace-pre-wrap text-sm leading-relaxed">
-                {renderTurnBody(turn.body_md)}
-              </div>
-            </div>
-          );
-        })}
-        {activeStream ? (
-          <StreamingMessage key={streamKey} events={activeStream} onFinal={handleFinal} />
-        ) : null}
       </div>
-      <div className="border-t border-border p-3">
-        <Composer conversationId={conversationId} onStreamStart={handleStreamStart} />
-      </div>
+    </div>
+  );
+}
+
+/* ── Middot date divider ──────────────────────────────────────── */
+
+function TimestampDivider({ iso, now }: { iso: string; now: Date }) {
+  return (
+    <div className="flex justify-center">
+      <span className="font-mono text-[10.5px] tracking-[0.06em] text-fg-muted">
+        {formatTurnTimestamp(iso, now)}
+      </span>
     </div>
   );
 }
