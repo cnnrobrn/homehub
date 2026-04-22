@@ -57,11 +57,22 @@ export type PublicEnv = z.infer<typeof publicSchema>;
 export type ServerEnv = z.infer<typeof serverSchema>;
 
 /**
- * Public env — safe on both sides. Next inlines `NEXT_PUBLIC_*` strings
- * into the client bundle at build time, so browser callers still see
- * real values after the server `loadEnv` runs during SSR.
+ * Public env — safe on both sides. Next's webpack plugin only inlines
+ * `process.env.EXACT_NAME` member-expression references at build time;
+ * it does NOT touch `process.env` itself when passed as an object. So
+ * calling `loadEnv(schema, process.env)` from client code resolves to
+ * `loadEnv(schema, {})` in the browser bundle and every `NEXT_PUBLIC_*`
+ * key lands as `undefined`. We avoid that by building the source object
+ * explicitly — each reference below IS a member-expression that webpack
+ * will replace with the literal string from build-time env.
  */
-export const publicEnv: PublicEnv = loadEnv(publicSchema);
+const publicSource = {
+  NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+} as unknown as NodeJS.ProcessEnv;
+
+export const publicEnv: PublicEnv = loadEnv(publicSchema, publicSource);
 
 let cachedServerEnv: ServerEnv | null = null;
 
