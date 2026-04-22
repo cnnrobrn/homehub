@@ -56,10 +56,10 @@ grant select on auth.users to service_role;
 -- Grant table-level privileges on every application schema to both
 -- service_role (for `act_as_service` fixture inserts) and authenticated
 -- (for `act_as(uuid)` test reads, which are then gated by RLS
--- policies). Supabase's hosted Postgres sets these up via default
--- privileges; the CLI 2.90.0 local Postgres 17 does not — without
--- these grants every test fails with "permission denied for table
--- <name>" before RLS even runs. postgres (the migration role) owns
+-- policies). Migration 0015 now grants the same privileges in
+-- production; these lines are kept as a belt-and-braces guard so the
+-- test suite works even when run against a DB that pre-dates 0015
+-- (e.g. a shadow DB reset from an older migration set). postgres owns
 -- these tables so the grants land fully.
 grant select, insert, update, delete on all tables in schema app to service_role, authenticated;
 grant select, insert, update, delete on all tables in schema mem to service_role, authenticated;
