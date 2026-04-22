@@ -39,10 +39,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  colorScheme: 'dark light',
+  colorScheme: 'light dark',
   themeColor: [
-    { media: '(prefers-color-scheme: dark)', color: '#1a1a24' },
-    { media: '(prefers-color-scheme: light)', color: '#ffffff' },
+    { media: '(prefers-color-scheme: light)', color: '#fafaf7' },
+    { media: '(prefers-color-scheme: dark)', color: '#1a1a17' },
   ],
 };
 
@@ -54,7 +54,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      data-theme="dark"
+      data-theme="light"
       className={cn(inter.variable, jetbrainsMono.variable)}
       suppressHydrationWarning
     >

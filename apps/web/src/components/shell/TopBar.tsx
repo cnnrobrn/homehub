@@ -29,7 +29,7 @@ export async function TopBar({ householdName, householdId, userEmail, memberRole
   const households = listRes.ok ? listRes.data : [];
 
   return (
-    <header className="flex h-14 items-center gap-3 border-b border-border bg-surface px-4">
+    <header className="sticky top-0 z-10 flex h-[52px] items-center gap-3 border-b border-border bg-bg px-7">
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:rounded-md focus:bg-accent focus:px-2 focus:py-1 focus:text-accent-fg"

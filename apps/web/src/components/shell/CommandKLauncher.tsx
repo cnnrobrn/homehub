@@ -52,8 +52,15 @@ export function CommandKLauncher({ householdId }: CommandKLauncherProps) {
         setOpen((v) => !v);
       }
     }
+    function onOpen() {
+      setOpen(true);
+    }
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    window.addEventListener('hh:open-command-k', onOpen as EventListener);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('hh:open-command-k', onOpen as EventListener);
+    };
   }, []);
 
   async function ensureConversation(): Promise<string | null> {

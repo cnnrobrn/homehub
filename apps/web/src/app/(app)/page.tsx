@@ -1,139 +1,350 @@
 /**
- * `/` — Dashboard (authenticated).
+ * `/` — Today (authenticated dashboard).
  *
- * M2-C adds a real Today strip: horizontal list of today's events pulled
- * via `listEvents()`. The segment cards below remain disabled
- * placeholders for now — they come alive in M3+ as each segment's
- * workers / summaries ship.
+ * V2 Indie direction: warm, first-person, calm. Layout follows the
+ * Claude Design handoff:
  *
- * The realtime refresher keeps the Today strip current when the
- * sync-gcal worker upserts events without a page reload.
+ *  1. Greeting — date + "Morning, {name}." + gentle context sub-line.
+ *  2. Today — a single unified list of today's events (unifiedish
+ *     calendar: all segments threaded together by start time).
+ *  3. Worth a look — at most three pending suggestions as LookCards,
+ *     each stamped with its segment stripe.
+ *  4. Rest of the week + Coming up — two side-by-side lists.
+ *  5. Quiet footer — status chip with "quietly caught up" voice.
+ *
+ * Data comes from the same helpers the rest of the app uses
+ * (`listEvents`, `listPendingSuggestions`) so the surface is real even
+ * when M0 fixtures are thin. Each section degrades to a quiet empty
+ * state rather than vanishing — the page is always present at a
+ * consistent rhythm.
  */
 
-import { CircleDollarSign, PartyPopper, Users, Utensils } from 'lucide-react';
 import Link from 'next/link';
 
 import { listMembersAction } from '@/app/actions/members';
-import { EventPill } from '@/components/calendar/EventPill';
 import { RealtimeEventRefresher } from '@/components/calendar/RealtimeEventRefresher';
-import { SegmentCard } from '@/components/dashboard/SegmentCard';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Eyebrow, LookCard, SegDot, WarmButton } from '@/components/design-system';
+import { SEGMENTS, type SegmentId } from '@/components/design-system/segment';
 import { getHouseholdContext } from '@/lib/auth/context';
-import { listEvents, type Segment } from '@/lib/events/listEvents';
+import { listEvents, type CalendarEventRow, type Segment } from '@/lib/events/listEvents';
 import { endOfToday, startOfToday } from '@/lib/events/range';
+import { listPendingSuggestions, type SuggestionRowView } from '@/lib/suggestions';
 
-const TODAY_STRIP_LIMIT = 10;
+const WEEK_LIMIT = 40;
+const LOOKS_LIMIT = 3;
+
+function firstName(name: string | null | undefined): string {
+  if (!name) return 'there';
+  const trimmed = name.trim();
+  if (!trimmed) return 'there';
+  const space = trimmed.indexOf(' ');
+  return space === -1 ? trimmed : trimmed.slice(0, space);
+}
+
+function greetingFor(date: Date): string {
+  const h = date.getHours();
+  if (h < 5) return 'Up late';
+  if (h < 12) return 'Morning';
+  if (h < 17) return 'Afternoon';
+  if (h < 21) return 'Evening';
+  return 'Late evening';
+}
+
+function formatHeaderDate(date: Date): string {
+  const weekday = date.toLocaleDateString(undefined, { weekday: 'long' });
+  const monthDay = date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+  return `${weekday} · ${monthDay}`;
+}
+
+function formatTime(iso: string, allDay: boolean): string {
+  if (allDay) return 'all day';
+  const d = new Date(iso);
+  return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function isAppSegment(s: string): s is SegmentId {
+  return s === 'financial' || s === 'food' || s === 'fun' || s === 'social';
+}
+
+function dayKey(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString(undefined, { weekday: 'short' }).toLowerCase();
+}
 
 export default async function DashboardPage() {
   const ctx = await getHouseholdContext();
-  // Layout already redirected if ctx was null; this is just a type guard.
   if (!ctx) return null;
 
-  const membersRes = await listMembersAction({ householdId: ctx.household.id });
-  const memberCount = membersRes.ok ? membersRes.data.length : 0;
-
   const grants = ctx.grants.map((g) => ({ segment: g.segment as Segment, access: g.access }));
+  const now = new Date();
   const from = startOfToday();
   const to = endOfToday();
-  const todayEvents = (
-    await listEvents(
-      {
-        householdId: ctx.household.id,
-        from: from.toISOString(),
-        to: to.toISOString(),
-        limit: TODAY_STRIP_LIMIT,
-      },
-      { grants },
-    )
-  ).slice(0, TODAY_STRIP_LIMIT);
+  const todayEvents = await listEvents(
+    { householdId: ctx.household.id, from: from.toISOString(), to: to.toISOString(), limit: 20 },
+    { grants },
+  );
+
+  const weekEnd = new Date(to);
+  weekEnd.setDate(weekEnd.getDate() + 6);
+  const weekEvents = await listEvents(
+    {
+      householdId: ctx.household.id,
+      from: to.toISOString(),
+      to: weekEnd.toISOString(),
+      limit: WEEK_LIMIT,
+    },
+    { grants },
+  );
+
+  const pendingRaw = await listPendingSuggestions({
+    householdId: ctx.household.id,
+    limit: LOOKS_LIMIT,
+  });
+  const pending: SuggestionRowView[] = pendingRaw.slice(0, LOOKS_LIMIT);
+
+  const membersRes = await listMembersAction({ householdId: ctx.household.id });
+  const members = membersRes.ok ? membersRes.data : [];
+  const me = members.find((m) => m.id === ctx.member.id) ?? null;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-8 p-6">
+    <div className="mx-auto flex w-full max-w-[980px] flex-col px-10 pt-9 pb-20">
       <RealtimeEventRefresher householdId={ctx.household.id} />
 
-      <header className="flex flex-col gap-2">
-        <p className="text-sm text-fg-muted">Household</p>
-        <h1 className="text-3xl font-semibold tracking-tight">{ctx.household.name}</h1>
-        <div className="flex flex-wrap items-center gap-2 text-sm text-fg-muted">
-          <Badge variant="outline">{ctx.member.role}</Badge>
-          <span>·</span>
-          <span>
-            {memberCount} {memberCount === 1 ? 'member' : 'members'}
-          </span>
+      {/* Greeting */}
+      <header className="mb-9">
+        <div className="mb-3.5 font-mono text-[11px] tracking-[0.04em] text-fg-muted">
+          {formatHeaderDate(now)}
         </div>
+        <h1 className="m-0 max-w-[640px] text-[34px] font-semibold leading-[1.15] tracking-[-0.03em] text-balance">
+          {greetingFor(now)}, {firstName(me?.displayName ?? null)}.
+        </h1>
+        <GreetingSub todayCount={todayEvents.length} pendingCount={pending.length} />
       </header>
 
-      <section aria-labelledby="today-heading" className="flex flex-col gap-3">
-        <div className="flex items-baseline justify-between">
-          <h2 id="today-heading" className="text-lg font-medium">
-            Today
-          </h2>
-          <Link href="/calendar" className="text-xs text-accent underline-offset-2 hover:underline">
-            Open calendar
-          </Link>
-        </div>
-        {todayEvents.length === 0 ? (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-sm">No events today.</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-fg-muted">
-                When events land on today&apos;s date they&apos;ll show up here. Visit the{' '}
-                <Link
-                  href="/calendar"
-                  className="text-accent underline underline-offset-2 hover:no-underline"
-                >
-                  calendar
-                </Link>{' '}
-                for the full week.
-              </p>
-            </CardContent>
-          </Card>
-        ) : (
-          <ul aria-label="Today's events" className="flex gap-2 overflow-x-auto pb-2">
-            {todayEvents.map((ev) => (
-              <li key={ev.id} className="min-w-[220px] max-w-[260px] shrink-0">
-                <Link
-                  href={`/calendar?view=week&cursor=today#event-${ev.id}`}
-                  className="block rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-bg"
-                >
-                  <EventPill event={ev} />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
+      {/* Today */}
+      <SectionHead>Today</SectionHead>
+      <TodayCard events={todayEvents} />
 
-      <section aria-labelledby="segments-heading" className="flex flex-col gap-3">
-        <h2 id="segments-heading" className="text-lg font-medium">
-          Segments
-        </h2>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <SegmentCard
-            label="Financial"
-            description="Budgets, accounts, subscriptions"
-            icon={<CircleDollarSign className="h-5 w-5" aria-hidden="true" />}
-          />
-          <SegmentCard
-            label="Food"
-            description="Meal planner, pantry, groceries"
-            icon={<Utensils className="h-5 w-5" aria-hidden="true" />}
-          />
-          <SegmentCard
-            label="Fun"
-            description="Trips, queue, plans"
-            icon={<PartyPopper className="h-5 w-5" aria-hidden="true" />}
-          />
-          <SegmentCard
-            label="Social"
-            description="People, contacts, events"
-            icon={<Users className="h-5 w-5" aria-hidden="true" />}
-          />
+      {/* Worth a look */}
+      {pending.length > 0 ? (
+        <div className="mt-11">
+          <SectionHead sub={`${pending.length} small thing${pending.length === 1 ? '' : 's'}`}>
+            Worth a look
+          </SectionHead>
+          <div className="flex flex-col gap-3">
+            {pending.map((s) => (
+              <PendingLookCard key={s.id} s={s} />
+            ))}
+          </div>
         </div>
-      </section>
+      ) : null}
+
+      {/* Rest of the week + Coming up */}
+      <div className="mt-11 grid grid-cols-1 gap-5 md:grid-cols-2">
+        <div>
+          <SectionHead>The rest of the week</SectionHead>
+          <WeekCard events={weekEvents} />
+        </div>
+        <div>
+          <SectionHead>Coming up</SectionHead>
+          <ComingUpCard events={weekEvents} />
+        </div>
+      </div>
+
+      {/* Quiet footer */}
+      <footer className="mt-12 flex items-center gap-4 border-t border-border pt-5 font-mono text-[11px] tracking-[0.02em] text-fg-muted">
+        <span>quietly caught up</span>
+        <span aria-hidden="true">·</span>
+        <span>{pending.length === 0 ? 'nothing urgent' : 'three small things to decide'}</span>
+        <div className="flex-1" />
+        <Link href="/chat" className="text-fg-muted transition-colors hover:text-fg">
+          ask about anything →
+        </Link>
+      </footer>
     </div>
   );
 }
+
+/* ── Greeting sub-copy ─────────────────────────────────────────── */
+
+function GreetingSub({ todayCount, pendingCount }: { todayCount: number; pendingCount: number }) {
+  let line: string;
+  if (todayCount === 0 && pendingCount === 0) {
+    line = 'Quiet day. Nothing on the calendar and nothing waiting for you.';
+  } else if (todayCount === 0) {
+    line = `Calendar’s quiet today. There ${pendingCount === 1 ? 'is' : 'are'} ${pendingCount} small thing${pendingCount === 1 ? '' : 's'} for you to weigh in on.`;
+  } else if (pendingCount === 0) {
+    line = `${todayCount} thing${todayCount === 1 ? '' : 's'} on today. Nothing else to decide.`;
+  } else {
+    line = `${todayCount} thing${todayCount === 1 ? '' : 's'} on today and ${pendingCount} small ${pendingCount === 1 ? 'question' : 'questions'} for you to weigh in on.`;
+  }
+  return (
+    <p className="mt-3.5 max-w-[560px] text-[17px] leading-[1.55] text-fg-muted text-pretty">
+      {line}
+    </p>
+  );
+}
+
+/* ── Section head (mono uppercase) ─────────────────────────────── */
+
+function SectionHead({ children, sub }: { children: React.ReactNode; sub?: React.ReactNode }) {
+  return (
+    <div className="mb-3.5 flex items-baseline gap-2.5">
+      <h2 className="m-0 font-mono text-[12px] font-semibold uppercase tracking-[0.08em] text-fg">
+        {children}
+      </h2>
+      {sub ? <Eyebrow>· {sub}</Eyebrow> : null}
+    </div>
+  );
+}
+
+/* ── Today — a single grouped card with one row per event ──────── */
+
+function TodayCard({ events }: { events: readonly CalendarEventRow[] }) {
+  if (events.length === 0) {
+    return (
+      <EmptyCard>
+        Nothing on the calendar today. When events land, they&apos;ll show up here.
+      </EmptyCard>
+    );
+  }
+  return (
+    <div className="overflow-hidden rounded-[6px] border border-border bg-surface shadow-card">
+      {events.map((ev, i) => (
+        <div
+          key={ev.id}
+          className="grid grid-cols-[72px_1fr] items-baseline gap-4 px-5 py-4"
+          style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}
+        >
+          <div className="font-mono text-[12px] tracking-[0.04em] text-fg-muted">
+            {formatTime(ev.startsAt, ev.allDay)}
+          </div>
+          <div>
+            <div className="flex items-center gap-2 text-[15px] font-medium tracking-[-0.015em] text-fg">
+              {isAppSegment(ev.segment) ? <SegDot segment={ev.segment} size={6} /> : null}
+              <span>{ev.title}</span>
+            </div>
+            {ev.location ? (
+              <div className="mt-0.5 text-[13px] leading-[1.5] text-fg-muted">{ev.location}</div>
+            ) : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Worth a look — map a pending suggestion to a LookCard ─────── */
+
+function PendingLookCard({ s }: { s: SuggestionRowView }) {
+  // Suggestions may land under `system` which the app renders as
+  // segment-neutral. LookCard wants one of the four ink segments; fall
+  // back to `social` (neutral-blue) when system shows up.
+  const seg: SegmentId = isAppSegment(s.segment) ? s.segment : 'social';
+  return (
+    <LookCard
+      segment={seg}
+      title={s.title}
+      body={s.rationale}
+      primaryAction={
+        <Link href={`/suggestions`} className="no-underline">
+          <WarmButton variant="primary" size="sm">
+            Open
+          </WarmButton>
+        </Link>
+      }
+      secondaryAction={
+        <Link href={`/suggestions`} className="no-underline">
+          <WarmButton variant="quiet" size="sm">
+            Later
+          </WarmButton>
+        </Link>
+      }
+    />
+  );
+}
+
+/* ── Rest of the week ──────────────────────────────────────────── */
+
+function WeekCard({ events }: { events: readonly CalendarEventRow[] }) {
+  const slice = events.slice(0, 8);
+  if (slice.length === 0) {
+    return <EmptyCard>Nothing else on the week. A good sign.</EmptyCard>;
+  }
+  return (
+    <div className="overflow-hidden rounded-[6px] border border-border bg-surface">
+      {slice.map((ev, i) => (
+        <div
+          key={ev.id}
+          className="grid grid-cols-[48px_1fr_auto] items-center gap-3 px-[18px] py-3"
+          style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}
+        >
+          <span className="font-mono text-[11px] uppercase tracking-[0.04em] text-fg-muted">
+            {dayKey(ev.startsAt)}
+          </span>
+          <span className="truncate text-[13.5px] text-fg">{ev.title}</span>
+          {isAppSegment(ev.segment) ? <SegDot segment={ev.segment} size={6} /> : <span />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/* ── Coming up — all-day + multi-day standouts from the week ──── */
+
+function ComingUpCard({ events }: { events: readonly CalendarEventRow[] }) {
+  // "Coming up" surfaces the all-day / noteworthy events — birthdays,
+  // trips, group plans. When all-day events don't exist in the dataset
+  // yet, fall back to the tail of the week so the slot isn't empty.
+  const notable = events.filter((e) => e.allDay).slice(0, 4);
+  const fallback = events.slice(-4);
+  const picks = notable.length > 0 ? notable : fallback;
+
+  if (picks.length === 0) {
+    return <EmptyCard>Nothing big on the horizon. We&apos;ll let you know.</EmptyCard>;
+  }
+
+  const today = new Date();
+  return (
+    <div className="overflow-hidden rounded-[6px] border border-border bg-surface">
+      {picks.map((ev, i) => {
+        const when = new Date(ev.startsAt);
+        const days = Math.max(0, Math.round((when.getTime() - today.getTime()) / 86_400_000));
+        const whenLabel = days === 0 ? 'today' : days === 1 ? 'tomorrow' : `in ${days} days`;
+        return (
+          <div
+            key={ev.id}
+            className="px-[18px] py-3.5"
+            style={{ borderTop: i === 0 ? 'none' : '1px solid var(--color-border)' }}
+          >
+            <div className="mb-0.5 flex items-baseline gap-2.5">
+              <span className="text-[14px] font-medium tracking-[-0.015em] text-fg">
+                {ev.title}
+              </span>
+              <div className="flex-1" />
+              <span className="font-mono text-[11px] text-fg-muted">{whenLabel}</span>
+            </div>
+            {ev.location ? (
+              <div className="text-[12.5px] leading-[1.5] text-fg-muted">{ev.location}</div>
+            ) : null}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+/* ── Empty-state card ──────────────────────────────────────────── */
+
+function EmptyCard({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="rounded-[6px] border border-border bg-surface px-5 py-5 text-[13.5px] leading-[1.55] text-fg-muted shadow-card">
+      {children}
+    </div>
+  );
+}
+
+// Keep the un-used import from triggering a lint error when SEGMENTS is
+// referenced in sibling files only; we use the `SEGMENTS` export for
+// segment metadata in a future revision of this view.
+void SEGMENTS;

@@ -1,36 +1,90 @@
 /**
  * HomeHub design-system tokens.
  *
- * Surfaces as CSS custom properties so Tailwind v4 can consume them via
- * the `@theme` block in `globals.css`, and so non-Tailwind CSS (e.g. a
- * future print stylesheet) can reach the same source of truth.
+ * Surfaces as CSS custom properties so Tailwind v4 consumes them via the
+ * `@theme` block in `globals.css`, and non-Tailwind CSS can reach the
+ * same source of truth.
  *
- * Dark mode is the default (`:root`). An explicit `[data-theme="light"]`
- * override is provided for the M1 settings toggle.
+ * The default palette is the "V2 Indie" warm off-white direction from
+ * the Claude Design handoff (paperclip.ing-adjacent): warm off-white
+ * page, pure-white cards, slightly warm near-black ink, muted warm gray
+ * secondary text, muted teal accent. Dark mode is opt-in via
+ * `[data-theme="dark"]`.
  *
- * Color ramp (per specs/07-frontend/ui-architecture.md "Dark mode default"):
- *  - bg       — app canvas
- *  - surface  — cards, panels, dialogs
- *  - border   — hairline separators
- *  - fg       — primary text
- *  - fg-muted — secondary text
- *  - accent   — brand / primary action
- *  - accent-fg — text on accent
- *  - warn     — caution (with icon, never color-only)
- *  - danger   — destructive / error
- *  - success  — confirmation
- *
- * Radius scale tops out at `lg`; larger pill shapes compose from `md + px`.
- * Font families resolve to the `next/font`-provided CSS variables.
+ * Color ramp:
+ *  - bg           — app canvas (warm off-white)
+ *  - surface      — cards, panels, dialogs (pure white)
+ *  - surface-soft — warmer off-white used behind cards inside cards,
+ *                   preview callouts, chip fills
+ *  - surface-note — inline note block bg, highlighted weekday header
+ *  - warm-sand    — section-level warmer bg (self-host section)
+ *  - border       — 1px hairline rules (`rgba(ink, 0.1)`)
+ *  - fg           — primary ink; slightly warm near-black
+ *  - fg-muted     — secondary text, muted warm gray
+ *  - accent       — the single accent; muted teal
+ *  - accent-fg    — text on accent
+ *  - warn/danger/success — informational, never color-only
  */
 
 :root {
+  color-scheme: light;
+
+  /* Color — warm off-white, per V2 Indie */
+  --color-bg: #fafaf7;
+  --color-surface: #ffffff;
+  --color-surface-soft: #f2efe8;
+  --color-surface-note: #f4f1ea;
+  --color-warm-sand: #f2efe8;
+  --color-border: rgba(26, 26, 23, 0.1);
+  --color-border-strong: rgba(26, 26, 23, 0.16);
+  --color-fg: #1a1a17;
+  --color-fg-muted: #77736c;
+  --color-accent: oklch(0.58 0.11 200);
+  --color-accent-fg: #ffffff;
+  --color-warn: oklch(0.62 0.18 85);
+  --color-danger: oklch(0.52 0.24 27);
+  --color-success: oklch(0.56 0.18 150);
+
+  /*
+   * Segment palette — matches the design-handoff `tokens.js`:
+   * green / amber / magenta / blue. Paired with an icon + label on
+   * every surface so color is never the sole channel.
+   */
+  --segment-financial: oklch(0.62 0.1 150); /* green */
+  --segment-food: oklch(0.65 0.13 60); /* amber */
+  --segment-fun: oklch(0.62 0.14 320); /* magenta */
+  --segment-social: oklch(0.6 0.12 250); /* blue */
+  --segment-system: oklch(0.55 0.02 260); /* neutral */
+
+  /* Radius */
+  --radius-sm: 3px; /* buttons, pills, chips, inline note blocks */
+  --radius-md: 6px; /* cards, calendar, terminal, feature grid */
+  --radius-lg: 10px;
+
+  /* Shadow — soft, directional, never punchy (from the design README) */
+  --shadow-card: 0 8px 24px -8px rgba(0, 0, 0, 0.1);
+
+  /* Font families — next/font injects runtime values into these
+     variables via the <html> className in `layout.tsx`. The fallback
+     stack keeps SSR rendering readable if the font bundle is missing. */
+  --font-sans:
+    var(--font-inter), 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono:
+    var(--font-jetbrains-mono), 'JetBrains Mono', ui-monospace, SFMono-Regular, 'SF Mono', Menlo,
+    Consolas, 'Liberation Mono', monospace;
+}
+
+[data-theme='dark'] {
   color-scheme: dark;
 
-  /* Color */
   --color-bg: oklch(0.18 0.01 260);
   --color-surface: oklch(0.22 0.01 260);
+  --color-surface-soft: oklch(0.24 0.01 260);
+  --color-surface-note: oklch(0.24 0.015 60);
+  --color-warm-sand: oklch(0.24 0.01 260);
   --color-border: oklch(0.3 0.01 260);
+  --color-border-strong: oklch(0.36 0.01 260);
   --color-fg: oklch(0.97 0.005 260);
   --color-fg-muted: oklch(0.72 0.01 260);
   --color-accent: oklch(0.72 0.17 265);
@@ -39,52 +93,9 @@
   --color-danger: oklch(0.66 0.22 27);
   --color-success: oklch(0.74 0.17 150);
 
-  /*
-   * Segment palette. Used by the unified calendar + Today strip to give
-   * each of the five segments a distinct, WCAG-AA-on-dark-bg hue. Icons
-   * ship alongside the color on every surface so the palette is never
-   * the sole channel (per specs/07-frontend/ui-architecture.md).
-   */
-  --segment-financial: oklch(0.74 0.18 150); /* green */
-  --segment-food: oklch(0.78 0.17 60); /* amber */
-  --segment-fun: oklch(0.72 0.2 320); /* magenta */
-  --segment-social: oklch(0.76 0.15 230); /* blue */
-  --segment-system: oklch(0.74 0.02 260); /* neutral */
-
-  /* Radius */
-  --radius-sm: 0.25rem;
-  --radius-md: 0.5rem;
-  --radius-lg: 0.75rem;
-
-  /* Font families — next/font injects the runtime values into these
-     variables via the <html> className in `layout.tsx`. The fallback
-     stack makes SSR boot without FOUT if the font package is missing. */
-  --font-sans:
-    var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
-  --font-mono:
-    var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas,
-    'Liberation Mono', monospace;
-}
-
-[data-theme='light'] {
-  color-scheme: light;
-
-  --color-bg: oklch(0.99 0.002 260);
-  --color-surface: oklch(0.97 0.004 260);
-  --color-border: oklch(0.88 0.006 260);
-  --color-fg: oklch(0.18 0.01 260);
-  --color-fg-muted: oklch(0.44 0.01 260);
-  --color-accent: oklch(0.52 0.2 265);
-  --color-accent-fg: oklch(0.99 0.002 260);
-  --color-warn: oklch(0.62 0.18 85);
-  --color-danger: oklch(0.52 0.24 27);
-  --color-success: oklch(0.56 0.18 150);
-
-  /* Segment palette — darker hues for WCAG-AA contrast on light bg. */
-  --segment-financial: oklch(0.52 0.18 150);
-  --segment-food: oklch(0.58 0.18 60);
-  --segment-fun: oklch(0.5 0.22 320);
-  --segment-social: oklch(0.52 0.18 230);
-  --segment-system: oklch(0.5 0.02 260);
+  --segment-financial: oklch(0.74 0.18 150);
+  --segment-food: oklch(0.78 0.17 60);
+  --segment-fun: oklch(0.72 0.2 320);
+  --segment-social: oklch(0.76 0.15 230);
+  --segment-system: oklch(0.74 0.02 260);
 }
