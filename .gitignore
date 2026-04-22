@@ -54,3 +54,4 @@ Thumbs.db
 
 # Worktree belt-and-braces (worktrees live at ../homehub-worktrees/, but guard against accidental in-repo dirs)
 .worktrees/
+.vercel
