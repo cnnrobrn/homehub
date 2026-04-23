@@ -1,22 +1,24 @@
 /**
  * Left navigation sidebar — V2 Indie direction.
  *
- * Warm-sand background, household identity header, "Ask" launcher,
+ * Warm-sand background, household identity header, Alfred launcher,
  * primary nav + "Parts of life" segment nav with colored dots, and a
  * footer with member avatars and a "quietly caught up" status line.
  */
 
 import Link from 'next/link';
 
+import type { SegmentId } from '@/components/design-system/segment';
 import type { ReactNode } from 'react';
 
 import { listMembersAction } from '@/app/actions/members';
 import { HomeHubMark, MemberAvatar, SegDot } from '@/components/design-system';
-import { SEGMENT_ORDER, SEGMENTS } from '@/components/design-system/segment';
+import { SEGMENTS } from '@/components/design-system/segment';
 import { OpenCommandK } from '@/components/shell/OpenCommandK';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { cn } from '@/lib/cn';
-
+import { getConfiguredSetupSegments } from '@/lib/onboarding/setup';
 
 interface NavItem {
   label: string;
@@ -27,13 +29,13 @@ interface NavItem {
 
 const PRIMARY: NavItem[] = [
   { label: 'Today', href: '/' },
-  { label: 'Ask', href: '/chat' },
+  { label: ASSISTANT_NAME, href: '/chat' },
   { label: 'Calendar', href: '/calendar' },
   { label: 'Decisions', href: '/suggestions' },
 ];
 
 /** Friendly segment labels come from SEGMENTS; href matches the app routes. */
-const SEG_HREF: Record<(typeof SEGMENT_ORDER)[number], string> = {
+const SEG_HREF: Record<SegmentId, string> = {
   financial: '/financial',
   food: '/food',
   fun: '/fun',
@@ -55,6 +57,7 @@ export async function AppSidebar() {
   const membersRes = await listMembersAction({ householdId: ctx.household.id });
   const members = membersRes.ok ? membersRes.data : [];
   const memberNames = members.map((m) => m.displayName);
+  const visibleSegments = getConfiguredSetupSegments(ctx.household.settings);
 
   return (
     <aside
@@ -89,14 +92,18 @@ export async function AppSidebar() {
         ))}
       </nav>
 
-      <SidebarLabel>Parts of life</SidebarLabel>
-      <nav className="flex flex-col gap-0.5" aria-label="Parts of life">
-        {SEGMENT_ORDER.map((id) => (
-          <NavRow key={id} href={SEG_HREF[id]} dot={<SegDot segment={id} size={7} />}>
-            {SEGMENTS[id].label}
-          </NavRow>
-        ))}
-      </nav>
+      {visibleSegments.length > 0 ? (
+        <>
+          <SidebarLabel>Parts of life</SidebarLabel>
+          <nav className="flex flex-col gap-0.5" aria-label="Parts of life">
+            {visibleSegments.map((id) => (
+              <NavRow key={id} href={SEG_HREF[id]} dot={<SegDot segment={id} size={7} />}>
+                {SEGMENTS[id].label}
+              </NavRow>
+            ))}
+          </nav>
+        </>
+      ) : null}
 
       <SidebarLabel>Notebook</SidebarLabel>
       <NavRow href="/memory">What we know</NavRow>

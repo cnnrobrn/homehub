@@ -34,12 +34,12 @@ describe('CommandKLauncher', () => {
   it('opens the dialog on ⌘K', () => {
     render(<CommandKLauncher householdId="hh-1" />);
     fireEvent.keyDown(window, { key: 'k', metaKey: true });
-    expect(screen.getByText(/Ask HomeHub/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Alfred/i })).toBeInTheDocument();
   });
 
   it('opens the dialog on Ctrl+K', () => {
     render(<CommandKLauncher householdId="hh-1" />);
     fireEvent.keyDown(window, { key: 'k', ctrlKey: true });
-    expect(screen.getByText(/Ask HomeHub/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Alfred/i })).toBeInTheDocument();
   });
 });

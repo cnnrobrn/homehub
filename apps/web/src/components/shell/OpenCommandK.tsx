@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Sidebar "Ask about anything…" trigger.
+ * Sidebar Alfred trigger.
  *
  * Fires a custom `hh:open-command-k` event that `CommandKLauncher`
  * (rendered in the top bar) listens for. Keeping the launcher's state
@@ -10,6 +10,7 @@
  */
 
 import { Kbd } from '@/components/design-system';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 
 function IconSearch() {
   return (
@@ -33,11 +34,11 @@ export function OpenCommandK() {
     <button
       type="button"
       onClick={() => window.dispatchEvent(new Event('hh:open-command-k'))}
-      aria-label="Ask about anything"
+      aria-label={`Open ${ASSISTANT_NAME}`}
       className="mb-4 flex items-center gap-2 rounded-[4px] border border-border bg-surface px-2.5 py-2 text-[12.5px] text-fg-muted transition-colors hover:bg-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-soft"
     >
       <IconSearch />
-      <span className="flex-1 text-left">Ask about anything…</span>
+      <span className="flex-1 text-left">{ASSISTANT_NAME}...</span>
       <Kbd muted>⌘</Kbd>
       <Kbd muted>K</Kbd>
     </button>

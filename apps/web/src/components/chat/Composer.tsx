@@ -25,6 +25,7 @@
 import * as React from 'react';
 
 import { Kbd } from '@/components/design-system';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 import { postChatStream, type StreamEvent } from '@/lib/chat/streamClient';
 import { cn } from '@/lib/cn';
 
@@ -54,15 +55,12 @@ export function Composer({
   const textareaRef = React.useRef<HTMLTextAreaElement>(null);
 
   React.useEffect(() => {
-    if (prefill && prefill !== value) {
-      setValue(prefill);
-      // Focus so the member can edit or hit enter immediately.
-      textareaRef.current?.focus();
-      if (onPrefillConsumed) onPrefillConsumed();
-    }
-    // Only react to new `prefill` values — internal edits to `value`
-    // must not re-trigger this effect or they'd reset user typing.
-  }, [prefill]);
+    if (!prefill) return;
+    setValue(prefill);
+    // Focus so the member can edit or hit enter immediately.
+    textareaRef.current?.focus();
+    if (onPrefillConsumed) onPrefillConsumed();
+  }, [onPrefillConsumed, prefill]);
 
   async function submit() {
     const trimmed = value.trim();
@@ -122,7 +120,7 @@ export function Composer({
         onKeyDown={handleKeyDown}
         onFocus={() => setFocused(true)}
         onBlur={() => setFocused(false)}
-        placeholder={placeholder ?? 'ask about the household, or just think out loud…'}
+        placeholder={placeholder ?? `Ask ${ASSISTANT_NAME} about the household...`}
         rows={2}
         className="w-full resize-none border-0 bg-transparent p-0 text-[14px] leading-[1.5] text-fg outline-none placeholder:text-fg-muted disabled:opacity-60"
         disabled={submitting}

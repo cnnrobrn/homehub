@@ -7,7 +7,6 @@
       "Edit(./**)",
       "Glob(**)",
       "Grep(**)",
-
       "Bash(pnpm:*)",
       "Bash(npm:*)",
       "Bash(npx:*)",
@@ -18,7 +17,6 @@
       "Bash(vitest:*)",
       "Bash(playwright:*)",
       "Bash(turbo:*)",
-
       "Bash(git status:*)",
       "Bash(git log:*)",
       "Bash(git diff:*)",
@@ -45,7 +43,6 @@
       "Bash(git worktree remove:*)",
       "Bash(git remote -v)",
       "Bash(git remote add:*)",
-
       "Bash(gh auth status)",
       "Bash(gh repo view:*)",
       "Bash(gh repo create:*)",
@@ -60,7 +57,6 @@
       "Bash(gh issue create:*)",
       "Bash(gh issue list:*)",
       "Bash(gh api repos:*)",
-
       "Bash(supabase start)",
       "Bash(supabase stop)",
       "Bash(supabase status)",
@@ -74,7 +70,6 @@
       "Bash(supabase db push:*)",
       "Bash(supabase db pull:*)",
       "Bash(supabase gen types:*)",
-
       "Bash(docker compose up:*)",
       "Bash(docker compose ps)",
       "Bash(docker compose logs:*)",
@@ -83,10 +78,8 @@
       "Bash(docker ps)",
       "Bash(docker logs:*)",
       "Bash(docker inspect:*)",
-
       "Bash(railway:*)",
       "Bash(vercel:*)",
-
       "Bash(ls:*)",
       "Bash(pwd)",
       "Bash(cat:*)",
@@ -101,7 +94,6 @@
       "Bash(env)",
       "Bash(curl -s:*)",
       "Bash(curl -sS:*)",
-
       "Bash(cmux list-sessions)",
       "Bash(cmux list-windows:*)",
       "Bash(cmux has-session:*)"
@@ -113,19 +105,16 @@
       "Read(./**/.env.*)",
       "Write(./.claude/settings.json)",
       "Edit(./.claude/settings.json)",
-
       "Bash(rm -rf:*)",
       "Bash(rm -r:*)",
       "Bash(rm -f:*)",
       "Bash(rm:*)",
-
       "Bash(git push --force:*)",
       "Bash(git push -f:*)",
       "Bash(git push --force-with-lease:*)",
       "Bash(git push --mirror:*)",
       "Bash(git push --delete:*)",
       "Bash(git push origin --delete:*)",
-
       "Bash(git reset --hard:*)",
       "Bash(git reset --merge:*)",
       "Bash(git clean -f:*)",
@@ -137,35 +126,37 @@
       "Bash(git restore .)",
       "Bash(git restore -- :*)",
       "Bash(git restore --staged :*)",
-
       "Bash(git branch -D:*)",
       "Bash(git branch -d:*)",
       "Bash(git tag -d:*)",
       "Bash(git update-ref -d:*)",
-
       "Bash(git config:*)",
       "Bash(git filter-branch:*)",
       "Bash(git rebase --abort:*)",
-
       "Bash(supabase db reset)",
       "Bash(supabase db reset:*)",
       "Bash(supabase projects delete:*)",
-
       "Bash(docker system prune:*)",
       "Bash(docker volume rm:*)",
       "Bash(docker volume prune:*)",
       "Bash(docker container rm:*)",
       "Bash(docker image rm:*)",
       "Bash(docker rmi:*)",
-
       "Bash(vercel remove:*)",
       "Bash(railway delete:*)",
-
       "Bash(gh repo delete:*)",
-
       "Bash(sudo:*)",
       "Bash(chown:*)",
-      "Bash(chmod 777:*)"
+      "Bash(chmod 777:*)",
+      "Bash(gcloud services enable:*)",
+      "Bash(gcloud artifacts:*)",
+      "Bash(gcloud run deploy:*)",
+      "Bash(gcloud storage:*)",
+      "Bash(gcloud secrets:*)",
+      "Bash(gcloud iam:*)",
+      "Bash(gcloud config set project:*)",
+      "Bash(docker build:*)",
+      "Bash(docker push:*)"
     ]
   }
 }

@@ -31,15 +31,18 @@ const TABS: Tab[] = [
   { label: 'Alerts', href: '/social/alerts' },
 ];
 
-export function SocialSubNav() {
+export function SocialSubNav({ visibleHrefs }: { visibleHrefs?: readonly string[] }) {
   const pathname = usePathname() ?? '/social';
+  const tabs = visibleHrefs
+    ? TABS.filter((tab) => tab.href === '/social' || visibleHrefs.includes(tab.href))
+    : TABS;
 
   return (
     <nav
       aria-label="Social sections"
       className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-surface p-1 text-sm"
     >
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active =
           tab.href === '/social' ? pathname === '/social' : pathname.startsWith(tab.href);
         return (

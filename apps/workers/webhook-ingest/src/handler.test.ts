@@ -21,6 +21,7 @@ import {
   GMAIL_HISTORY_ID_KIND,
   GMAIL_PROVIDER,
   GMAIL_WATCH_KIND,
+  INSTACART_PROVIDER,
   YNAB_PROVIDER,
   handleGoogleCalendarWebhook,
   handleGoogleMailPubsubWebhook,
@@ -790,6 +791,121 @@ describe('handleNangoWebhook — ynab', () => {
           status: 'active',
           provider: YNAB_PROVIDER,
           nango_connection_id: 'nango-ynab-del',
+        } as unknown as ConnectionRow,
+      ],
+    });
+    const { queues } = makeQueues();
+    const res = await handleNangoWebhook(
+      {
+        ...baseDeps(),
+        supabase: seeded.supabase as never,
+        queues,
+        env: { NANGO_WEBHOOK_SECRET: SECRET },
+      },
+      { headers, rawBody },
+    );
+    expect(res.status).toBe(204);
+    expect(seeded.connectionUpdates[0]).toMatchObject({ status: 'revoked' });
+  });
+});
+
+describe('handleNangoWebhook — instacart', () => {
+  const SECRET = 'nango-secret';
+
+  function signed(body: unknown): { rawBody: Buffer; headers: Record<string, string> } {
+    const rawBody = Buffer.from(JSON.stringify(body));
+    const signature = createHmac('sha256', SECRET).update(rawBody).digest('hex');
+    return { rawBody, headers: { 'x-nango-signature': signature } };
+  }
+
+  it('on connection.created: upserts connection and enqueues sync_full:instacart', async () => {
+    const payload = {
+      type: 'connection.created',
+      providerConfigKey: 'instacart',
+      connectionId: 'nango-instacart-1',
+      endUser: {
+        tags: {
+          household_id: HOUSEHOLD_ID,
+          member_id: 'm1',
+          instacart_store_id: 'store-1',
+        },
+      },
+    };
+    const { rawBody, headers } = signed(payload);
+    const { supabase, connectionUpserts, auditInserts } = makeSupabase({
+      upsertConnectionReturns: {
+        id: CONNECTION_ID,
+        household_id: HOUSEHOLD_ID,
+        nango_connection_id: 'nango-instacart-1',
+      },
+    });
+    const { queues, sends } = makeQueues();
+    const res = await handleNangoWebhook(
+      {
+        ...baseDeps(),
+        supabase: supabase as never,
+        queues,
+        env: { NANGO_WEBHOOK_SECRET: SECRET },
+      },
+      { headers, rawBody },
+    );
+
+    expect(res.status).toBe(204);
+    expect(connectionUpserts).toHaveLength(1);
+    expect(connectionUpserts[0]).toMatchObject({
+      provider: INSTACART_PROVIDER,
+      nango_connection_id: 'nango-instacart-1',
+      status: 'active',
+      metadata: { instacart_store_id: 'store-1' },
+    });
+    expect(sends[0]?.queue).toBe(queueNames.syncFull(INSTACART_PROVIDER));
+    expect(sends[0]?.payload).toMatchObject({
+      kind: 'sync.instacart.full',
+      entity_id: CONNECTION_ID,
+      household_id: HOUSEHOLD_ID,
+    });
+    expect(auditInserts[0]).toMatchObject({
+      action: 'sync.instacart.connection.created',
+    });
+  });
+
+  it('on connection.created: rejects when household_id missing', async () => {
+    const payload = {
+      type: 'connection.created',
+      providerConfigKey: 'instacart',
+      connectionId: 'nango-instacart-bad',
+      endUser: { tags: {} },
+    };
+    const { rawBody, headers } = signed(payload);
+    const { supabase } = makeSupabase({});
+    const { queues } = makeQueues();
+    const res = await handleNangoWebhook(
+      {
+        ...baseDeps(),
+        supabase: supabase as never,
+        queues,
+        env: { NANGO_WEBHOOK_SECRET: SECRET },
+      },
+      { headers, rawBody },
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it('on connection.deleted: marks revoked', async () => {
+    const payload = {
+      type: 'connection.deleted',
+      providerConfigKey: 'instacart',
+      connectionId: 'nango-instacart-del',
+    };
+    const { rawBody, headers } = signed(payload);
+    const seeded = makeSupabase({
+      connections: [
+        {
+          id: CONNECTION_ID,
+          household_id: HOUSEHOLD_ID,
+          status: 'active',
+          provider: INSTACART_PROVIDER,
+          nango_connection_id: 'nango-instacart-del',
         } as unknown as ConnectionRow,
       ],
     });

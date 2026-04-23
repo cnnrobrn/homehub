@@ -84,11 +84,16 @@ export const MONARCH_PROVIDER = 'monarch';
 export const PLAID_PROVIDER_KEY = 'plaid';
 export const PLAID_PROVIDER = 'plaid';
 
+export const INSTACART_PROVIDER_KEY = 'instacart';
+export const INSTACART_PROVIDER = 'instacart';
+
 const FINANCIAL_PROVIDER_KEYS = new Set<string>([
   YNAB_PROVIDER_KEY,
   MONARCH_PROVIDER_KEY,
   PLAID_PROVIDER_KEY,
 ]);
+
+const GROCERY_PROVIDER_KEYS = new Set<string>([INSTACART_PROVIDER_KEY]);
 
 // `sync.cursor.value` for a gcal channel is JSON
 // `{"channel_id","resource_id","expiration"}`. Connection is the FK.
@@ -410,7 +415,8 @@ export async function handleNangoWebhook(
   if (
     providerKey !== GCAL_PROVIDER_KEY &&
     providerKey !== GMAIL_PROVIDER_KEY &&
-    !FINANCIAL_PROVIDER_KEYS.has(providerKey)
+    !FINANCIAL_PROVIDER_KEYS.has(providerKey) &&
+    !GROCERY_PROVIDER_KEYS.has(providerKey)
   ) {
     deps.log.warn('nango webhook for provider we do not handle', { provider: providerKey });
     return { status: 204, body: {} };
@@ -433,6 +439,13 @@ export async function handleNangoWebhook(
         tags: payload.endUser?.tags ?? {},
       });
     }
+    if (providerKey === INSTACART_PROVIDER_KEY) {
+      return handleGroceryConnectionCreated(deps, {
+        providerKey,
+        nangoConnectionId: connectionId,
+        tags: payload.endUser?.tags ?? {},
+      });
+    }
     // Financial (ynab / monarch / plaid).
     return handleFinancialConnectionCreated(deps, {
       providerKey,
@@ -446,6 +459,12 @@ export async function handleNangoWebhook(
     }
     if (providerKey === GMAIL_PROVIDER_KEY) {
       return handleGmailConnectionDeleted(deps, { nangoConnectionId: connectionId });
+    }
+    if (providerKey === INSTACART_PROVIDER_KEY) {
+      return handleGroceryConnectionDeleted(deps, {
+        providerKey,
+        nangoConnectionId: connectionId,
+      });
     }
     return handleFinancialConnectionDeleted(deps, {
       providerKey,
@@ -798,6 +817,127 @@ async function handleGmailConnectionDeleted(
   });
 
   deps.log.info('gmail connection revoked', { connection_id: connection.id });
+  return { status: 204, body: {} };
+}
+
+// ---- grocery (instacart) ------------------------------------------------
+
+function groceryProviderLabel(providerKey: string): 'instacart' | null {
+  if (providerKey === INSTACART_PROVIDER_KEY) return INSTACART_PROVIDER;
+  return null;
+}
+
+async function handleGroceryConnectionCreated(
+  deps: WebhookIngestDeps,
+  args: { providerKey: string; nangoConnectionId: string; tags: Record<string, string> },
+): Promise<WebhookResult> {
+  const providerLabel = groceryProviderLabel(args.providerKey);
+  if (!providerLabel) {
+    deps.log.warn('unknown grocery provider key; ignoring', { provider: args.providerKey });
+    return { status: 204, body: {} };
+  }
+
+  const householdId = args.tags.household_id;
+  const memberId = args.tags.member_id ?? null;
+  if (!householdId) {
+    deps.log.error('nango grocery connection.created missing household_id tag', {
+      nango_connection_id: args.nangoConnectionId,
+      provider: providerLabel,
+    });
+    return { status: 400, body: { error: 'household_id tag required on connect session' } };
+  }
+
+  const metadata: Record<string, unknown> = {};
+  if (args.tags.instacart_store_id) {
+    metadata.instacart_store_id = args.tags.instacart_store_id;
+  }
+
+  const { data: upserted, error: upsertErr } = await (deps.supabase
+    .schema('sync')
+    .from('provider_connection')
+    .upsert(
+      {
+        household_id: householdId,
+        member_id: memberId,
+        provider: providerLabel,
+        nango_connection_id: args.nangoConnectionId,
+        status: 'active',
+        updated_at: new Date().toISOString(),
+        metadata: metadata as unknown as Json,
+      } as never,
+      { onConflict: 'household_id,provider,nango_connection_id' },
+    )
+    .select('id, household_id, nango_connection_id')
+    .maybeSingle() as unknown as Promise<{
+    data: { id: string; household_id: string; nango_connection_id: string } | null;
+    error: { message: string } | null;
+  }>);
+  if (upsertErr) {
+    throw new Error(`provider_connection upsert failed: ${upsertErr.message}`);
+  }
+  if (!upserted) {
+    throw new Error('provider_connection upsert returned no row');
+  }
+
+  const now = (deps.now ?? (() => new Date()))();
+  await deps.queues.send(queueNames.syncFull(providerLabel), {
+    household_id: upserted.household_id,
+    kind: `sync.${providerLabel}.full`,
+    entity_id: upserted.id,
+    version: 1,
+    enqueued_at: now.toISOString(),
+  });
+
+  await writeAudit(deps.supabase, {
+    household_id: upserted.household_id,
+    action: `sync.${providerLabel}.connection.created`,
+    resource_id: upserted.id,
+    after: { nango_connection_id: args.nangoConnectionId, member_id: memberId },
+  });
+
+  deps.log.info('grocery connection created; full sync enqueued', {
+    connection_id: upserted.id,
+    household_id: upserted.household_id,
+    provider: providerLabel,
+  });
+  return { status: 204, body: {} };
+}
+
+async function handleGroceryConnectionDeleted(
+  deps: WebhookIngestDeps,
+  args: { providerKey: string; nangoConnectionId: string },
+): Promise<WebhookResult> {
+  const providerLabel = groceryProviderLabel(args.providerKey);
+  if (!providerLabel) return { status: 204, body: {} };
+
+  const { data: connection, error: lookupErr } = await deps.supabase
+    .schema('sync')
+    .from('provider_connection')
+    .select('id, household_id')
+    .eq('provider', providerLabel)
+    .eq('nango_connection_id', args.nangoConnectionId)
+    .maybeSingle();
+  if (lookupErr) throw new Error(`connection lookup failed: ${lookupErr.message}`);
+  if (!connection) return { status: 204, body: {} };
+
+  await deps.supabase
+    .schema('sync')
+    .from('provider_connection')
+    .update({ status: 'revoked', updated_at: new Date().toISOString() })
+    .eq('id', connection.id);
+  await deps.supabase.schema('sync').from('cursor').delete().eq('connection_id', connection.id);
+
+  await writeAudit(deps.supabase, {
+    household_id: connection.household_id,
+    action: `sync.${providerLabel}.connection.deleted`,
+    resource_id: connection.id,
+    after: { nango_connection_id: args.nangoConnectionId },
+  });
+
+  deps.log.info('grocery connection revoked', {
+    connection_id: connection.id,
+    provider: providerLabel,
+  });
   return { status: 204, body: {} };
 }
 

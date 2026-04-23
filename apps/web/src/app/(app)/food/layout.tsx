@@ -14,6 +14,7 @@ import { FoodSubNav } from '@/components/food/FoodSubNav';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { cn } from '@/lib/cn';
 import { hasFoodRead, type SegmentGrant } from '@/lib/food';
+import { getVisibleSetupHrefs } from '@/lib/onboarding/setup';
 
 export const metadata = {
   title: 'Food — HomeHub',
@@ -57,6 +58,8 @@ export default async function FoodLayout({ children }: { children: ReactNode }) 
     );
   }
 
+  const visibleHrefs = getVisibleSetupHrefs(ctx.household.settings, 'food');
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-2">
@@ -65,7 +68,7 @@ export default async function FoodLayout({ children }: { children: ReactNode }) 
           Meals, pantry, grocery orders, dishes, summaries, and alerts.
         </p>
       </header>
-      <FoodSubNav />
+      {visibleHrefs ? <FoodSubNav visibleHrefs={visibleHrefs} /> : <FoodSubNav />}
       {children}
     </div>
   );

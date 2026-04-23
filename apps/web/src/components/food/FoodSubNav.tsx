@@ -35,14 +35,17 @@ const TABS: Tab[] = [
   { label: 'Alerts', href: '/food/alerts' },
 ];
 
-export function FoodSubNav() {
+export function FoodSubNav({ visibleHrefs }: { visibleHrefs?: readonly string[] }) {
   const pathname = usePathname() ?? '/food';
+  const tabs = visibleHrefs
+    ? TABS.filter((tab) => tab.href === '/food' || visibleHrefs.includes(tab.href))
+    : TABS;
   return (
     <nav
       aria-label="Food sections"
       className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-surface p-1 text-sm"
     >
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active = tab.href === '/food' ? pathname === '/food' : pathname.startsWith(tab.href);
         return (
           <Link

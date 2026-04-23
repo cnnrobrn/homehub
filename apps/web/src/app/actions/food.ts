@@ -15,6 +15,7 @@
 'use server';
 
 import {
+  ForbiddenError,
   UnauthorizedError,
   ValidationError,
   createServiceClient,
@@ -28,6 +29,11 @@ import { type ActionResult, ok, toErr } from './_envelope';
 
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
+import {
+  getFoodProviderConnectionStatus,
+  loadMealPlanPantrySummary,
+  type MealPlanGroceryItem,
+} from '@/lib/food';
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
@@ -54,6 +60,33 @@ async function requireMemberForHousehold(householdId: string): Promise<AuthedAct
     memberId,
     service,
   };
+}
+
+async function requireFoodWrite(actor: AuthedActor): Promise<void> {
+  const { data, error } = await actor.service
+    .schema('app')
+    .from('member_segment_grant')
+    .select('access')
+    .eq('member_id', actor.memberId)
+    .eq('segment', 'food')
+    .maybeSingle();
+  if (error) throw new Error(`requireFoodWrite: ${error.message}`);
+  if (data?.access !== 'write') {
+    throw new ForbiddenError('food write access required');
+  }
+}
+
+function shoppingDateForWeek(weekStartIso: string): string {
+  const d = new Date(`${weekStartIso}T00:00:00Z`);
+  const dow = d.getUTCDay();
+  const delta = dow === 6 ? 0 : (6 - dow + 7) % 7;
+  d.setUTCDate(d.getUTCDate() + delta);
+  return d.toISOString().slice(0, 10);
+}
+
+function groceryQuantity(item: MealPlanGroceryItem): number | null {
+  if (item.shortageQuantity !== null && item.shortageQuantity > 0) return item.shortageQuantity;
+  return item.neededQuantity;
 }
 
 // ==========================================================================
@@ -260,6 +293,160 @@ export async function deletePantryItemAction(
 }
 
 // ==========================================================================
+// createInstacartDraftFromMealPlanAction
+// ==========================================================================
+
+const createInstacartDraftFromMealPlanSchema = z.object({
+  householdId: z.string().uuid(),
+  from: isoDate,
+  to: isoDate,
+});
+
+export async function createInstacartDraftFromMealPlanAction(
+  input: z.input<typeof createInstacartDraftFromMealPlanSchema>,
+): Promise<
+  ActionResult<{
+    groceryListId: string;
+    itemCount: number;
+    plannedFor: string;
+    instacartConnected: boolean;
+  }>
+> {
+  try {
+    const parsed = createInstacartDraftFromMealPlanSchema.parse(input);
+    const actor = await requireMemberForHousehold(parsed.householdId);
+    await requireFoodWrite(actor);
+
+    const summary = await loadMealPlanPantrySummary(
+      {
+        householdId: actor.householdId,
+        from: parsed.from,
+        to: parsed.to,
+      },
+      {
+        client: actor.service,
+        grants: [{ segment: 'food', access: 'write' }],
+      },
+    );
+
+    const items = summary.missingItems;
+    if (items.length === 0) {
+      throw new ValidationError('meal plan is already covered by pantry', [
+        {
+          path: 'from',
+          message: 'no missing ingredients could be resolved for this date range',
+        },
+      ]);
+    }
+
+    const plannedFor = shoppingDateForWeek(parsed.from);
+    const { data: existing, error: existingErr } = await actor.service
+      .schema('app')
+      .from('grocery_list')
+      .select('id')
+      .eq('household_id', actor.householdId)
+      .eq('status', 'draft')
+      .eq('provider', 'instacart')
+      .eq('planned_for', plannedFor)
+      .order('updated_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingErr) {
+      throw new Error(`createInstacartDraftFromMealPlanAction lookup: ${existingErr.message}`);
+    }
+
+    let groceryListId = (existing as { id: string } | null)?.id ?? null;
+    const stamp = new Date().toISOString();
+    if (groceryListId) {
+      const { error: updateErr } = await actor.service
+        .schema('app')
+        .from('grocery_list')
+        .update({ updated_at: stamp })
+        .eq('id', groceryListId)
+        .eq('household_id', actor.householdId);
+      if (updateErr) {
+        throw new Error(`createInstacartDraftFromMealPlanAction update: ${updateErr.message}`);
+      }
+    } else {
+      const { data: inserted, error: insertErr } = await actor.service
+        .schema('app')
+        .from('grocery_list')
+        .insert({
+          household_id: actor.householdId,
+          planned_for: plannedFor,
+          status: 'draft',
+          provider: 'instacart',
+        })
+        .select('id')
+        .single();
+      if (insertErr || !inserted) {
+        throw new Error(
+          `createInstacartDraftFromMealPlanAction insert: ${insertErr?.message ?? 'no id'}`,
+        );
+      }
+      groceryListId = inserted.id as string;
+    }
+
+    const { error: deleteErr } = await actor.service
+      .schema('app')
+      .from('grocery_list_item')
+      .delete()
+      .eq('household_id', actor.householdId)
+      .eq('list_id', groceryListId);
+    if (deleteErr) {
+      throw new Error(`createInstacartDraftFromMealPlanAction item delete: ${deleteErr.message}`);
+    }
+
+    const rows = items.map((item) => ({
+      list_id: groceryListId,
+      household_id: actor.householdId,
+      name: item.name,
+      quantity: groceryQuantity(item),
+      unit: item.unit,
+      source_meal_id: item.sourceMealIds[0] ?? null,
+      checked: false,
+    }));
+    const { error: itemErr } = await actor.service
+      .schema('app')
+      .from('grocery_list_item')
+      .insert(rows);
+    if (itemErr) {
+      throw new Error(`createInstacartDraftFromMealPlanAction item insert: ${itemErr.message}`);
+    }
+
+    const connection = await getFoodProviderConnectionStatus(
+      { householdId: actor.householdId, provider: 'instacart' },
+      { client: actor.service, grants: [{ segment: 'food', access: 'write' }] },
+    );
+
+    await writeAuditEvent(actor.service, {
+      household_id: actor.householdId,
+      actor_user_id: actor.userId,
+      action: existing
+        ? 'app.grocery_list.instacart_refreshed'
+        : 'app.grocery_list.instacart_created',
+      resource_type: 'app.grocery_list',
+      resource_id: groceryListId,
+      after: {
+        planned_for: plannedFor,
+        item_count: items.length,
+        provider: 'instacart',
+        instacart_connected: connection.active,
+      },
+    });
+
+    return ok({
+      groceryListId,
+      itemCount: items.length,
+      plannedFor,
+      instacartConnected: connection.active,
+    });
+  } catch (err) {
+    return toErr(err);
+  }
+}
+
+// ==========================================================================
 // approveGroceryDraftAction — materializes a propose_grocery_order
 // suggestion into an app.grocery_list draft.
 // ==========================================================================
@@ -309,8 +496,13 @@ export async function approveGroceryDraftAction(
     }
     const actor = await requireMemberForHousehold(sug.household_id);
 
-    const preview = (sug.preview as { planned_for?: unknown; items?: unknown }) ?? {};
+    const preview =
+      (sug.preview as { planned_for?: unknown; provider?: unknown; items?: unknown }) ?? {};
     const plannedFor = typeof preview.planned_for === 'string' ? preview.planned_for : null;
+    const provider =
+      typeof preview.provider === 'string' && preview.provider.length > 0
+        ? preview.provider
+        : 'suggestion_approval';
     const items = Array.isArray(preview.items)
       ? (preview.items as Array<Record<string, unknown>>)
       : [];
@@ -322,7 +514,7 @@ export async function approveGroceryDraftAction(
         household_id: actor.householdId,
         planned_for: plannedFor,
         status: 'draft',
-        provider: 'suggestion_approval',
+        provider,
       })
       .select('id')
       .single();
@@ -363,7 +555,7 @@ export async function approveGroceryDraftAction(
       action: 'app.suggestion.approved',
       resource_type: 'app.suggestion',
       resource_id: sug.id,
-      after: { kind: 'propose_grocery_order', grocery_list_id: listId },
+      after: { kind: 'propose_grocery_order', grocery_list_id: listId, provider },
     });
     return ok({ groceryListId: listId });
   } catch (err) {

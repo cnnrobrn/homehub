@@ -14,6 +14,7 @@ import { FunSubNav } from '@/components/fun/FunSubNav';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { cn } from '@/lib/cn';
 import { hasFunRead, type SegmentGrant } from '@/lib/fun';
+import { getVisibleSetupHrefs } from '@/lib/onboarding/setup';
 
 export const metadata = {
   title: 'Fun — HomeHub',
@@ -57,6 +58,8 @@ export default async function FunLayout({ children }: { children: ReactNode }) {
     );
   }
 
+  const visibleHrefs = getVisibleSetupHrefs(ctx.household.settings, 'fun');
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-2">
@@ -65,7 +68,7 @@ export default async function FunLayout({ children }: { children: ReactNode }) {
           Trips, hobbies, outings, reservations, and your household queue.
         </p>
       </header>
-      <FunSubNav />
+      {visibleHrefs ? <FunSubNav visibleHrefs={visibleHrefs} /> : <FunSubNav />}
       {children}
     </div>
   );

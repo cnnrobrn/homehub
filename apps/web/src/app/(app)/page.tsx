@@ -14,9 +14,8 @@
  *
  * Data comes from the same helpers the rest of the app uses
  * (`listEvents`, `listPendingSuggestions`) so the surface is real even
- * when M0 fixtures are thin. Each section degrades to a quiet empty
- * state rather than vanishing — the page is always present at a
- * consistent rhythm.
+ * when M0 fixtures are thin. Empty sections stay hidden until there is
+ * real data or Alfred setup context to populate them.
  */
 
 import Link from 'next/link';
@@ -24,10 +23,12 @@ import Link from 'next/link';
 import { listMembersAction } from '@/app/actions/members';
 import { RealtimeEventRefresher } from '@/components/calendar/RealtimeEventRefresher';
 import { Eyebrow, LookCard, SegDot, WarmButton } from '@/components/design-system';
-import { SEGMENTS, type SegmentId } from '@/components/design-system/segment';
+import { type SegmentId } from '@/components/design-system/segment';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { listEvents, type CalendarEventRow, type Segment } from '@/lib/events/listEvents';
 import { endOfToday, startOfToday } from '@/lib/events/range';
+import { SETUP_SECTIONS, buildAlfredSetupPrompt, chatPromptHref } from '@/lib/onboarding/setup';
 import { listPendingSuggestions, type SuggestionRowView } from '@/lib/suggestions';
 
 const WEEK_LIMIT = 40;
@@ -105,6 +106,7 @@ export default async function DashboardPage() {
   const membersRes = await listMembersAction({ householdId: ctx.household.id });
   const members = membersRes.ok ? membersRes.data : [];
   const me = members.find((m) => m.id === ctx.member.id) ?? null;
+  const hasDashboardContent = todayEvents.length > 0 || pending.length > 0 || weekEvents.length > 0;
 
   return (
     <div className="mx-auto flex w-full max-w-[980px] flex-col px-10 pt-9 pb-20">
@@ -121,9 +123,12 @@ export default async function DashboardPage() {
         <GreetingSub todayCount={todayEvents.length} pendingCount={pending.length} />
       </header>
 
-      {/* Today */}
-      <SectionHead>Today</SectionHead>
-      <TodayCard events={todayEvents} />
+      {todayEvents.length > 0 ? (
+        <>
+          <SectionHead>Today</SectionHead>
+          <TodayCard events={todayEvents} />
+        </>
+      ) : null}
 
       {/* Worth a look */}
       {pending.length > 0 ? (
@@ -140,16 +145,20 @@ export default async function DashboardPage() {
       ) : null}
 
       {/* Rest of the week + Coming up */}
-      <div className="mt-11 grid grid-cols-1 gap-5 md:grid-cols-2">
-        <div>
-          <SectionHead>The rest of the week</SectionHead>
-          <WeekCard events={weekEvents} />
+      {weekEvents.length > 0 ? (
+        <div className="mt-11 grid grid-cols-1 gap-5 md:grid-cols-2">
+          <div>
+            <SectionHead>The rest of the week</SectionHead>
+            <WeekCard events={weekEvents} />
+          </div>
+          <div>
+            <SectionHead>Coming up</SectionHead>
+            <ComingUpCard events={weekEvents} />
+          </div>
         </div>
-        <div>
-          <SectionHead>Coming up</SectionHead>
-          <ComingUpCard events={weekEvents} />
-        </div>
-      </div>
+      ) : null}
+
+      {!hasDashboardContent ? <AlfredSetupStart householdName={ctx.household.name} /> : null}
 
       {/* Quiet footer */}
       <footer className="mt-12 flex items-center gap-4 border-t border-border pt-5 font-mono text-[11px] tracking-[0.02em] text-fg-muted">
@@ -158,7 +167,7 @@ export default async function DashboardPage() {
         <span>{pending.length === 0 ? 'nothing urgent' : 'three small things to decide'}</span>
         <div className="flex-1" />
         <Link href="/chat" className="text-fg-muted transition-colors hover:text-fg">
-          ask about anything →
+          open {ASSISTANT_NAME} →
         </Link>
       </footer>
     </div>
@@ -201,13 +210,6 @@ function SectionHead({ children, sub }: { children: React.ReactNode; sub?: React
 /* ── Today — a single grouped card with one row per event ──────── */
 
 function TodayCard({ events }: { events: readonly CalendarEventRow[] }) {
-  if (events.length === 0) {
-    return (
-      <EmptyCard>
-        Nothing on the calendar today. When events land, they&apos;ll show up here.
-      </EmptyCard>
-    );
-  }
   return (
     <div className="overflow-hidden rounded-[6px] border border-border bg-surface shadow-card">
       {events.map((ev, i) => (
@@ -268,9 +270,6 @@ function PendingLookCard({ s }: { s: SuggestionRowView }) {
 
 function WeekCard({ events }: { events: readonly CalendarEventRow[] }) {
   const slice = events.slice(0, 8);
-  if (slice.length === 0) {
-    return <EmptyCard>Nothing else on the week. A good sign.</EmptyCard>;
-  }
   return (
     <div className="overflow-hidden rounded-[6px] border border-border bg-surface">
       {slice.map((ev, i) => (
@@ -299,10 +298,6 @@ function ComingUpCard({ events }: { events: readonly CalendarEventRow[] }) {
   const notable = events.filter((e) => e.allDay).slice(0, 4);
   const fallback = events.slice(-4);
   const picks = notable.length > 0 ? notable : fallback;
-
-  if (picks.length === 0) {
-    return <EmptyCard>Nothing big on the horizon. We&apos;ll let you know.</EmptyCard>;
-  }
 
   const today = new Date();
   return (
@@ -334,17 +329,38 @@ function ComingUpCard({ events }: { events: readonly CalendarEventRow[] }) {
   );
 }
 
-/* ── Empty-state card ──────────────────────────────────────────── */
+/* ── First-run empty state ─────────────────────────────────────── */
 
-function EmptyCard({ children }: { children: React.ReactNode }) {
+function AlfredSetupStart({ householdName }: { householdName: string }) {
+  const prompts = SETUP_SECTIONS.map((section) => {
+    const prompt =
+      buildAlfredSetupPrompt({
+        householdName,
+        selectedSegmentIds: [section.id],
+        selectedPromptIds: section.prompts.map((item) => item.id),
+      }) ?? `Alfred, help me set up ${section.title}.`;
+    return { section, prompt };
+  });
+
   return (
-    <div className="rounded-[6px] border border-border bg-surface px-5 py-5 text-[13.5px] leading-[1.55] text-fg-muted shadow-card">
-      {children}
-    </div>
+    <section className="mt-2 border-y border-border py-7">
+      <SectionHead>Start with {ASSISTANT_NAME}</SectionHead>
+      <p className="m-0 max-w-[560px] text-[14px] leading-[1.6] text-fg-muted">
+        Nothing is surfaced yet. Pick an area and {ASSISTANT_NAME} will ask for the details needed
+        before showing that section here.
+      </p>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {prompts.map(({ section, prompt }) => (
+          <Link
+            key={section.id}
+            href={chatPromptHref(prompt)}
+            className="inline-flex items-center gap-2 rounded-full border border-border bg-surface px-3 py-1.5 text-[12px] text-fg-muted no-underline transition-colors hover:bg-surface-soft hover:text-fg"
+          >
+            <SegDot segment={section.id} size={7} />
+            Set up {section.title}
+          </Link>
+        ))}
+      </div>
+    </section>
   );
 }
-
-// Keep the un-used import from triggering a lint error when SEGMENTS is
-// referenced in sibling files only; we use the `SEGMENTS` export for
-// segment metadata in a future revision of this view.
-void SEGMENTS;

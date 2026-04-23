@@ -33,6 +33,21 @@ function statusLabel(status: GroceryListRow['status']): string {
   }
 }
 
+function providerLabel(provider: string | null): string {
+  switch (provider) {
+    case 'instacart':
+      return 'Instacart';
+    case 'pantry_diff':
+      return 'Pantry diff';
+    case 'suggestion_approval':
+      return 'Approved proposal';
+    case 'stub':
+      return 'Export';
+    default:
+      return provider ?? 'Manual';
+  }
+}
+
 export function GroceryListsView({ lists, pendingSuggestions }: GroceryListsViewProps) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -146,7 +161,8 @@ export function GroceryListsView({ lists, pendingSuggestions }: GroceryListsView
                       : 'Undated'}
                   </span>
                   <span className="text-xs uppercase tracking-wide text-fg-muted">
-                    {statusLabel(list.status)} · {list.items.length} item
+                    {providerLabel(list.provider)} · {statusLabel(list.status)} ·{' '}
+                    {list.items.length} item
                     {list.items.length === 1 ? '' : 's'}
                   </span>
                 </div>

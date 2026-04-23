@@ -146,11 +146,16 @@ async function runSync(deps: GrocerySyncHandlerDeps, args: RunSyncArgs): Promise
     ingestion_enabled: deps.ingestionEnabled,
   });
 
-  const orders = await provider.listRecentOrders({
-    connectionId: connection.nango_connection_id,
-    sinceDays: args.mode === 'full' ? 365 : 30,
-  });
-  log.info('orders fetched', { count: orders.length });
+  let orders: GroceryOrder[] = [];
+  if (deps.ingestionEnabled || args.providerName === 'stub') {
+    orders = await provider.listRecentOrders({
+      connectionId: connection.nango_connection_id,
+      sinceDays: args.mode === 'full' ? 365 : 30,
+    });
+    log.info('orders fetched', { count: orders.length });
+  } else {
+    log.info('grocery ingestion disabled; skipping provider fetch');
+  }
 
   let upsertedCount = 0;
   if (deps.ingestionEnabled && orders.length > 0) {

@@ -26,15 +26,18 @@ const TABS: Tab[] = [
   { label: 'Alerts', href: '/fun/alerts' },
 ];
 
-export function FunSubNav() {
+export function FunSubNav({ visibleHrefs }: { visibleHrefs?: readonly string[] }) {
   const pathname = usePathname() ?? '/fun';
+  const tabs = visibleHrefs
+    ? TABS.filter((tab) => tab.href === '/fun' || visibleHrefs.includes(tab.href))
+    : TABS;
 
   return (
     <nav
       aria-label="Fun sections"
       className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-surface p-1 text-sm"
     >
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active = tab.href === '/fun' ? pathname === '/fun' : pathname.startsWith(tab.href);
         return (
           <Link

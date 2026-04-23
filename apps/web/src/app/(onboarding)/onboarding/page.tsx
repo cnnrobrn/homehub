@@ -17,6 +17,7 @@ import { redirect } from 'next/navigation';
 
 import { OnboardingForm } from '@/components/auth/OnboardingForm';
 import { HomeHubMark } from '@/components/design-system';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 import { getHouseholdContext } from '@/lib/auth/context';
 
 export default async function OnboardingPage() {
@@ -24,7 +25,7 @@ export default async function OnboardingPage() {
   if (ctx) redirect('/');
 
   return (
-    <div className="mx-auto flex min-h-svh w-full max-w-[460px] flex-col justify-center gap-8 px-6 py-12">
+    <div className="mx-auto flex min-h-svh w-full max-w-[720px] flex-col justify-center gap-8 px-6 py-12">
       <div className="flex flex-col gap-5">
         <div className="flex items-center gap-2">
           <HomeHubMark size={18} className="text-fg" />
@@ -35,10 +36,11 @@ export default async function OnboardingPage() {
             {'// SET UP YOUR HOUSEHOLD'}
           </div>
           <h1 className="text-[28px] leading-[1.1] font-semibold tracking-[-0.5px] text-balance">
-            start a household, or join one.
+            start a household with {ASSISTANT_NAME}.
           </h1>
           <p className="max-w-[380px] text-[14px] leading-[1.55] text-fg-muted">
-            Create a fresh household to get going, or paste an invite from someone already inside.
+            Create a household, choose what to set up first, or paste an invite from someone already
+            inside.
           </p>
         </div>
       </div>

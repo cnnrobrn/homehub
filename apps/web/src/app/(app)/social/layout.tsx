@@ -12,6 +12,7 @@ import type { ReactNode } from 'react';
 import { SocialSubNav } from '@/components/social/SocialSubNav';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { cn } from '@/lib/cn';
+import { getVisibleSetupHrefs } from '@/lib/onboarding/setup';
 import { hasSocialRead, type SegmentGrant } from '@/lib/social';
 
 export const metadata = {
@@ -56,6 +57,8 @@ export default async function SocialLayout({ children }: { children: ReactNode }
     );
   }
 
+  const visibleHrefs = getVisibleSetupHrefs(ctx.household.settings, 'social');
+
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-2">
@@ -64,7 +67,7 @@ export default async function SocialLayout({ children }: { children: ReactNode }
           People, relationships, and the household&apos;s social calendar.
         </p>
       </header>
-      <SocialSubNav />
+      {visibleHrefs ? <SocialSubNav visibleHrefs={visibleHrefs} /> : <SocialSubNav />}
       {children}
     </div>
   );

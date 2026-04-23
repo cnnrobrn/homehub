@@ -31,6 +31,7 @@ import {
   DialogTitle,
   DialogTrigger,
 } from '@/components/ui/dialog';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 
 interface CommandKLauncherProps {
   householdId: string;
@@ -117,7 +118,7 @@ export function CommandKLauncher({ householdId }: CommandKLauncherProps) {
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <div className="flex items-center justify-between gap-4">
-            <DialogTitle>Ask HomeHub</DialogTitle>
+            <DialogTitle>{ASSISTANT_NAME}</DialogTitle>
             {conversationId ? (
               <Button
                 type="button"
@@ -140,8 +141,8 @@ export function CommandKLauncher({ householdId }: CommandKLauncherProps) {
             <StreamingMessage events={stream} onFinal={() => router.refresh()} />
           ) : (
             <div className="rounded-md border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
-              Your last three turns will appear here once you start a conversation. For now, ask
-              anything to begin.
+              Your last three turns will appear here once you start a conversation. For now, ask{' '}
+              {ASSISTANT_NAME} anything to begin.
             </div>
           )}
           {error ? <div className="text-sm text-red-600">{error}</div> : null}
@@ -179,7 +180,7 @@ function InlineComposer({
         aria-label="Message composer"
         rows={2}
         disabled={disabled || busy}
-        placeholder="Ask HomeHub…"
+        placeholder={`Ask ${ASSISTANT_NAME}...`}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => {

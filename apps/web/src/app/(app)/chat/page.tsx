@@ -12,6 +12,7 @@ import { redirect } from 'next/navigation';
 
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { HomeHubMark, WarmButton } from '@/components/design-system';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 import { requireHouseholdContext } from '@/lib/auth/context';
 import { listConversationsForHousehold } from '@/lib/chat/loadConversations';
 
@@ -35,11 +36,11 @@ export default async function ChatIndexPage() {
             a quiet place to think out loud
           </div>
           <h1 className="m-0 text-[26px] font-semibold leading-[1.2] tracking-[-0.02em]">
-            start a conversation.
+            {ASSISTANT_NAME} is ready.
           </h1>
           <p className="m-0 text-[15px] leading-[1.6] text-fg-muted">
-            ask about this week, your spend, a dish you haven&apos;t had in a while, or who&apos;s
-            free saturday. the house remembers so you don&apos;t have to.
+            Ask about this week, your spend, a dish you haven&apos;t had in a while, or who&apos;s
+            free saturday. The house remembers so you don&apos;t have to.
           </p>
           <Link href="/chat/new" className="no-underline">
             <WarmButton variant="primary" size="md">

@@ -21,6 +21,7 @@ const PROVIDER_LABELS: Record<string, string> = {
   'google-mail': 'Gmail',
   gmail: 'Gmail',
   ynab: 'YNAB',
+  instacart: 'Instacart',
   monarch: 'Monarch Money',
   plaid: 'Plaid',
 };
@@ -91,6 +92,9 @@ export default async function ConnectionsPage() {
           <EmailConnectDialog />
           <Button asChild>
             <a href="/api/integrations/connect?provider=ynab">Connect YNAB</a>
+          </Button>
+          <Button asChild variant="outline">
+            <a href="/api/integrations/connect?provider=instacart">Connect Instacart</a>
           </Button>
           <span className="text-sm text-fg-muted" aria-live="polite">
             Monarch and Plaid land in later milestones.

@@ -2,8 +2,8 @@
  * Financial segment sub-navigation.
  *
  * Client Component — uses `usePathname` to highlight the active tab
- * without round-tripping the server on navigation. The list itself is
- * static so there is no data fetching here.
+ * without round-tripping the server on navigation. The server can pass
+ * the setup-visible hrefs so tabs stay hidden until they have context.
  */
 
 'use client';
@@ -37,15 +37,18 @@ const TABS: Tab[] = [
   { label: 'Alerts', href: '/financial/alerts' },
 ];
 
-export function FinancialSubNav() {
+export function FinancialSubNav({ visibleHrefs }: { visibleHrefs?: readonly string[] }) {
   const pathname = usePathname() ?? '/financial';
+  const tabs = visibleHrefs
+    ? TABS.filter((tab) => tab.href === '/financial' || visibleHrefs.includes(tab.href))
+    : TABS;
 
   return (
     <nav
       aria-label="Financial sections"
       className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-surface p-1 text-sm"
     >
-      {TABS.map((tab) => {
+      {tabs.map((tab) => {
         const active =
           tab.href === '/financial' ? pathname === '/financial' : pathname.startsWith(tab.href);
         return (

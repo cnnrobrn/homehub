@@ -18,7 +18,6 @@
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
-
 import { Composer } from './Composer';
 import { StreamingMessage } from './StreamingMessage';
 import { ToolCard, type ToolCallDisplay } from './ToolCard';
@@ -27,11 +26,13 @@ import type { ConversationTurnDisplayRow } from '@/lib/chat/loadConversations';
 import type { StreamEvent } from '@/lib/chat/streamClient';
 
 import { HomeHubMark, PillPrompt } from '@/components/design-system';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 import { cn } from '@/lib/cn';
 
 interface ChatThreadProps {
   conversationId: string;
   initialTurns: ConversationTurnDisplayRow[];
+  initialPrefill?: string | undefined;
 }
 
 const EXAMPLE_PROMPTS: readonly string[] = [
@@ -84,11 +85,11 @@ function renderTurnBody(body: string): React.ReactElement {
   );
 }
 
-export function ChatThread({ conversationId, initialTurns }: ChatThreadProps) {
+export function ChatThread({ conversationId, initialTurns, initialPrefill }: ChatThreadProps) {
   const router = useRouter();
   const [activeStream, setActiveStream] = React.useState<AsyncIterable<StreamEvent> | null>(null);
   const [streamKey, setStreamKey] = React.useState(0);
-  const [prefill, setPrefill] = React.useState<string | undefined>(undefined);
+  const [prefill, setPrefill] = React.useState<string | undefined>(initialPrefill);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
@@ -184,10 +185,10 @@ function EmptyAskState() {
         <HomeHubMark size={16} />
       </div>
       <h1 className="m-0 max-w-[460px] text-[22px] font-semibold leading-[1.25] tracking-[-0.02em]">
-        ask about anything the house knows.
+        {ASSISTANT_NAME} is ready.
       </h1>
       <p className="m-0 max-w-[440px] text-[14px] leading-[1.55] text-fg-muted">
-        schedule, money, food, someone you haven&apos;t seen in a while — just type. only you and
+        Ask about schedule, money, food, or someone you haven&apos;t seen in a while. Only you and
         the house see this.
       </p>
     </div>

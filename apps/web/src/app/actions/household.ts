@@ -33,6 +33,7 @@ import {
   previewInvitation as basePreviewInvitation,
   updateHousehold as baseUpdateHousehold,
 } from '@homehub/auth-server';
+import { type Json } from '@homehub/db';
 import { z } from 'zod';
 
 import { type ActionResult, ok, toErr } from './_envelope';
@@ -41,6 +42,7 @@ import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
 
 const segmentSchema = z.enum(['financial', 'food', 'fun', 'social', 'system']);
+const setupSegmentSchema = z.enum(['financial', 'food', 'fun', 'social']);
 const accessSchema = z.enum(['none', 'read', 'write']);
 const roleSchema = z.enum(['owner', 'adult', 'child', 'guest']);
 
@@ -49,6 +51,9 @@ const createHouseholdFormSchema = z.object({
   timezone: z.string().min(1).max(64).optional(),
   currency: z.string().length(3).optional(),
   weekStart: z.enum(['sunday', 'monday']).optional(),
+  setupSegments: z.array(setupSegmentSchema).max(4).optional(),
+  setupPromptIds: z.array(z.string().min(1).max(80)).max(24).optional(),
+  setupPrompt: z.string().max(4000).optional(),
 });
 
 export async function createHouseholdAction(
@@ -69,6 +74,48 @@ export async function createHouseholdAction(
       { userId: user.id, ...parsed },
       { email: user.email, displayName: null },
     );
+
+    const hasSetup =
+      parsed.setupSegments !== undefined ||
+      parsed.setupPromptIds !== undefined ||
+      parsed.setupPrompt !== undefined;
+    if (hasSetup) {
+      const currentSettings =
+        result.household.settings &&
+        typeof result.household.settings === 'object' &&
+        !Array.isArray(result.household.settings)
+          ? (result.household.settings as Record<string, Json>)
+          : {};
+      const currentOnboarding =
+        currentSettings.onboarding &&
+        typeof currentSettings.onboarding === 'object' &&
+        !Array.isArray(currentSettings.onboarding)
+          ? (currentSettings.onboarding as Record<string, Json>)
+          : {};
+      const settings: Record<string, Json> = {
+        ...currentSettings,
+        onboarding: {
+          ...currentOnboarding,
+          setup_segments: [...new Set(parsed.setupSegments ?? [])],
+          setup_prompt_ids: [...new Set(parsed.setupPromptIds ?? [])],
+          ...(parsed.setupPrompt ? { alfred_setup_prompt: parsed.setupPrompt } : {}),
+          completed_at: new Date().toISOString(),
+        } as Json,
+      };
+      const { data: updatedHousehold, error: updateErr } = await service
+        .schema('app')
+        .from('household')
+        .update({ settings: settings as Json })
+        .eq('id', result.household.id)
+        .select('id, name, settings, created_at')
+        .single();
+      if (updateErr) {
+        throw new Error(`onboarding setup update failed: ${updateErr.message}`);
+      }
+      if (updatedHousehold) {
+        result.household = updatedHousehold;
+      }
+    }
 
     // Tell hermes-router to allocate a GCS state prefix for this
     // household. Cheap operation (a row update), but worth doing at

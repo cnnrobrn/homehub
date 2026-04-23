@@ -14,6 +14,7 @@ import { notFound } from 'next/navigation';
 
 import { ChatSidebar } from '@/components/chat/ChatSidebar';
 import { ChatThread } from '@/components/chat/ChatThread';
+import { ASSISTANT_NAME } from '@/lib/assistant';
 import { requireHouseholdContext } from '@/lib/auth/context';
 import {
   listConversationsForHousehold,
@@ -22,6 +23,7 @@ import {
 
 interface PageProps {
   params: Promise<{ conversationId: string }>;
+  searchParams?: Promise<{ prompt?: string }>;
 }
 
 function formatLastUpdated(iso: string): string {
@@ -36,9 +38,10 @@ function formatLastUpdated(iso: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toLowerCase();
 }
 
-export default async function ChatConversationPage({ params }: PageProps) {
+export default async function ChatConversationPage({ params, searchParams }: PageProps) {
   const ctx = await requireHouseholdContext();
   const { conversationId } = await params;
+  const query = searchParams ? await searchParams : {};
 
   const [conversations, thread] = await Promise.all([
     listConversationsForHousehold(ctx.household.id as string),
@@ -60,7 +63,8 @@ export default async function ChatConversationPage({ params }: PageProps) {
           <div className="mx-auto flex w-full max-w-[640px] items-baseline gap-3">
             <div className="min-w-0 flex-1">
               <div className="mb-1 font-mono text-[10.5px] uppercase tracking-[0.08em] text-fg-muted">
-                ask · last updated {formatLastUpdated(thread.conversation.last_message_at)}
+                {ASSISTANT_NAME} · last updated{' '}
+                {formatLastUpdated(thread.conversation.last_message_at)}
               </div>
               <h1 className="m-0 truncate text-[17px] font-semibold leading-[1.3] tracking-[-0.02em] text-fg">
                 {title}
@@ -68,7 +72,11 @@ export default async function ChatConversationPage({ params }: PageProps) {
             </div>
           </div>
         </header>
-        <ChatThread conversationId={conversationId} initialTurns={thread.turns} />
+        <ChatThread
+          conversationId={conversationId}
+          initialTurns={thread.turns}
+          initialPrefill={query.prompt?.trim() || undefined}
+        />
       </section>
     </div>
   );
