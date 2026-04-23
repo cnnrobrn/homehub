@@ -29,8 +29,6 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { cn } from '@/lib/cn';
 
-
-
 export interface SegmentFilterProps {
   available: Segment[];
   selected: Segment[];

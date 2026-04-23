@@ -12,7 +12,6 @@
 
 import Link from 'next/link';
 
-
 import { NODE_TYPE_LABEL } from './nodeTypeStyles';
 
 import type { NodeListRow } from '@/lib/memory/query';

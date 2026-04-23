@@ -15,7 +15,6 @@ import type { CalendarView } from '@/lib/events/range';
 
 import { cn } from '@/lib/cn';
 
-
 export interface ViewToggleProps {
   current: CalendarView;
 }

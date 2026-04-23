@@ -20,7 +20,6 @@ import { getHouseholdContext } from '@/lib/auth/context';
 import { cn } from '@/lib/cn';
 import { getConfiguredSetupSegments, hasStoredSetup } from '@/lib/onboarding/setup';
 
-
 interface NavItem {
   label: string;
   href: string;

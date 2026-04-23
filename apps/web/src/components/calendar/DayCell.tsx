@@ -8,7 +8,6 @@
  * needing a heavy pill on the number.
  */
 
-
 import { DayCellNavButton } from './DayCellNavButton';
 import { EventPill } from './EventPill';
 

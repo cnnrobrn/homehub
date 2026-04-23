@@ -23,18 +23,17 @@ async function main(): Promise<void> {
   if (!process.env.E2B_API_KEY) {
     throw new Error('E2B_API_KEY is not set — grab one from https://e2b.dev/dashboard/keys');
   }
-   
+
   console.log(`building E2B template "${TAG}" (cpu=${CPU}, memory=${MEMORY_MB}MB)...`);
   const info = await Template.build(template, TAG, {
     cpuCount: CPU,
     memoryMB: MEMORY_MB,
   });
-   
+
   console.log('built:', info);
 }
 
 void main().catch((err) => {
-   
   console.error('=== BuildError ===');
   console.error('message:', err?.message ?? '(no message)');
   console.error('name:', err?.name);

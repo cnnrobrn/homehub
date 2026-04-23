@@ -19,7 +19,6 @@ import type { CalendarView } from '@/lib/events/range';
 import { WarmButton } from '@/components/design-system';
 import { formatISODate } from '@/lib/events/range';
 
-
 export interface CalendarNavProps {
   view: CalendarView;
   cursor: string; // ISO date YYYY-MM-DD

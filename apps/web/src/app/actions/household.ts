@@ -41,7 +41,6 @@ import { type ActionResult, ok, toErr } from './_envelope';
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
 
-
 const segmentSchema = z.enum(['financial', 'food', 'fun', 'social', 'system']);
 const setupSegmentSchema = z.enum(['financial', 'food', 'fun', 'social']);
 const accessSchema = z.enum(['none', 'read', 'write']);

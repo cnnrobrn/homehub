@@ -14,7 +14,6 @@ import type { ConversationListRow } from '@/lib/chat/loadConversations';
 import { Eyebrow } from '@/components/design-system';
 import { cn } from '@/lib/cn';
 
-
 function bucket(dateIso: string, now: Date): 'today' | 'week' | 'earlier' {
   const d = new Date(dateIso);
   const todayMidnight = new Date(now);

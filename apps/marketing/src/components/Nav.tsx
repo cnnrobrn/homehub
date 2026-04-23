@@ -6,7 +6,6 @@ import { Logo } from './Logo';
 
 import { APP_LOGIN_URL } from '@/lib/app-url';
 
-
 const NAV_LINKS: Array<{ label: string; href: string }> = [
   { label: 'How it works', href: '#how-it-works' },
   { label: 'For families', href: '#for-families' },

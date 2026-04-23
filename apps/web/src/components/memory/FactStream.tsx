@@ -13,7 +13,6 @@
 import { AlertTriangle } from 'lucide-react';
 import Link from 'next/link';
 
-
 import type { EpisodeRow, FactRow, NodeRow } from '@/lib/memory/query';
 import type { NodeType } from '@homehub/shared';
 

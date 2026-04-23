@@ -11,7 +11,6 @@
  * signal on top of the always-present label.
  */
 
-
 import { SEGMENT_BORDER_CLASS, SEGMENT_LABEL } from './segmentStyles';
 
 import type { CalendarEventRow } from '@/lib/events/listEvents';

@@ -23,8 +23,6 @@ import type { CalendarEventRow } from '@/lib/events/listEvents';
 import { cn } from '@/lib/cn';
 import { daysInRange } from '@/lib/events/range';
 
-
-
 export interface WeekGridProps {
   from: Date;
   to: Date;

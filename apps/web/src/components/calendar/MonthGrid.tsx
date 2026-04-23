@@ -9,7 +9,6 @@
  * whole grid.
  */
 
-
 import { DayCell } from './DayCell';
 
 import type { CalendarEventRow } from '@/lib/events/listEvents';

@@ -22,7 +22,6 @@
 
 import * as React from 'react';
 
-
 import { SuggestionCard } from './SuggestionCard';
 import { ToolCard, type ToolCallDisplay } from './ToolCard';
 

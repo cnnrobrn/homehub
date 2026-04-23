@@ -24,7 +24,6 @@ import { DecisionCard, type SegmentId } from '@/components/design-system';
 import { SuggestionApprovalPill } from '@/components/suggestions/SuggestionApprovalPill';
 import { SuggestionEvidenceDrawer } from '@/components/suggestions/SuggestionEvidenceDrawer';
 
-
 export interface DecisionItemProps {
   suggestion: SuggestionRowView;
 }
