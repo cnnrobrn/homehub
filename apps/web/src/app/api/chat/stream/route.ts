@@ -41,6 +41,10 @@ import { z } from 'zod';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
+import {
+  conversationTitleNeedsGeneration,
+  titleConversationFromFirstPrompt,
+} from '@/lib/chat/titleConversation';
 import { memoryRuntimeEnv } from '@/lib/memory/runtime-env';
 
 export const dynamic = 'force-dynamic';
@@ -87,11 +91,24 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const service = createServiceClient(env);
 
+  const log = {
+    trace: () => {},
+    debug: () => {},
+    info: (m: string, ctx?: Record<string, unknown>) => console.log(`[chat] ${m}`, ctx ?? {}),
+    warn: (m: string, ctx?: Record<string, unknown>) => console.warn(`[chat] ${m}`, ctx ?? {}),
+    error: (m: string, ctx?: Record<string, unknown>) => console.error(`[chat] ${m}`, ctx ?? {}),
+    fatal: (m: string, ctx?: Record<string, unknown>) =>
+      console.error(`[chat:fatal] ${m}`, ctx ?? {}),
+    child() {
+      return this;
+    },
+  };
+
   // Confirm the conversation belongs to this household.
   const { data: conv, error: convErr } = await service
     .schema('app')
     .from('conversation')
-    .select('id, household_id')
+    .select('id, household_id, title')
     .eq('id', parsed.data.conversationId)
     .maybeSingle();
   if (convErr) {
@@ -105,6 +122,26 @@ export async function POST(request: NextRequest): Promise<Response> {
   if (!memberId) {
     // shouldn't hit — getHouseholdContext already resolved it.
     throw new UnauthorizedError('member resolution failed');
+  }
+
+  let isFirstTurn = false;
+  if (conversationTitleNeedsGeneration(conv.title)) {
+    const { data: existingTurns, error: existingTurnErr } = await service
+      .schema('app')
+      .from('conversation_turn')
+      .select('id')
+      .eq('household_id', ctx.household.id)
+      .eq('conversation_id', parsed.data.conversationId)
+      .limit(1);
+    if (existingTurnErr) {
+      log.warn('conversation title first-turn check failed', {
+        household_id: ctx.household.id,
+        conversation_id: parsed.data.conversationId,
+        error: existingTurnErr.message,
+      });
+    } else {
+      isFirstTurn = (existingTurns ?? []).length === 0;
+    }
   }
 
   // Persist the member turn BEFORE starting the stream so a refresh
@@ -128,6 +165,37 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
+  const runtimeEnv = memoryRuntimeEnv();
+  const modelClient = runtimeEnv.OPENROUTER_API_KEY
+    ? createModelClient(runtimeEnv, { supabase: service, logger: log })
+    : null;
+
+  if (isFirstTurn) {
+    if (modelClient) {
+      try {
+        await titleConversationFromFirstPrompt({
+          supabase: service,
+          modelClient,
+          logger: log,
+          householdId: ctx.household.id as string,
+          conversationId: parsed.data.conversationId,
+          firstPrompt: parsed.data.message,
+        });
+      } catch (err) {
+        log.warn('conversation title generation failed', {
+          household_id: ctx.household.id,
+          conversation_id: parsed.data.conversationId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } else {
+      log.warn('conversation title generation skipped: OPENROUTER_API_KEY is not configured', {
+        household_id: ctx.household.id,
+        conversation_id: parsed.data.conversationId,
+      });
+    }
+  }
+
   // Two possible backends for a chat turn:
   //   (A) Local foreground-agent loop — the legacy path, runs the model
   //       call + tool orchestration in this Node runtime.
@@ -139,19 +207,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   const useRouter = process.env.HOMEHUB_USE_HERMES_ROUTER === '1';
   const routerUrl = process.env.HOMEHUB_HERMES_ROUTER_URL;
   const routerSecret = process.env.HOMEHUB_HERMES_ROUTER_SECRET;
-
-  const log = {
-    trace: () => {},
-    debug: () => {},
-    info: (m: string, ctx?: Record<string, unknown>) => console.log(`[chat] ${m}`, ctx ?? {}),
-    warn: (m: string, ctx?: Record<string, unknown>) => console.warn(`[chat] ${m}`, ctx ?? {}),
-    error: (m: string, ctx?: Record<string, unknown>) => console.error(`[chat] ${m}`, ctx ?? {}),
-    fatal: (m: string, ctx?: Record<string, unknown>) =>
-      console.error(`[chat:fatal] ${m}`, ctx ?? {}),
-    child() {
-      return this;
-    },
-  };
 
   if (useRouter) {
     if (!routerUrl || !routerSecret) {
@@ -202,8 +257,15 @@ export async function POST(request: NextRequest): Promise<Response> {
   }
 
   // Legacy local-loop path.
-  const runtimeEnv = memoryRuntimeEnv();
-  const modelClient = createModelClient(runtimeEnv, { supabase: service, logger: log });
+  if (!modelClient) {
+    return NextResponse.json(
+      {
+        error: 'openrouter_misconfigured',
+        message: 'OPENROUTER_API_KEY is required for local chat',
+      },
+      { status: 500 },
+    );
+  }
   const queryMemory = createQueryMemory({ supabase: service, modelClient, log });
   const foregroundModel = createOpenRouterForegroundModel(runtimeEnv, {
     supabase: service,

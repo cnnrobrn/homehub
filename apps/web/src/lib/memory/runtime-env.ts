@@ -34,7 +34,7 @@ export function memoryRuntimeEnv(): WorkerRuntimeEnv {
     INSTACART_DEVELOPER_API_BASE_URL: env.INSTACART_DEVELOPER_API_BASE_URL,
     // OpenRouter knobs — optional. When unset, semantic seeding is
     // skipped and `query_memory` falls back to structural retrieval.
-    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
+    OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY ?? process.env.HOMEHUB_OPENROUTER_API_KEY,
     OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
     OPENROUTER_HTTP_REFERER: process.env.OPENROUTER_HTTP_REFERER ?? 'https://app.homehub.ing',
     OPENROUTER_APP_TITLE: process.env.OPENROUTER_APP_TITLE ?? 'HomeHub',
