@@ -1,6 +1,12 @@
 /**
  * Server actions for integration connections (`sync.provider_connection`).
  *
+ *   - `startConnectSessionAction` — mint a Nango Connect session and
+ *     hand the URL back to the client for a popup. We use a popup
+ *     (see `ConnectProviderButton`) instead of a full-page redirect
+ *     because Nango has no post-OAuth `redirect_url` parameter —
+ *     top-level navigation would strand the user on Nango's success
+ *     screen and they'd perceive the connection as "not persisted".
  *   - `listConnectionsAction` — read the current member's household
  *     connections. RLS enforces that the caller is a member of the
  *     household; the query here filters by `household_id` taken from
@@ -8,9 +14,9 @@
  *   - `disconnectConnectionAction` — delete the Nango connection and
  *     flip the row to `status='revoked'`. Owner-only.
  *
- * The "connect" flow isn't a server action — it's a route handler at
- * `/api/integrations/connect` so the browser can be redirected to the
- * hosted-auth URL with a 302. See `app/api/integrations/connect/route.ts`.
+ * The legacy route handler at `/api/integrations/connect` still exists
+ * as a fallback for direct-URL access (e.g. a stale deep link), but
+ * the primary surface is the popup flow above.
  */
 
 'use server';
@@ -18,11 +24,13 @@
 import {
   UnauthorizedError,
   ForbiddenError,
+  ValidationError,
   createServerClient,
   createServiceClient,
   getUser,
   resolveMemberId,
 } from '@homehub/auth-server';
+import { ALL_EMAIL_CATEGORIES, isEmailCategory } from '@homehub/providers-email/client';
 import { z } from 'zod';
 
 import { type ActionResult, ok, toErr } from './_envelope';
@@ -30,7 +38,9 @@ import { type ActionResult, ok, toErr } from './_envelope';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
-import { createWebNangoClient } from '@/lib/nango/client';
+import { serverEnv } from '@/lib/env';
+import { NangoNotConfiguredError, createWebNangoClient } from '@/lib/nango/client';
+
 
 export interface ConnectionSummary {
   id: string;
@@ -39,6 +49,80 @@ export interface ConnectionSummary {
   status: 'active' | 'paused' | 'errored' | 'revoked';
   lastSyncedAt: string | null;
   memberId: string | null;
+}
+
+const ALLOWED_PROVIDERS = ['google-calendar', 'google-mail', 'ynab'] as const;
+const startConnectSchema = z.object({
+  provider: z.enum(ALLOWED_PROVIDERS),
+  categories: z.array(z.string()).optional(),
+});
+
+/**
+ * Mint a Nango Connect session and return its URL so a client island can
+ * open it in a popup. We avoid full-page navigation to Nango because the
+ * Connect API has no post-OAuth redirect-back parameter — the user would
+ * be stranded on Nango's success page with no way home. Opening the URL
+ * in a popup keeps the caller on their originating page; when the popup
+ * closes we `router.refresh()` and the `sync.provider_connection` row
+ * written by the webhook shows up in the UI.
+ */
+export async function startConnectSessionAction(
+  input: z.input<typeof startConnectSchema>,
+): Promise<ActionResult<{ connectUrl: string }>> {
+  try {
+    const parsed = startConnectSchema.parse(input);
+    const env = authEnv();
+    const cookies = await nextCookieAdapter();
+    const user = await getUser(env, cookies);
+    if (!user) throw new UnauthorizedError('no session');
+
+    const ctx = await getHouseholdContext();
+    if (!ctx) throw new UnauthorizedError('no household context; complete onboarding first');
+
+    let emailCategoriesCsv: string | undefined;
+    if (parsed.provider === 'google-mail') {
+      const requested = (parsed.categories ?? []).map((c) => c.trim()).filter(Boolean);
+      const valid = requested.filter(isEmailCategory);
+      if (valid.length === 0) {
+        throw new ValidationError('no valid email categories opted in', [
+          {
+            path: 'categories',
+            message: `choose at least one of: ${ALL_EMAIL_CATEGORIES.join(', ')}`,
+          },
+        ]);
+      }
+      emailCategoriesCsv = valid.join(',');
+    }
+
+    const tags: Record<string, string> = {
+      household_id: ctx.household.id,
+      member_id: ctx.member.id,
+      provider: parsed.provider,
+    };
+    if (emailCategoriesCsv) tags.email_categories = emailCategoriesCsv;
+    if (parsed.provider === 'google-mail' && user.email) tags.email_address = user.email;
+
+    const nango = createWebNangoClient();
+    const session = await nango.createConnectSession({
+      endUser: {
+        id: `member:${ctx.member.id}`,
+        ...(user.email ? { email: user.email } : {}),
+        tags,
+      },
+      allowedIntegrations: [parsed.provider],
+      tags,
+    });
+
+    const { NANGO_HOST } = serverEnv();
+    const connectUrl = new URL(`/oauth/connect/${encodeURIComponent(parsed.provider)}`, NANGO_HOST);
+    connectUrl.searchParams.set('connect_session_token', session.token);
+    return ok({ connectUrl: connectUrl.toString() });
+  } catch (err) {
+    if (err instanceof NangoNotConfiguredError) {
+      return { ok: false, error: { code: 'NANGO_NOT_CONFIGURED', message: err.message } };
+    }
+    return toErr(err);
+  }
 }
 
 export async function listConnectionsAction(): Promise<ActionResult<ConnectionSummary[]>> {

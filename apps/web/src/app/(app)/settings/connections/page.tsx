@@ -3,18 +3,20 @@
  *
  * Server Component. Loads the household's connection rows via
  * `listConnectionsAction` and renders them as a simple table. The
- * "Connect Google Calendar" button is a plain anchor to the route
- * handler that kicks off the Nango hosted-auth flow. "Connect Gmail"
- * opens the `EmailConnectDialog` client island first for category
- * opt-in + privacy preview before redirecting. Instacart is configured
- * with an app API key and hands shoppers off to Instacart-hosted
- * checkout links, not a member OAuth connection.
+ * "Connect" buttons are client islands (`ConnectProviderButton`) that
+ * open Nango's OAuth URL in a popup window — we do this instead of a
+ * top-level redirect because Nango has no post-OAuth redirect-back
+ * parameter, so full-page navigation strands the user on their success
+ * page. "Connect Gmail" opens the `EmailConnectDialog` first for
+ * category opt-in + privacy preview before starting the popup.
+ * Instacart is configured with an app API key and hands shoppers off
+ * to Instacart-hosted checkout links, not a member OAuth connection.
  */
 
 import { listConnectionsAction } from '@/app/actions/integrations';
 import { DisconnectButton } from '@/components/settings/ConnectionsTable';
+import { ConnectProviderButton } from '@/components/settings/ConnectProviderButton';
 import { EmailConnectDialog } from '@/components/settings/EmailConnectDialog';
-import { Button } from '@/components/ui/button';
 import { getHouseholdContext } from '@/lib/auth/context';
 
 const PROVIDER_LABELS: Record<string, string> = {
@@ -88,13 +90,11 @@ export default async function ConnectionsPage() {
           Available providers
         </h2>
         <div className="flex flex-wrap items-center gap-2">
-          <Button asChild>
-            <a href="/api/integrations/connect?provider=google-calendar">Connect Google Calendar</a>
-          </Button>
+          <ConnectProviderButton provider="google-calendar">
+            Connect Google Calendar
+          </ConnectProviderButton>
           <EmailConnectDialog />
-          <Button asChild>
-            <a href="/api/integrations/connect?provider=ynab">Connect YNAB</a>
-          </Button>
+          <ConnectProviderButton provider="ynab">Connect YNAB</ConnectProviderButton>
           <span className="text-sm text-fg-muted" aria-live="polite">
             Instacart checkout links are enabled from server config. Monarch and Plaid land in later
             milestones.

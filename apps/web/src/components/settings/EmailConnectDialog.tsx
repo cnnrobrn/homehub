@@ -1,15 +1,16 @@
 /**
  * `EmailConnectDialog` — Gmail connect confirmation + privacy preview.
  *
- * Client island. Opens BEFORE the OAuth redirect. The member:
+ * Client island. Opens BEFORE the OAuth flow. The member:
  *   1. Picks which categories (receipt / reservation / bill / invite /
  *      shipping) HomeHub is allowed to label and ingest.
  *   2. Sees the actual Gmail search filter we'll apply — no hand-wavy
  *      "we might peek at your email" copy. The preview text comes from
  *      `buildGmailQuery` so the dialog and worker can never drift.
- *   3. Clicks "Continue to Google" to be redirected to
- *      `/api/integrations/connect?provider=google-mail&categories=…`.
- *      The route validates the list again on the server side.
+ *   3. Clicks "Continue to Google" — we open the Nango Connect URL in a
+ *      popup via `ConnectProviderButton` so the user stays on
+ *      `/settings/connections` and sees the new row appear when the
+ *      webhook-written `sync.provider_connection` lands.
  *
  * Storage of the opt-ins is handled server-side via the Nango session
  * tags and the `/webhooks/nango` handler in `apps/workers/webhook-ingest`.
@@ -28,6 +29,8 @@ import {
 import { Mail, ShieldCheck } from 'lucide-react';
 import { useMemo, useState } from 'react';
 
+import { ConnectProviderButton } from './ConnectProviderButton';
+
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -40,6 +43,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+
 
 const INITIAL_CATEGORIES: readonly EmailCategory[] = ALL_EMAIL_CATEGORIES;
 
@@ -58,9 +62,6 @@ export function EmailConnectDialog() {
   const descriptions = useMemo(() => describeCategories(orderedSelected), [orderedSelected]);
 
   const canContinue = orderedSelected.length > 0;
-  const continueHref = canContinue
-    ? `/api/integrations/connect?provider=google-mail&categories=${encodeURIComponent(orderedSelected.join(','))}`
-    : undefined;
 
   function toggle(category: EmailCategory) {
     setSelected((prev) => {
@@ -152,13 +153,19 @@ export function EmailConnectDialog() {
             <Button variant="ghost" onClick={() => setOpen(false)} type="button">
               Cancel
             </Button>
-            <Button asChild disabled={!canContinue}>
-              {continueHref ? (
-                <a href={continueHref}>Continue to Google</a>
-              ) : (
-                <span aria-disabled="true">Continue to Google</span>
-              )}
-            </Button>
+            {canContinue ? (
+              <ConnectProviderButton
+                provider="google-mail"
+                categories={orderedSelected}
+                onStarted={() => setOpen(false)}
+              >
+                Continue to Google
+              </ConnectProviderButton>
+            ) : (
+              <Button disabled type="button">
+                Continue to Google
+              </Button>
+            )}
           </DialogFooter>
         </div>
       </DialogContent>

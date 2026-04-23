@@ -58,8 +58,11 @@ export default defineConfig({
       '@homehub/tools': toolsSrc,
       '@homehub/worker-foreground-agent': foregroundAgentSrc,
       '@homehub/worker-runtime': workerRuntimeSrc,
-      '@homehub/providers-email': providersEmailSrc,
+      // More specific subpath aliases must come first — Vite matches in
+      // declaration order, so listing the bare package name before `/client`
+      // would rewrite the subpath import to `.../src/index.ts/client`.
       '@homehub/providers-email/client': providersEmailClientSrc,
+      '@homehub/providers-email': providersEmailSrc,
       '@homehub/providers-grocery': providersGrocerySrc,
     },
   },
