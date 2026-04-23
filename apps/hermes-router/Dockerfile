@@ -26,7 +26,10 @@ COPY packages packages
 COPY apps/hermes-router apps/hermes-router
 
 RUN pnpm install --frozen-lockfile --filter "@homehub/${SERVICE_NAME}..."
-RUN pnpm --filter "@homehub/${SERVICE_NAME}" build
+# `...` makes pnpm build workspace deps (shared/db/worker-runtime) in
+# topo order before the service itself; without it, deploy packs
+# workspace deps whose `files: ["dist"]` directories are empty.
+RUN pnpm --filter "@homehub/${SERVICE_NAME}..." build
 RUN pnpm --filter "@homehub/${SERVICE_NAME}" deploy --prod /out
 
 # ---- runtime ----------------------------------------------------------------
