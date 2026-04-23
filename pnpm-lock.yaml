@@ -4,6 +4,9 @@ settings:
   autoInstallPeers: true
   excludeLinksFromLockfile: false
 
+overrides:
+  e2b>chalk: ^4
+
 importers:
 
   .:
@@ -8845,7 +8848,7 @@ snapshots:
       '@bufbuild/protobuf': 2.11.0
       '@connectrpc/connect': 2.0.0-rc.3(@bufbuild/protobuf@2.11.0)
       '@connectrpc/connect-web': 2.0.0-rc.3(@bufbuild/protobuf@2.11.0)(@connectrpc/connect@2.0.0-rc.3(@bufbuild/protobuf@2.11.0))
-      chalk: 5.6.2
+      chalk: 4.1.2
       compare-versions: 6.1.1
       dockerfile-ast: 0.7.1
       glob: 11.1.0

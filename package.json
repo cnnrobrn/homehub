@@ -21,6 +21,9 @@
     "prepare": "husky"
   },
   "pnpm": {
+    "overrides": {
+      "e2b>chalk": "^4"
+    },
     "onlyBuiltDependencies": [
       "@swc/core",
       "esbuild",
