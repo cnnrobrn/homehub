@@ -18,19 +18,47 @@ import { Card, CardContent } from '@/components/ui/card';
 import { FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 
 const createSchema = z.object({
   name: z.string().min(1, 'Give your household a name.').max(200),
-  timezone: z.string().max(64).optional(),
-  currency: z
-    .string()
-    .length(3, 'Currency must be a 3-letter code (e.g. USD).')
-    .optional()
-    .or(z.literal('')),
+  timezone: z.string().min(1, 'Pick a timezone.').max(64),
 });
 type CreateValues = z.infer<typeof createSchema>;
+
+// Currency is fixed to USD at onboarding; owners can change it later in
+// household settings if we ever need non-USD support.
+const DEFAULT_CURRENCY = 'USD';
+
+// Full IANA timezone list from the browser. `Intl.supportedValuesOf` is
+// available in every modern engine we support; a minimal fallback keeps
+// the form usable on older runtimes.
+function getTimezoneOptions(): string[] {
+  if (typeof Intl !== 'undefined' && typeof Intl.supportedValuesOf === 'function') {
+    try {
+      return Intl.supportedValuesOf('timeZone');
+    } catch {
+      // fall through
+    }
+  }
+  return [
+    'America/New_York',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'America/Anchorage',
+    'Pacific/Honolulu',
+    'UTC',
+  ];
+}
 
 const joinSchema = z.object({
   token: z
@@ -67,17 +95,46 @@ export function OnboardingForm() {
 
 function CreateHouseholdInner() {
   const router = useRouter();
+
+  // Pick up the user's browser timezone as a default. `Intl.DateTimeFormat`
+  // is stable on a given client, so reading it during render avoids both a
+  // hydration mismatch and a useEffect round-trip.
+  const defaultTz = React.useMemo(() => {
+    if (typeof Intl === 'undefined') return 'UTC';
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch {
+      return 'UTC';
+    }
+  }, []);
+  const timezoneOptions = React.useMemo(() => {
+    const list = getTimezoneOptions();
+    return list.includes(defaultTz) ? list : [defaultTz, ...list];
+  }, [defaultTz]);
+
   const {
     register,
     handleSubmit,
+    setValue,
+    watch,
     formState: { errors, isSubmitting },
-  } = useForm<CreateValues>({ resolver: zodResolver(createSchema) });
+  } = useForm<CreateValues>({
+    resolver: zodResolver(createSchema),
+    defaultValues: { name: '', timezone: defaultTz },
+  });
+
+  // RHF needs to know `timezone` is a tracked field; we drive it imperatively
+  // via setValue rather than wiring the Select to its onChange directly.
+  React.useEffect(() => {
+    register('timezone');
+  }, [register]);
+  const timezone = watch('timezone');
 
   async function onSubmit(values: CreateValues) {
     const res = await createHouseholdAction({
       name: values.name,
-      ...(values.timezone ? { timezone: values.timezone } : {}),
-      ...(values.currency ? { currency: values.currency } : {}),
+      timezone: values.timezone,
+      currency: DEFAULT_CURRENCY,
     });
     if (!res.ok) {
       toast({
@@ -90,13 +147,6 @@ function CreateHouseholdInner() {
     router.replace('/');
     router.refresh();
   }
-
-  // Pick up the user's browser timezone as a default. Done in the
-  // render path rather than a useEffect to avoid a hydration mismatch —
-  // `Intl.DateTimeFormat().resolvedOptions().timeZone` is stable on a
-  // given client.
-  const defaultTz =
-    typeof Intl !== 'undefined' ? Intl.DateTimeFormat().resolvedOptions().timeZone : undefined;
 
   return (
     <form
@@ -122,24 +172,23 @@ function CreateHouseholdInner() {
         <FormMessage error={errors.name?.message ?? null} />
       </div>
       <div className="flex flex-col gap-1.5">
-        <Label htmlFor="household-tz">Timezone (optional)</Label>
-        <Input
-          id="household-tz"
-          defaultValue={defaultTz ?? ''}
-          placeholder="America/New_York"
-          {...register('timezone')}
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="household-currency">Currency (optional)</Label>
-        <Input
-          id="household-currency"
-          placeholder="USD"
-          maxLength={3}
-          aria-invalid={errors.currency ? 'true' : 'false'}
-          {...register('currency')}
-        />
-        <FormMessage error={errors.currency?.message ?? null} />
+        <Label htmlFor="household-tz">Timezone</Label>
+        <Select
+          value={timezone}
+          onValueChange={(v) => setValue('timezone', v, { shouldValidate: true })}
+        >
+          <SelectTrigger id="household-tz" aria-invalid={errors.timezone ? 'true' : 'false'}>
+            <SelectValue placeholder="Select a timezone" />
+          </SelectTrigger>
+          <SelectContent>
+            {timezoneOptions.map((tz) => (
+              <SelectItem key={tz} value={tz}>
+                {tz}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <FormMessage error={errors.timezone?.message ?? null} />
       </div>
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Creating…' : 'Create household'}
