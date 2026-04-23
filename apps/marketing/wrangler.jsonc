@@ -15,15 +15,8 @@
   "observability": {
     "enabled": true,
   },
-  // Custom domain is attached out-of-band once the zone is added to the
-  // Cloudflare account. To re-enable automated binding, add the zone in
-  // the Cloudflare dashboard, then append a `routes` array here, e.g.:
-  //
-  //   "routes": [
-  //     { "pattern": "househub.ing", "custom_domain": true },
-  //     { "pattern": "www.househub.ing", "custom_domain": true }
-  //   ]
-  //
-  // Wrangler will error with code 10082 ("Can't infer zone from route")
-  // if the zone isn't present in the account when `wrangler deploy` runs.
+  "routes": [
+    { "pattern": "homehub.ing", "custom_domain": true },
+    { "pattern": "www.homehub.ing", "custom_domain": true },
+  ],
 }
