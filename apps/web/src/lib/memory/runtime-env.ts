@@ -32,7 +32,7 @@ export function memoryRuntimeEnv(): WorkerRuntimeEnv {
     // skipped and `query_memory` falls back to structural retrieval.
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,
     OPENROUTER_BASE_URL: process.env.OPENROUTER_BASE_URL ?? 'https://openrouter.ai/api/v1',
-    OPENROUTER_HTTP_REFERER: process.env.OPENROUTER_HTTP_REFERER ?? 'https://homehub.app',
+    OPENROUTER_HTTP_REFERER: process.env.OPENROUTER_HTTP_REFERER ?? 'https://app.homehub.ing',
     OPENROUTER_APP_TITLE: process.env.OPENROUTER_APP_TITLE ?? 'HomeHub',
   };
 }

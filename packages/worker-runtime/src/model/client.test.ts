@@ -23,7 +23,7 @@ function fakeEnv(): WorkerRuntimeEnv {
     SUPABASE_SERVICE_ROLE_KEY: 'svc',
     OPENROUTER_API_KEY: 'or-test',
     OPENROUTER_BASE_URL: 'https://openrouter.example/api/v1',
-    OPENROUTER_HTTP_REFERER: 'https://homehub.app',
+    OPENROUTER_HTTP_REFERER: 'https://app.homehub.ing',
     OPENROUTER_APP_TITLE: 'HomeHub',
   } as WorkerRuntimeEnv;
 }

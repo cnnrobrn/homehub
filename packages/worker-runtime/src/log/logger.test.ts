@@ -59,7 +59,7 @@ const testEnv: WorkerRuntimeEnv = {
   SUPABASE_URL: 'http://localhost:54321',
   SUPABASE_SERVICE_ROLE_KEY: 'x',
   OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1',
-  OPENROUTER_HTTP_REFERER: 'https://homehub.app',
+  OPENROUTER_HTTP_REFERER: 'https://app.homehub.ing',
   OPENROUTER_APP_TITLE: 'HomeHub',
 } as WorkerRuntimeEnv;
 

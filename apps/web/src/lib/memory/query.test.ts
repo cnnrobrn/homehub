@@ -21,7 +21,7 @@ vi.mock('@/lib/memory/runtime-env', () => ({
     NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon',
     OPENROUTER_API_KEY: undefined,
     OPENROUTER_BASE_URL: 'https://openrouter.ai/api/v1',
-    OPENROUTER_HTTP_REFERER: 'https://homehub.app',
+    OPENROUTER_HTTP_REFERER: 'https://app.homehub.ing',
     OPENROUTER_APP_TITLE: 'HomeHub',
   }),
 }));

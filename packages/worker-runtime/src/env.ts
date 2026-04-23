@@ -28,7 +28,7 @@ export const workerRuntimeEnvSchema = baseServerEnvSchema.extend({
 
   OPENROUTER_API_KEY: z.string().min(1).optional(),
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
-  OPENROUTER_HTTP_REFERER: z.string().url().default('https://homehub.app'),
+  OPENROUTER_HTTP_REFERER: z.string().url().default('https://app.homehub.ing'),
   OPENROUTER_APP_TITLE: z.string().min(1).default('HomeHub'),
 
   /**

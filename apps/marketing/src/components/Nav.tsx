@@ -4,6 +4,9 @@ import { useEffect, useState } from 'react';
 
 import { Logo } from './Logo';
 
+import { APP_LOGIN_URL } from '@/lib/app-url';
+
+
 const NAV_LINKS: Array<{ label: string; href: string }> = [
   { label: 'How it works', href: '#how-it-works' },
   { label: 'For families', href: '#for-families' },
@@ -40,14 +43,14 @@ export function Nav() {
       </div>
       <div className="hh-nav-auth flex items-center" style={{ gap: 8 }}>
         <a
-          href="https://app.homehub.com/login"
+          href={APP_LOGIN_URL}
           className="text-sub hover:text-ink transition-colors"
           style={{ padding: '7px 12px', fontSize: 13 }}
         >
           Sign in
         </a>
         <a
-          href="https://app.homehub.com/signup"
+          href={APP_LOGIN_URL}
           className="bg-ink text-bg"
           style={{
             padding: '7px 14px',

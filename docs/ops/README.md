@@ -11,7 +11,7 @@ system misbehaves.
 
 | Surface             | Owner       | Where                                   |
 | ------------------- | ----------- | --------------------------------------- |
-| Web app             | Vercel      | `https://app.homehub.app`               |
+| Web app             | Vercel      | `https://app.homehub.ing`               |
 | Workers             | Railway     | `apps/workers/*` services               |
 | Nango               | Railway     | `infra/nango/` — see production-deploy  |
 | Postgres + Storage  | Supabase    | project dashboard                       |

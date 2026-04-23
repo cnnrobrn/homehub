@@ -9,7 +9,7 @@
 | `local`    | `next dev`       | Local CLI stack | Docker compose    | Local Docker    | Seeded synthetic |
 | `preview`  | Vercel preview   | Staging project | Staging services  | Staging Nango   | Staging snapshot |
 | `staging`  | staging.homehub  | Staging project | Staging services  | Staging Nango   | Staging snapshot |
-| `prod`     | homehub.app      | Prod project    | Prod services     | Prod Nango      | Real user data   |
+| `prod`     | homehub.ing + app.homehub.ing | Prod project    | Prod services     | Prod Nango      | Real user data   |
 
 Preview deploys share the staging backend. This means preview UIs hit real data from staging — acceptable because staging is seeded, not copied from prod.
 

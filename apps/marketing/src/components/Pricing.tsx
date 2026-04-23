@@ -1,3 +1,5 @@
+import { APP_LOGIN_URL } from '@/lib/app-url';
+
 type Plan = {
   title: string;
   price: string;
@@ -15,7 +17,7 @@ const PLANS: Plan[] = [
     suffix: 'per month · per household',
     description: 'We run it. You log in. Everyone in the house is included. Cancel anytime.',
     cta: 'Start a free trial',
-    href: 'https://app.homehub.com/signup',
+    href: APP_LOGIN_URL,
     primary: true,
   },
   {

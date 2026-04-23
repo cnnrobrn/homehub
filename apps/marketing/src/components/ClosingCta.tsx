@@ -1,3 +1,5 @@
+import { APP_LOGIN_URL } from '@/lib/app-url';
+
 export function ClosingCta() {
   return (
     <section className="hh-section bg-ink text-bg hh-closing" style={{ padding: '110px 56px' }}>
@@ -44,7 +46,7 @@ export function ClosingCta() {
         </div>
         <div className="flex items-center" style={{ gap: 10 }}>
           <a
-            href="https://app.homehub.com/signup"
+            href={APP_LOGIN_URL}
             className="bg-bg text-ink"
             style={{
               padding: '14px 26px',

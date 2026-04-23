@@ -1,5 +1,8 @@
 import { Logo } from './Logo';
 
+import { APP_LOGIN_URL } from '@/lib/app-url';
+
+
 type AreaKey = 'money' | 'meals' | 'plans' | 'people';
 
 const AREAS: Record<AreaKey, string> = {
@@ -93,7 +96,7 @@ export function Hero() {
         </p>
         <div className="flex items-center" style={{ gap: 10, marginTop: 36 }}>
           <a
-            href="https://app.homehub.com/signup"
+            href={APP_LOGIN_URL}
             className="bg-ink text-bg"
             style={{
               padding: '13px 22px',
