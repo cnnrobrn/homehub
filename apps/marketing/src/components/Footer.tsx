@@ -1,10 +1,44 @@
 import { Logo } from './Logo';
 
-const GROUPS: Array<[string, string[]]> = [
-  ['product', ['How it works', 'For families', 'Pricing', 'Try a tour']],
-  ['help', ['Getting started', 'Invite your family', 'Tips', 'Contact']],
-  ['open source', ['GitHub', 'Self-host guide', 'Changelog', 'Contribute']],
-  ['more', ['About', 'Privacy', 'Terms', 'Press']],
+type FooterLink = { label: string; href: string; external?: boolean };
+
+const GROUPS: Array<[string, FooterLink[]]> = [
+  [
+    'product',
+    [
+      { label: 'How it works', href: '/#how-it-works' },
+      { label: 'For families', href: '/#for-families' },
+      { label: 'Pricing', href: '/#pricing' },
+      { label: 'Try a tour', href: '/tour' },
+    ],
+  ],
+  [
+    'help',
+    [
+      { label: 'Getting started', href: '/getting-started' },
+      { label: 'Invite your family', href: '/invite' },
+      { label: 'Tips', href: '/tips' },
+      { label: 'Contact', href: '/contact' },
+    ],
+  ],
+  [
+    'open source',
+    [
+      { label: 'GitHub', href: 'https://github.com/homehub', external: true },
+      { label: 'Self-host guide', href: '/self-host' },
+      { label: 'Changelog', href: '/changelog' },
+      { label: 'Contribute', href: '/contribute' },
+    ],
+  ],
+  [
+    'more',
+    [
+      { label: 'About', href: '/about' },
+      { label: 'Privacy', href: '/privacy' },
+      { label: 'Terms', href: '/terms' },
+      { label: 'Press', href: '/press' },
+    ],
+  ],
 ];
 
 export function Footer() {
@@ -36,9 +70,15 @@ export function Footer() {
             >
               {heading}
             </div>
-            {items.map((label) => (
-              <div key={label} style={{ fontSize: 13, marginBottom: 7 }}>
-                {label}
+            {items.map((item) => (
+              <div key={item.label} style={{ fontSize: 13, marginBottom: 7 }}>
+                <a
+                  href={item.href}
+                  className="text-ink hover:text-accent transition-colors"
+                  {...(item.external ? { target: '_blank', rel: 'noreferrer noopener' } : {})}
+                >
+                  {item.label}
+                </a>
               </div>
             ))}
           </div>
