@@ -78,83 +78,89 @@ export function EmailConnectDialog() {
           <Mail className="mr-2 h-4 w-4" aria-hidden="true" /> Connect Gmail
         </Button>
       </DialogTrigger>
-      <DialogContent className="max-w-xl">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-accent" aria-hidden="true" />
-            Connect Gmail — choose what HomeHub reads
-          </DialogTitle>
-          <DialogDescription>
-            HomeHub only scans emails matching these filters. Everything else stays untouched. You
-            can change these anytime in Settings.
-          </DialogDescription>
-        </DialogHeader>
+      <DialogContent className="max-h-[90vh] max-w-xl overflow-hidden p-0">
+        <div className="flex max-h-[90vh] flex-col">
+          <DialogHeader className="px-6 pb-4 pr-12 pt-6">
+            <DialogTitle className="flex items-center gap-2">
+              <ShieldCheck className="h-5 w-5 text-accent" aria-hidden="true" />
+              Connect Gmail - choose what HomeHub reads
+            </DialogTitle>
+            <DialogDescription>
+              HomeHub only scans emails matching these filters. Everything else stays untouched. You
+              can change these anytime in Settings.
+            </DialogDescription>
+          </DialogHeader>
 
-        <section aria-labelledby="email-categories-heading" className="flex flex-col gap-3">
-          <h3 id="email-categories-heading" className="text-sm font-medium text-fg">
-            Categories
-          </h3>
-          <ul className="flex flex-col gap-2">
-            {ALL_EMAIL_CATEGORIES.map((category) => {
-              const def = CATEGORY_FILTERS[category];
-              const inputId = `email-cat-${category}`;
-              return (
-                <li
-                  key={category}
-                  className="flex items-start gap-3 rounded-md border border-border bg-surface/50 p-3"
-                >
-                  <Checkbox
-                    id={inputId}
-                    checked={selected.has(category)}
-                    onCheckedChange={() => toggle(category)}
-                    aria-describedby={`${inputId}-desc`}
-                  />
-                  <div className="flex flex-col">
-                    <Label htmlFor={inputId} className="text-sm font-medium">
-                      {def.description}
-                    </Label>
-                    <span id={`${inputId}-desc`} className="text-xs text-fg-muted">
-                      Category: <code className="font-mono">{category}</code>
-                    </span>
-                  </div>
-                </li>
-              );
-            })}
-          </ul>
-        </section>
+          <div className="flex flex-1 flex-col gap-5 overflow-y-auto px-6 pb-5">
+            <section aria-labelledby="email-categories-heading" className="flex flex-col gap-3">
+              <h3 id="email-categories-heading" className="text-sm font-medium text-fg">
+                Categories
+              </h3>
+              <ul className="flex flex-col gap-2">
+                {ALL_EMAIL_CATEGORIES.map((category) => {
+                  const def = CATEGORY_FILTERS[category];
+                  const inputId = `email-cat-${category}`;
+                  return (
+                    <li
+                      key={category}
+                      className="flex items-start gap-3 rounded-md border border-border bg-surface/50 p-3"
+                    >
+                      <Checkbox
+                        id={inputId}
+                        checked={selected.has(category)}
+                        onCheckedChange={() => toggle(category)}
+                        aria-describedby={`${inputId}-desc`}
+                      />
+                      <div className="flex flex-col">
+                        <Label htmlFor={inputId} className="text-sm font-medium">
+                          {def.description}
+                        </Label>
+                        <span id={`${inputId}-desc`} className="text-xs text-fg-muted">
+                          Category: <code className="font-mono">{category}</code>
+                        </span>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
 
-        <section aria-labelledby="email-preview-heading" className="flex flex-col gap-2">
-          <h3 id="email-preview-heading" className="text-sm font-medium text-fg">
-            Gmail filter we will apply
-          </h3>
-          {queryPreview ? (
-            <>
-              <pre className="overflow-x-auto rounded-md border border-border bg-bg p-3 text-xs leading-relaxed text-fg-muted">
-                <code>{queryPreview}</code>
-              </pre>
-              <p className="text-xs text-fg-muted" aria-live="polite">
-                {descriptions.length > 0 ? `HomeHub will ingest: ${descriptions.join(' · ')}.` : ''}
-              </p>
-            </>
-          ) : (
-            <p className="text-xs text-destructive" aria-live="polite">
-              Select at least one category to continue.
-            </p>
-          )}
-        </section>
+            <section aria-labelledby="email-preview-heading" className="flex flex-col gap-2">
+              <h3 id="email-preview-heading" className="text-sm font-medium text-fg">
+                Gmail filter we will apply
+              </h3>
+              {queryPreview ? (
+                <>
+                  <pre className="max-h-36 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border bg-bg p-3 text-xs leading-relaxed text-fg-muted">
+                    <code>{queryPreview}</code>
+                  </pre>
+                  <p className="text-xs text-fg-muted" aria-live="polite">
+                    {descriptions.length > 0
+                      ? `HomeHub will ingest: ${descriptions.join(' · ')}.`
+                      : ''}
+                  </p>
+                </>
+              ) : (
+                <p className="text-xs text-destructive" aria-live="polite">
+                  Select at least one category to continue.
+                </p>
+              )}
+            </section>
+          </div>
 
-        <DialogFooter className="gap-2">
-          <Button variant="ghost" onClick={() => setOpen(false)} type="button">
-            Cancel
-          </Button>
-          <Button asChild disabled={!canContinue}>
-            {continueHref ? (
-              <a href={continueHref}>Continue to Google</a>
-            ) : (
-              <span aria-disabled="true">Continue to Google</span>
-            )}
-          </Button>
-        </DialogFooter>
+          <DialogFooter className="gap-2 border-t border-border bg-surface px-6 py-4">
+            <Button variant="ghost" onClick={() => setOpen(false)} type="button">
+              Cancel
+            </Button>
+            <Button asChild disabled={!canContinue}>
+              {continueHref ? (
+                <a href={continueHref}>Continue to Google</a>
+              ) : (
+                <span aria-disabled="true">Continue to Google</span>
+              )}
+            </Button>
+          </DialogFooter>
+        </div>
       </DialogContent>
     </Dialog>
   );

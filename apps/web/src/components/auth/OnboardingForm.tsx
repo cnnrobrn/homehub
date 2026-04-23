@@ -1,7 +1,7 @@
 /**
  * First-run onboarding form with two tabs: create household vs. join by
- * invite. On success either path refreshes the app shell — the
- * `(app)/layout.tsx` context resolver picks up the new membership.
+ * invite. Create flow seeds a chat-based setup turn instead of asking
+ * the member to pre-select sections here.
  */
 
 'use client';
@@ -12,13 +12,9 @@ import * as React from 'react';
 import { useForm } from 'react-hook-form';
 import { z } from 'zod';
 
-import type { SegmentId } from '@/components/design-system/segment';
-
 import { acceptInvitationAction, createHouseholdAction } from '@/app/actions/household';
-import { SegDot } from '@/components/design-system';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Checkbox } from '@/components/ui/checkbox';
 import { FormMessage } from '@/components/ui/form';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,7 +28,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { ASSISTANT_NAME } from '@/lib/assistant';
-import { SETUP_SECTIONS, buildAlfredSetupPrompt } from '@/lib/onboarding/setup';
+import { buildHermesOnboardingStartPrompt } from '@/lib/onboarding/setup';
 
 const createSchema = z.object({
   name: z.string().min(1, 'Give your household a name.').max(200),
@@ -101,8 +97,6 @@ export function OnboardingForm() {
 
 function CreateHouseholdInner() {
   const router = useRouter();
-  const [selectedSegments, setSelectedSegments] = React.useState<SegmentId[]>([]);
-  const [selectedPromptIds, setSelectedPromptIds] = React.useState<string[]>([]);
 
   // Pick up the user's browser timezone as a default. `Intl.DateTimeFormat`
   // is stable on a given client, so reading it during render avoids both a
@@ -139,18 +133,14 @@ function CreateHouseholdInner() {
   const timezone = watch('timezone');
 
   async function onSubmit(values: CreateValues) {
-    const setupPrompt = buildAlfredSetupPrompt({
-      householdName: values.name,
-      selectedSegmentIds: selectedSegments,
-      selectedPromptIds,
-    });
+    const setupPrompt = buildHermesOnboardingStartPrompt({ householdName: values.name });
     const res = await createHouseholdAction({
       name: values.name,
       timezone: values.timezone,
       currency: DEFAULT_CURRENCY,
-      setupSegments: selectedSegments,
-      setupPromptIds: selectedPromptIds,
-      ...(setupPrompt ? { setupPrompt } : {}),
+      setupSegments: [],
+      setupPromptIds: [],
+      setupPrompt,
     });
     if (!res.ok) {
       toast({
@@ -160,11 +150,7 @@ function CreateHouseholdInner() {
       });
       return;
     }
-    if (setupPrompt) {
-      router.replace(`/chat/new?prompt=${encodeURIComponent(setupPrompt)}`);
-    } else {
-      router.replace('/');
-    }
+    router.replace(`/chat/new?prompt=${encodeURIComponent(setupPrompt)}`);
     router.refresh();
   }
 
@@ -210,124 +196,14 @@ function CreateHouseholdInner() {
         </Select>
         <FormMessage error={errors.timezone?.message ?? null} />
       </div>
-      <SetupPicker
-        selectedSegments={selectedSegments}
-        selectedPromptIds={selectedPromptIds}
-        onSegmentsChange={setSelectedSegments}
-        onPromptIdsChange={setSelectedPromptIds}
-      />
+      <div className="rounded-[6px] border border-border bg-surface-soft px-3 py-2.5 text-[12.5px] leading-[1.5] text-fg-muted">
+        After this, {ASSISTANT_NAME} will ask what you want HomeHub to handle first, gather the
+        details, and reveal each section once there is something useful to show.
+      </div>
       <Button type="submit" disabled={isSubmitting}>
-        {isSubmitting ? 'Creating…' : 'Create household'}
+        {isSubmitting ? 'Creating…' : `Create household with ${ASSISTANT_NAME}`}
       </Button>
     </form>
-  );
-}
-
-function SetupPicker({
-  selectedSegments,
-  selectedPromptIds,
-  onSegmentsChange,
-  onPromptIdsChange,
-}: {
-  selectedSegments: readonly SegmentId[];
-  selectedPromptIds: readonly string[];
-  onSegmentsChange: (segments: SegmentId[]) => void;
-  onPromptIdsChange: (ids: string[]) => void;
-}) {
-  const selectedSet = React.useMemo(() => new Set(selectedSegments), [selectedSegments]);
-  const promptSet = React.useMemo(() => new Set(selectedPromptIds), [selectedPromptIds]);
-  const visibleSections = SETUP_SECTIONS.filter((section) => selectedSet.has(section.id));
-
-  function toggleSegment(segment: SegmentId, checked: boolean) {
-    if (checked) {
-      onSegmentsChange([...selectedSegments, segment]);
-      return;
-    }
-    const removed = SETUP_SECTIONS.find((section) => section.id === segment);
-    const removedPromptIds = new Set(removed?.prompts.map((prompt) => prompt.id) ?? []);
-    onSegmentsChange(selectedSegments.filter((id) => id !== segment));
-    onPromptIdsChange(selectedPromptIds.filter((id) => !removedPromptIds.has(id)));
-  }
-
-  function togglePrompt(id: string) {
-    if (promptSet.has(id)) {
-      onPromptIdsChange(selectedPromptIds.filter((promptId) => promptId !== id));
-      return;
-    }
-    onPromptIdsChange([...selectedPromptIds, id]);
-  }
-
-  return (
-    <div className="flex flex-col gap-3 border-t border-border pt-4">
-      <div className="flex flex-col gap-1">
-        <Label>Set up with {ASSISTANT_NAME}</Label>
-        <p className="m-0 text-[12.5px] leading-[1.5] text-fg-muted">
-          Pick the household areas you want {ASSISTANT_NAME} to ask about first.
-        </p>
-      </div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-        {SETUP_SECTIONS.map((section) => {
-          const checked = selectedSet.has(section.id);
-          return (
-            <label
-              key={section.id}
-              htmlFor={`setup-${section.id}`}
-              className="flex cursor-pointer gap-3 rounded-[6px] border border-border bg-surface px-3 py-2.5 transition-colors hover:bg-surface-soft"
-            >
-              <Checkbox
-                id={`setup-${section.id}`}
-                checked={checked}
-                onCheckedChange={(value) => toggleSegment(section.id, value === true)}
-                aria-label={`Set up ${section.title}`}
-                className="mt-0.5"
-              />
-              <span className="min-w-0">
-                <span className="flex items-center gap-2 text-[13.5px] font-medium text-fg">
-                  <SegDot segment={section.id} size={7} />
-                  {section.title}
-                </span>
-                <span className="mt-0.5 block text-[12px] leading-[1.4] text-fg-muted">
-                  {section.description}
-                </span>
-              </span>
-            </label>
-          );
-        })}
-      </div>
-      {visibleSections.length > 0 ? (
-        <div className="flex flex-col gap-3 pt-1">
-          {visibleSections.map((section) => (
-            <div key={section.id} className="flex flex-col gap-1.5">
-              <div className="font-mono text-[10.5px] uppercase tracking-[0.08em] text-fg-muted">
-                {section.title} prompts
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {section.prompts.map((prompt) => {
-                  const active = promptSet.has(prompt.id);
-                  return (
-                    <button
-                      key={prompt.id}
-                      type="button"
-                      title={prompt.detail}
-                      aria-pressed={active}
-                      onClick={() => togglePrompt(prompt.id)}
-                      className={[
-                        'rounded-full border px-3 py-1.5 text-[12px] transition-colors',
-                        active
-                          ? 'border-fg bg-fg text-bg'
-                          : 'border-border bg-surface text-fg-muted hover:bg-surface-soft hover:text-fg',
-                      ].join(' ')}
-                    >
-                      {prompt.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-    </div>
   );
 }
 

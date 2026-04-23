@@ -32,8 +32,8 @@ import { HomeHubMark } from '@/components/design-system';
 
 interface StreamingMessageProps {
   events: AsyncIterable<StreamEvent>;
-  /** Called when the stream ends; used by the parent to refresh. */
-  onFinal?: (finalEvent: Extract<StreamEvent, { type: 'final' }>) => void;
+  /** Called when the stream finishes; used by the parent to refresh. */
+  onFinal?: () => void;
 }
 
 interface ToolCallState {
@@ -47,11 +47,21 @@ export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
   const [suggestions, setSuggestions] = React.useState<
     Array<{ callId: string; tool: string; summary: string; preview: unknown }>
   >([]);
+  const [thinkingText, setThinkingText] = React.useState('');
+  const [thinkingStatus, setThinkingStatus] = React.useState('');
   const [thinking, setThinking] = React.useState(true);
   const [done, setDone] = React.useState(false);
 
   React.useEffect(() => {
     let cancelled = false;
+    let finished = false;
+    function finish() {
+      if (finished) return;
+      finished = true;
+      setThinking(false);
+      setDone(true);
+      if (onFinal) onFinal();
+    }
     (async () => {
       for await (const ev of events) {
         if (cancelled) break;
@@ -65,6 +75,21 @@ export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
           case 'token':
             setThinking(false);
             setText((prev) => prev + ev.delta);
+            break;
+          case 'thinking':
+            setThinking(true);
+            setThinkingText((prev) => prev + ev.delta);
+            break;
+          case 'thinking_status':
+          case 'status':
+            if (ev.message.trim()) {
+              setThinking(true);
+              setThinkingStatus(ev.message.trim());
+            }
+            break;
+          case 'tool_generation':
+            setThinking(true);
+            setThinkingStatus(`using ${ev.tool}`);
             break;
           case 'tool_call_start':
             setCalls((prev) => [
@@ -131,20 +156,23 @@ export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
             // a [node:uuid] marker; we let the final render resolve it.
             break;
           case 'final':
-            setDone(true);
-            if (onFinal) onFinal(ev);
+            finish();
             break;
           case 'error':
             setText((prev) => `${prev}\n\n_stream error: ${ev.message}_`);
-            setDone(true);
+            finish();
             break;
         }
       }
+      if (!cancelled) finish();
     })();
     return () => {
       cancelled = true;
     };
   }, [events, onFinal]);
+
+  const hasThinkingDetails = thinkingText.trim().length > 0;
+  const showThinking = (thinking && !done) || Boolean(thinkingStatus) || hasThinkingDetails;
 
   return (
     <div className="flex items-start gap-2.5" role="log" aria-live="polite">
@@ -152,11 +180,26 @@ export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
         <HomeHubMark size={12} />
       </div>
       <div className="min-w-0 flex-1">
-        {thinking && !done ? (
-          <div className="mb-1.5 font-mono text-[10.5px] tracking-[0.06em] text-fg-muted">
-            <span className="animate-pulse text-accent" aria-label="thinking">
-              thinking…
-            </span>
+        {showThinking ? (
+          <div className="mb-2 border-l border-border pl-2">
+            <div className="font-mono text-[10.5px] tracking-[0.06em] text-fg-muted">
+              <span className={thinking && !done ? 'animate-pulse text-accent' : ''}>
+                {thinkingStatus || 'thinking...'}
+              </span>
+            </div>
+            {hasThinkingDetails ? (
+              <details
+                className="mt-1 text-[12px] leading-[1.45] text-fg-muted"
+                open={!text.trim()}
+              >
+                <summary className="cursor-pointer font-mono text-[10.5px] tracking-[0.06em]">
+                  reasoning
+                </summary>
+                <div className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap break-words rounded-[4px] bg-surface-soft px-2 py-1.5">
+                  {thinkingText}
+                </div>
+              </details>
+            ) : null}
           </div>
         ) : null}
         {calls.map((c) => (

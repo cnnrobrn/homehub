@@ -32,7 +32,7 @@
 
 set -euo pipefail
 
-: "${HERMES_HOME:=/root/.hermes}"
+: "${HERMES_HOME:=/tmp/hermes}"
 : "${HOUSEHOLD_ID:?HOUSEHOLD_ID must be set}"
 : "${HERMES_STORAGE_BUCKET:=hermes-state}"
 : "${HERMES_STORAGE_PATH:?HERMES_STORAGE_PATH must be set}"

@@ -216,6 +216,18 @@ export function chatPromptHref(prompt: string): string {
   return `/chat/new?prompt=${encodeURIComponent(prompt)}`;
 }
 
+export function buildHermesOnboardingStartPrompt({
+  householdName,
+}: {
+  householdName: string;
+}): string {
+  return [
+    `Alfred, start HomeHub onboarding for ${householdName || 'my household'}.`,
+    'Ask what I want HomeHub to handle first, then use your HomeHub onboarding skill to collect the key details.',
+    'Ask one follow-up at a time. Once you have enough to create something useful, populate the matching HomeHub data and reveal the section or tab.',
+  ].join('\n\n');
+}
+
 export function buildAlfredSetupPrompt({
   householdName,
   selectedSegmentIds,
@@ -241,6 +253,6 @@ export function buildAlfredSetupPrompt({
     `Alfred, help me set up HomeHub for ${householdName || 'my household'}.`,
     `Focus on: ${sectionLabels}.`,
     focus,
-    'Ask one follow-up at a time, remember useful details, and only surface UI sections or tabs when there is information worth showing.',
+    'Use your HomeHub onboarding skill. Ask one follow-up at a time, create useful HomeHub records when you can, and only reveal UI sections or tabs when there is information worth showing.',
   ].join('\n\n');
 }

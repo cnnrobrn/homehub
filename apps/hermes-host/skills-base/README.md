@@ -19,3 +19,8 @@ grocery list → Instacart handoff rule: agents may manage HomeHub meal,
 pantry, and grocery-list data, but Instacart checkout links are created
 by HomeHub server code with the app API key and opened by the user on
 Instacart.
+
+`onboarding/` is the first-run setup coordinator. It asks members what
+they want HomeHub to handle, uses the section skills to populate safe
+data, then updates `household.settings.onboarding` so the relevant
+sections and tabs appear in the app.

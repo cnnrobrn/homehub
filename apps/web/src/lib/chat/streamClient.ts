@@ -12,6 +12,10 @@ export type StreamEvent =
   | { type: 'start'; turnId: string; conversationId: string }
   | { type: 'intent'; intent: string; retrieval_depth: string; segments: string[] }
   | { type: 'token'; delta: string }
+  | { type: 'thinking'; delta: string }
+  | { type: 'thinking_status'; message: string }
+  | { type: 'status'; message: string }
+  | { type: 'tool_generation'; tool: string }
   | {
       type: 'tool_call_start';
       callId: string;

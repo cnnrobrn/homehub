@@ -1,39 +1,119 @@
 """
 Per-turn wrapper invoked inside an E2B sandbox.
 
-Reads the member message from env ($HOMEHUB_MEMBER_MESSAGE), invokes
-`hermes chat` with the confirmed non-interactive flag set, streams
-stdout to the process's stdout (which the E2B SDK's onStdout callback
-relays back to the router), then persists ${HERMES_HOME} back to
-Supabase Storage as a single tarball.
+Reads the member message from env ($HOMEHUB_MEMBER_MESSAGE), runs one
+Hermes turn, streams structured response/thinking events to stdout,
+then persists ${HERMES_HOME} back to Supabase Storage as a tarball.
 """
 
 from __future__ import annotations
 
+import contextlib
+import inspect
+import json
 import os
+import re
 import subprocess
 import sys
 import tarfile
 import tempfile
-import urllib.request
+import threading
 import urllib.error
+import urllib.request
 from pathlib import Path
+from typing import Any, Callable
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", "/root/.hermes"))
+HERMES_HOME = Path(os.environ.get("HERMES_HOME", "/tmp/hermes"))
+HERMES_ROOT = Path(os.environ.get("HERMES_ROOT", "/opt/hermes-agent"))
 HERMES_BIN = Path("/opt/hermes-agent/venv/bin/hermes")
 STORAGE_BUCKET = os.environ.get("HERMES_STORAGE_BUCKET", "hermes-state")
 STORAGE_PATH = os.environ.get("HERMES_STORAGE_PATH")
 SUPABASE_URL = os.environ.get("HOMEHUB_SUPABASE_URL")
 SUPABASE_ANON_KEY = os.environ.get("HOMEHUB_SUPABASE_ANON_KEY")
 SUPABASE_JWT = os.environ.get("HOMEHUB_SUPABASE_JWT")
-CONV_ID = os.environ.get("HOMEHUB_CONVERSATION_ID", "")
 DEFAULT_MODEL = os.environ.get("HERMES_DEFAULT_MODEL", "moonshotai/kimi-k2.6")
 TOOLSETS = os.environ.get("HERMES_TOOLSETS", "skills")
 MAX_TURNS = os.environ.get("HERMES_MAX_TURNS", "10")
+EVENT_PREFIX = "HOMEHUB_HERMES_EVENT "
+EVENT_STDOUT = sys.stdout
+EVENT_LOCK = threading.Lock()
+
+
+def env_flag(name: str, default: bool) -> bool:
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() not in {"0", "false", "no", "off"}
+
+
+STREAM_THINKING = env_flag("HERMES_STREAM_THINKING", True)
+
+
+def emit_event(event: dict[str, Any]) -> None:
+    """Write one framed event line for the router to translate into SSE."""
+    payload = json.dumps(event, ensure_ascii=False, separators=(",", ":"))
+    with EVENT_LOCK:
+        EVENT_STDOUT.write(f"{EVENT_PREFIX}{payload}\n")
+        EVENT_STDOUT.flush()
+
+
+class ThinkSplitter:
+    """Split inline <think> style deltas away from visible answer text."""
+
+    TAG_RE = re.compile(
+        r"</?\s*(?:REASONING_SCRATCHPAD|think|thinking|reasoning|thought)\s*>",
+        re.IGNORECASE,
+    )
+
+    def __init__(self, emit_answer: Callable[[str], None], emit_thinking: Callable[[str], None]):
+        self._emit_answer = emit_answer
+        self._emit_thinking = emit_thinking
+        self._pending = ""
+        self._in_thinking = False
+        self.emitted_answer = False
+
+    def feed(self, text: str) -> None:
+        if not text:
+            return
+        self._pending += text
+        while self._pending:
+            match = self.TAG_RE.search(self._pending)
+            if not match:
+                last_lt = self._pending.rfind("<")
+                if last_lt != -1 and ">" not in self._pending[last_lt:]:
+                    chunk = self._pending[:last_lt]
+                    self._pending = self._pending[last_lt:]
+                else:
+                    chunk = self._pending
+                    self._pending = ""
+                self._emit_chunk(chunk)
+                return
+
+            before = self._pending[: match.start()]
+            self._emit_chunk(before)
+            tag = match.group(0).strip().lower()
+            self._in_thinking = not tag.startswith("</")
+            self._pending = self._pending[match.end() :]
+
+    def flush(self) -> None:
+        if self._pending:
+            self._emit_chunk(self._pending)
+            self._pending = ""
+
+    def _emit_chunk(self, chunk: str) -> None:
+        if not chunk:
+            return
+        if self._in_thinking:
+            if STREAM_THINKING:
+                self._emit_thinking(chunk)
+            return
+        self.emitted_answer = True
+        self._emit_answer(chunk)
 
 
 def persist_state() -> None:
     """Tar ${HERMES_HOME} and upsert into Supabase Storage. Never raises."""
+    tmp_path: str | None = None
     if not (STORAGE_PATH and SUPABASE_URL and SUPABASE_ANON_KEY and SUPABASE_JWT):
         print("[run_turn] WARNING: missing Storage env; state NOT persisted", file=sys.stderr)
         return
@@ -64,48 +144,187 @@ def persist_state() -> None:
     except Exception as e:  # noqa: BLE001
         print(f"[run_turn] state persist failed: {e}", file=sys.stderr)
     finally:
-        try:
-            os.unlink(tmp_path)
-        except Exception:
-            pass
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except Exception:
+                pass
+
+
+def prepare_runtime() -> None:
+    """Prepare the per-turn runtime without rewriting household config."""
+    os.environ["HERMES_YOLO_MODE"] = "1"
+    HERMES_HOME.mkdir(parents=True, exist_ok=True)
+
+
+def filtered_kwargs(callable_obj: Callable[..., Any], kwargs: dict[str, Any]) -> dict[str, Any]:
+    try:
+        params = inspect.signature(callable_obj).parameters
+    except Exception:
+        return kwargs
+    return {key: value for key, value in kwargs.items() if key in params}
+
+
+def run_hermes_programmatic(message: str) -> int:
+    """Run Hermes through its internal API so streaming callbacks stay enabled."""
+    prepare_runtime()
+    if str(HERMES_ROOT) not in sys.path:
+        sys.path.insert(0, str(HERMES_ROOT))
+
+    def emit_answer(delta: str) -> None:
+        emit_event({"type": "token", "delta": delta})
+
+    def emit_thinking(delta: str) -> None:
+        if STREAM_THINKING:
+            emit_event({"type": "thinking", "delta": delta})
+
+    splitter = ThinkSplitter(emit_answer=emit_answer, emit_thinking=emit_thinking)
+
+    with contextlib.redirect_stdout(sys.stderr):
+        from cli import HermesCLI  # type: ignore
+
+        ctor_kwargs = filtered_kwargs(
+            HermesCLI,
+            {
+                "model": DEFAULT_MODEL,
+                "toolsets": [t.strip() for t in TOOLSETS.split(",") if t.strip()],
+                "provider": "openrouter",
+                "api_key": os.environ.get("OPENROUTER_API_KEY"),
+                "base_url": os.environ.get("HERMES_BASE_URL"),
+                "max_turns": int(MAX_TURNS),
+                "verbose": env_flag("HERMES_VERBOSE", False),
+                "compact": True,
+                "resume": None,
+                "checkpoints": False,
+                "pass_session_id": True,
+                "ignore_rules": False,
+                "source": "homehub",
+                "yolo": True,
+            },
+        )
+        cli = HermesCLI(**ctor_kwargs)
+
+        ensure_credentials = getattr(cli, "_ensure_runtime_credentials", None)
+        if callable(ensure_credentials) and not ensure_credentials():
+            emit_event(
+                {
+                    "type": "error",
+                    "message": "Hermes runtime credentials are not configured",
+                    "code": "hermes_credentials",
+                }
+            )
+            return 1
+
+        turn_route: dict[str, Any] = {
+            "model": DEFAULT_MODEL,
+            "runtime": None,
+            "request_overrides": None,
+            "signature": None,
+        }
+        resolve_route = getattr(cli, "_resolve_turn_agent_config", None)
+        if callable(resolve_route):
+            resolved = resolve_route(message)
+            if isinstance(resolved, dict):
+                turn_route.update(resolved)
+                if (
+                    turn_route.get("signature")
+                    and turn_route.get("signature") != getattr(cli, "_active_agent_route_signature", None)
+                ):
+                    cli.agent = None
+
+        init_agent = getattr(cli, "_init_agent")
+        init_kwargs = filtered_kwargs(
+            init_agent,
+            {
+                "model_override": turn_route.get("model"),
+                "runtime_override": turn_route.get("runtime"),
+                "request_overrides": turn_route.get("request_overrides"),
+            },
+        )
+        if not init_agent(**init_kwargs):
+            emit_event(
+                {
+                    "type": "error",
+                    "message": "Hermes agent initialization failed",
+                    "code": "hermes_init",
+                }
+            )
+            return 1
+
+        agent = cli.agent
+        agent.quiet_mode = True
+        agent.suppress_status_output = True
+        agent.stream_delta_callback = splitter.feed
+        agent.reasoning_callback = emit_thinking if STREAM_THINKING else None
+        agent.thinking_callback = lambda text: emit_event(
+            {"type": "thinking_status", "message": text}
+        ) if text else None
+        agent.status_callback = lambda text: emit_event({"type": "status", "message": text})
+        agent.tool_gen_callback = lambda tool: emit_event(
+            {"type": "tool_generation", "tool": tool}
+        )
+
+        result = agent.run_conversation(
+            user_message=message,
+            conversation_history=getattr(cli, "conversation_history", []),
+        )
+
+    splitter.flush()
+    final_response = result.get("final_response", "") if isinstance(result, dict) else str(result)
+    if final_response and not splitter.emitted_answer:
+        splitter.feed(final_response)
+        splitter.flush()
+    if isinstance(result, dict) and result.get("failed"):
+        return 1
+    return 0
+
+
+def run_cli_fallback(message: str) -> int:
+    args = [
+        str(HERMES_BIN),
+        "chat",
+        "-Q",
+        "--provider",
+        "openrouter",
+        "--model",
+        DEFAULT_MODEL,
+        "--toolsets",
+        TOOLSETS,
+        "--pass-session-id",
+        "--source",
+        "homehub",
+        "--max-turns",
+        MAX_TURNS,
+        "--yolo",
+        "-q",
+        message,
+    ]
+
+    override = os.environ.get("HERMES_CLI_ARGS")
+    if override:
+        args = [str(HERMES_BIN), *json.loads(override)]
+
+    proc = subprocess.Popen(
+        args,
+        stdin=subprocess.DEVNULL,
+        stdout=EVENT_STDOUT.fileno(),
+        stderr=sys.stderr.fileno(),
+        env=os.environ.copy(),
+    )
+    return proc.wait()
 
 
 def main() -> int:
-    # Prefer env-passed message (E2B); stdin fallback for local / legacy.
     message = os.environ.get("HOMEHUB_MEMBER_MESSAGE", "") or sys.stdin.read()
     if not message.strip():
         print("[run_turn] empty message (HOMEHUB_MEMBER_MESSAGE and stdin both empty)", file=sys.stderr)
         return 2
 
-    args = [
-        str(HERMES_BIN),
-        "chat",
-        "-Q",
-        "--provider", "openrouter",
-        "--model", DEFAULT_MODEL,
-        "--toolsets", TOOLSETS,
-        "--continue", f"homehub-{CONV_ID}",
-        "--pass-session-id",
-        "--source", "homehub",
-        "--max-turns", MAX_TURNS,
-        "--yolo",
-        "-q", message,
-    ]
-
-    override = os.environ.get("HERMES_CLI_ARGS")
-    if override:
-        import json
-        args = [str(HERMES_BIN), *json.loads(override)]
-
     try:
-        proc = subprocess.Popen(
-            args,
-            stdin=subprocess.DEVNULL,
-            stdout=sys.stdout.fileno(),
-            stderr=sys.stderr.fileno(),
-            env=os.environ.copy(),
-        )
-        rc = proc.wait()
+        rc = run_hermes_programmatic(message)
+    except Exception as e:  # noqa: BLE001
+        print(f"[run_turn] programmatic Hermes failed, falling back to CLI: {e}", file=sys.stderr)
+        rc = run_cli_fallback(message)
     finally:
         persist_state()
 

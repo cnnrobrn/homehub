@@ -41,7 +41,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
-HERMES_HOME = Path(os.environ.get("HERMES_HOME", "/root/.hermes"))
+HERMES_HOME = Path(os.environ.get("HERMES_HOME", "/tmp/hermes"))
 HERMES_BIN = Path("/opt/hermes-agent/venv/bin/hermes")
 SHARED_SECRET = os.environ.get("HERMES_SHARED_SECRET", "")
 HOUSEHOLD_ID = os.environ.get("HOUSEHOLD_ID", "")
@@ -118,8 +118,6 @@ async def _stream_turn(body: ChatTurnRequest) -> AsyncIterator[dict]:
     default_model = os.environ.get("HERMES_DEFAULT_MODEL", "moonshotai/kimi-k2.6")
     toolsets = os.environ.get("HERMES_TOOLSETS", "skills")
     max_turns = os.environ.get("HERMES_MAX_TURNS", "10")
-    session_name = f"homehub-{body.conversation_id}"
-
     override = os.environ.get("HERMES_CLI_ARGS")
     if override:
         args = json.loads(override)
@@ -130,7 +128,6 @@ async def _stream_turn(body: ChatTurnRequest) -> AsyncIterator[dict]:
             "--provider", "openrouter",
             "--model", default_model,
             "--toolsets", toolsets,
-            "--continue", session_name,
             "--pass-session-id",
             "--source", "homehub",
             "--max-turns", max_turns,

@@ -41,6 +41,7 @@ import { type ActionResult, ok, toErr } from './_envelope';
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
 
+
 const segmentSchema = z.enum(['financial', 'food', 'fun', 'social', 'system']);
 const setupSegmentSchema = z.enum(['financial', 'food', 'fun', 'social']);
 const accessSchema = z.enum(['none', 'read', 'write']);
@@ -92,14 +93,19 @@ export async function createHouseholdAction(
         !Array.isArray(currentSettings.onboarding)
           ? (currentSettings.onboarding as Record<string, Json>)
           : {};
+      const setupSegments = [...new Set(parsed.setupSegments ?? [])];
+      const setupPromptIds = [...new Set(parsed.setupPromptIds ?? [])];
+      const setupAt = new Date().toISOString();
+      const hasPreselectedSetup = setupSegments.length > 0 || setupPromptIds.length > 0;
       const settings: Record<string, Json> = {
         ...currentSettings,
         onboarding: {
           ...currentOnboarding,
-          setup_segments: [...new Set(parsed.setupSegments ?? [])],
-          setup_prompt_ids: [...new Set(parsed.setupPromptIds ?? [])],
+          setup_segments: setupSegments,
+          setup_prompt_ids: setupPromptIds,
           ...(parsed.setupPrompt ? { alfred_setup_prompt: parsed.setupPrompt } : {}),
-          completed_at: new Date().toISOString(),
+          ...(currentOnboarding.started_at ? {} : { started_at: setupAt }),
+          ...(hasPreselectedSetup ? { completed_at: setupAt } : {}),
         } as Json,
       };
       const { data: updatedHousehold, error: updateErr } = await service

@@ -1,8 +1,8 @@
 /**
  * `/onboarding` — first-run household setup.
  *
- * A signed-in user with no household lands here. Two tabs:
- *   - Create a household (name + optional tz/currency).
+ * A signed-in user with no household lands here. Two paths:
+ *   - Create a household, then continue setup in chat.
  *   - Paste an invite link or token.
  *
  * The shell already redirected away from `/` so we don't need to check
@@ -39,8 +39,8 @@ export default async function OnboardingPage() {
             start a household with {ASSISTANT_NAME}.
           </h1>
           <p className="max-w-[380px] text-[14px] leading-[1.55] text-fg-muted">
-            Create a household, choose what to set up first, or paste an invite from someone already
-            inside.
+            Create a household and {ASSISTANT_NAME} will gather the details in chat, or paste an
+            invite from someone already inside.
           </p>
         </div>
       </div>

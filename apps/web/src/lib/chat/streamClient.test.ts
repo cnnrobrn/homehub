@@ -29,6 +29,7 @@ describe('postChatStream', () => {
   it('parses multi-event SSE body', async () => {
     const body = makeBody([
       'data: {"type":"start","turnId":"t1","conversationId":"c1"}\n\n',
+      'data: {"type":"thinking","delta":"checking memory"}\n\n',
       'data: {"type":"token","delta":"hello"}\n\n',
       'data: {"type":"final","turnId":"t1","conversationId":"c1","assistantBody":"hello","toolCalls":[],"citations":[],"model":"claude","inputTokens":1,"outputTokens":1,"costUsd":0}\n\n',
     ]);
@@ -40,7 +41,7 @@ describe('postChatStream', () => {
     } as unknown as Response);
 
     const events = await collect(postChatStream({ conversationId: 'c1', message: 'hi' }));
-    expect(events.map((e) => e.type)).toEqual(['start', 'token', 'final']);
+    expect(events.map((e) => e.type)).toEqual(['start', 'thinking', 'token', 'final']);
   });
 
   it('emits an error event on non-ok response', async () => {

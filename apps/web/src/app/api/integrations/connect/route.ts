@@ -25,7 +25,10 @@
  *          write any opt-in metadata into
  *          `sync.provider_connection.metadata`.
  *        - `allowed_integrations` = [provider]
- *   5. 302 to the `connect_link` returned by Nango.
+ *   5. 302 directly to Nango's provider OAuth endpoint. We bypass
+ *      Nango's hosted Connect UI so members never land on the Nango
+ *      dashboard/hosted UI; HomeHub already collected the provider and
+ *      Gmail category consent before creating the session.
  *
  * Error shape: anything that fails resolution returns a 4xx JSON body
  * rather than redirecting.
@@ -38,6 +41,7 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
+import { serverEnv } from '@/lib/env';
 import { NangoNotConfiguredError, createWebNangoClient } from '@/lib/nango/client';
 
 export const dynamic = 'force-dynamic';
@@ -142,7 +146,11 @@ export async function GET(request: NextRequest): Promise<Response> {
       allowedIntegrations: [provider],
       tags,
     });
-    return NextResponse.redirect(session.connectLink, { status: 302 });
+
+    const { NANGO_HOST } = serverEnv();
+    const connectUrl = new URL(`/oauth/connect/${encodeURIComponent(provider)}`, NANGO_HOST);
+    connectUrl.searchParams.set('connect_session_token', session.token);
+    return NextResponse.redirect(connectUrl, { status: 302 });
   } catch (err) {
     if (err instanceof NangoNotConfiguredError) {
       return NextResponse.json({ error: err.message }, { status: 503 });

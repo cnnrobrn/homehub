@@ -37,16 +37,18 @@ export function FunSubNav({ visibleHrefs }: { visibleHrefs?: readonly string[] }
       aria-label="Fun sections"
       className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-surface p-1 text-sm"
     >
-      {tabs.map((tab) => {
+      {tabs.map((tab, index) => {
         const active = tab.href === '/fun' ? pathname === '/fun' : pathname.startsWith(tab.href);
         return (
           <Link
             key={tab.href}
             href={tab.href}
+            style={visibleHrefs ? { animationDelay: `${index * 30}ms` } : undefined}
             aria-current={active ? 'page' : undefined}
             className={cn(
               'rounded-sm px-3 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
               active ? 'bg-bg/80 text-fg' : 'text-fg-muted hover:bg-bg/50 hover:text-fg',
+              visibleHrefs && 'hh-section-appear',
             )}
           >
             {tab.label}

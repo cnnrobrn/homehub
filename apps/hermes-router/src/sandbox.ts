@@ -65,7 +65,10 @@ export async function runSandboxedTurn(
   // reads them to hydrate state from Supabase Storage, run the turn,
   // and persist a tarball back.
   const sandboxEnvs: Record<string, string> = {
-    HERMES_HOME: '/root/.hermes',
+    // E2B commands run as a non-root sandbox user even when the template
+    // image was built from a root-based Dockerfile. Keep mutable Hermes
+    // state under /tmp so the per-turn entrypoint can hydrate and persist it.
+    HERMES_HOME: '/tmp/hermes',
     HERMES_STORAGE_BUCKET: args.storageBucket,
     HERMES_STORAGE_PATH: args.storagePath,
     HERMES_SHARED_SECRET: env.HERMES_SHARED_SECRET,
@@ -115,15 +118,28 @@ export async function runSandboxedTurn(
       void data;
     },
   });
+  // E2B resolves/rejects this promise when the command exits, while the
+  // router is blocked reading the ReadableStream. Bridge that settlement
+  // into the stream immediately; otherwise success deadlocks and failures
+  // can become unhandled rejections before wait() is called.
+  const settledCommandPromise = commandPromise.then(
+    (result) => {
+      streamController?.close();
+      return result;
+    },
+    (err) => {
+      streamController?.error(err);
+      throw err;
+    },
+  );
+  void settledCommandPromise.catch(() => {});
 
   const wait = async (): Promise<number> => {
     try {
-      const result = await commandPromise;
-      streamController?.close();
+      const result = await settledCommandPromise;
       await sandbox.kill().catch(() => {});
       return result.exitCode ?? 0;
     } catch (err) {
-      streamController?.error(err);
       await sandbox.kill().catch(() => {});
       throw err;
     }

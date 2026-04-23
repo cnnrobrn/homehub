@@ -57,6 +57,30 @@ function bearerOk(presented: string | undefined, expected: string): boolean {
   return timingSafeEqual(a, b);
 }
 
+function encodeSse(event: Record<string, unknown>): string {
+  return `data: ${JSON.stringify(event)}\n\n`;
+}
+
+const HERMES_EVENT_PREFIX = 'HOMEHUB_HERMES_EVENT ';
+
+type HermesHostEvent =
+  | { type: 'token'; delta?: unknown }
+  | { type: 'thinking'; delta?: unknown }
+  | { type: 'thinking_status'; message?: unknown }
+  | { type: 'status'; message?: unknown }
+  | { type: 'tool_generation'; tool?: unknown }
+  | { type: 'error'; message?: unknown; code?: unknown };
+
+function parseHermesHostEvent(line: string): HermesHostEvent | null {
+  if (!line.startsWith(HERMES_EVENT_PREFIX)) return null;
+  const raw = line.slice(HERMES_EVENT_PREFIX.length);
+  const parsed = JSON.parse(raw) as unknown;
+  if (!parsed || typeof parsed !== 'object' || !('type' in parsed)) {
+    throw new Error('invalid host event');
+  }
+  return parsed as HermesHostEvent;
+}
+
 const env: RouterEnv = loadEnv(routerEnvSchema);
 const log = createLogger({ LOG_LEVEL: 'info' } as never, {
   service: SERVICE_NAME,
@@ -207,13 +231,6 @@ async function handleChatStream(req: IncomingMessage, res: ServerResponse): Prom
     ttlSeconds: env.HERMES_JWT_TTL_SECONDS,
   });
 
-  res.writeHead(200, {
-    'content-type': 'text/event-stream; charset=utf-8',
-    'cache-control': 'no-cache, no-transform',
-    connection: 'keep-alive',
-    'x-accel-buffering': 'no',
-  });
-
   const { stream, wait } = await runSandboxedTurn(env, {
     storageBucket: ptr.bucket,
     storagePath: ptr.path,
@@ -228,16 +245,196 @@ async function handleChatStream(req: IncomingMessage, res: ServerResponse): Prom
     },
   });
 
+  res.writeHead(200, {
+    'content-type': 'text/event-stream; charset=utf-8',
+    'cache-control': 'no-cache, no-transform',
+    connection: 'keep-alive',
+    'x-accel-buffering': 'no',
+  });
+  res.write(
+    encodeSse({ type: 'start', turnId: body.turn_id, conversationId: body.conversation_id }),
+  );
+
   const reader = stream.getReader();
+  const decoder = new TextDecoder();
+  let assistantBody = '';
+  let exitCode = -1;
+  let hostBuffer = '';
+  const emitToken = (delta: string) => {
+    if (!delta) return;
+    assistantBody += delta;
+    res.write(encodeSse({ type: 'token', delta }));
+  };
+  const forwardHostEvent = (event: HermesHostEvent) => {
+    switch (event.type) {
+      case 'token': {
+        if (typeof event.delta === 'string') emitToken(event.delta);
+        return;
+      }
+      case 'thinking': {
+        if (typeof event.delta === 'string') {
+          res.write(encodeSse({ type: 'thinking', delta: event.delta }));
+        }
+        return;
+      }
+      case 'thinking_status': {
+        if (typeof event.message === 'string') {
+          res.write(encodeSse({ type: 'thinking_status', message: event.message }));
+        }
+        return;
+      }
+      case 'status': {
+        if (typeof event.message === 'string') {
+          res.write(encodeSse({ type: 'status', message: event.message }));
+        }
+        return;
+      }
+      case 'tool_generation': {
+        if (typeof event.tool === 'string') {
+          res.write(encodeSse({ type: 'tool_generation', tool: event.tool }));
+        }
+        return;
+      }
+      case 'error': {
+        res.write(
+          encodeSse({
+            type: 'error',
+            message: typeof event.message === 'string' ? event.message : 'Hermes host error',
+            code: typeof event.code === 'string' ? event.code : 'hermes_host_error',
+          }),
+        );
+        return;
+      }
+    }
+  };
+  const consumeHostText = (text: string, flush = false) => {
+    hostBuffer += text;
+    let newlineIndex: number;
+    while ((newlineIndex = hostBuffer.indexOf('\n')) !== -1) {
+      const line = hostBuffer.slice(0, newlineIndex);
+      hostBuffer = hostBuffer.slice(newlineIndex + 1);
+      if (!line) continue;
+      try {
+        const event = parseHermesHostEvent(line);
+        if (event) {
+          forwardHostEvent(event);
+        } else {
+          emitToken(`${line}\n`);
+        }
+      } catch (err) {
+        log.warn('host.event_parse_failed', {
+          message: err instanceof Error ? err.message : String(err),
+        });
+        res.write(
+          encodeSse({
+            type: 'error',
+            message: 'failed to parse Hermes host event',
+            code: 'hermes_event_parse_failed',
+          }),
+        );
+      }
+    }
+    if (flush && hostBuffer) {
+      try {
+        const event = parseHermesHostEvent(hostBuffer);
+        if (event) {
+          forwardHostEvent(event);
+        } else {
+          emitToken(hostBuffer);
+        }
+      } catch {
+        emitToken(hostBuffer);
+      } finally {
+        hostBuffer = '';
+      }
+    }
+  };
   try {
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      res.write(value);
+      const delta = decoder.decode(value, { stream: true });
+      if (!delta) continue;
+      consumeHostText(delta);
     }
+    const tail = decoder.decode();
+    if (tail) {
+      consumeHostText(tail);
+    }
+    consumeHostText('', true);
+    exitCode = await wait();
+    if (exitCode !== 0) {
+      res.write(
+        encodeSse({
+          type: 'error',
+          message: `Hermes exited with code ${exitCode}`,
+          code: 'hermes_exit',
+        }),
+      );
+      return;
+    }
+
+    const { data: assistantTurn, error: assistantErr } = await supabase
+      .schema('app')
+      .from('conversation_turn')
+      .insert({
+        conversation_id: body.conversation_id,
+        household_id: body.household_id,
+        role: 'assistant',
+        body_md: assistantBody || '(no response)',
+        model: env.HERMES_DEFAULT_MODEL,
+        input_tokens: null,
+        output_tokens: null,
+        cost_cents: null,
+        tool_calls: [],
+        citations: [],
+      } as never)
+      .select('id')
+      .single<{ id: string }>();
+    if (assistantErr) {
+      log.error('assistant_turn.insert_failed', {
+        household_id: body.household_id,
+        conversation_id: body.conversation_id,
+        message: assistantErr.message,
+      });
+      res.write(
+        encodeSse({
+          type: 'error',
+          message: 'assistant turn persistence failed',
+          code: 'assistant_persist_failed',
+        }),
+      );
+      return;
+    }
+
+    await supabase
+      .schema('app')
+      .from('conversation')
+      .update({ last_message_at: new Date().toISOString() } as never)
+      .eq('id', body.conversation_id)
+      .eq('household_id', body.household_id);
+
+    res.write(
+      encodeSse({
+        type: 'final',
+        turnId: assistantTurn.id,
+        conversationId: body.conversation_id,
+        assistantBody,
+        toolCalls: [],
+        citations: [],
+        model: env.HERMES_DEFAULT_MODEL,
+        inputTokens: 0,
+        outputTokens: 0,
+        costUsd: 0,
+      }),
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Hermes stream failed';
+    log.error('sandbox.stream_failed', { household_id: body.household_id, message });
+    res.write(encodeSse({ type: 'error', message, code: 'sandbox_stream_failed' }));
   } finally {
-    const code = await wait().catch(() => -1);
-    log.info('sandbox.exit', { household_id: body.household_id, code });
+    if (exitCode === -1) exitCode = await wait().catch(() => -1);
+    log.info('sandbox.exit', { household_id: body.household_id, code: exitCode });
     res.end();
   }
 }
