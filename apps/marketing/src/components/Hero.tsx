@@ -2,7 +2,6 @@ import { Logo } from './Logo';
 
 import { APP_LOGIN_URL } from '@/lib/app-url';
 
-
 type AreaKey = 'money' | 'meals' | 'plans' | 'people';
 
 const AREAS: Record<AreaKey, string> = {
@@ -77,7 +76,7 @@ export function Hero() {
         >
           The quiet place
           <br />
-          your family
+          your household
           <br />
           runs from.
         </h1>
