@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": ".",
+    "noEmit": true
+  },
+  "include": ["template.ts", "template.build.ts"],
+  "exclude": ["node_modules", "dist", "server", "skills-base"]
+}

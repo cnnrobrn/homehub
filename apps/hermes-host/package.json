@@ -1,0 +1,18 @@
+{
+  "name": "@homehub/hermes-host",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Hermes Agent sandbox template. Defines the E2B Firecracker microVM image each chat turn spawns. Builds to the `homehub-hermes` template tag. Python/Hermes execution paths live in ./server, entrypoint in ./entrypoint.sh, baked common skills in ./skills-base.",
+  "type": "module",
+  "scripts": {
+    "template:build": "tsx template.build.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "e2b": "^2.19.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}

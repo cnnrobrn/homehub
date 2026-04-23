@@ -69,6 +69,33 @@ export async function createHouseholdAction(
       { userId: user.id, ...parsed },
       { email: user.email, displayName: null },
     );
+
+    // Tell hermes-router to allocate a GCS state prefix for this
+    // household. Cheap operation (a row update), but worth doing at
+    // create time so the first chat turn doesn't have to also bootstrap
+    // the pointer. Best-effort — the router self-heals on first chat
+    // turn if this fails. HOMEHUB_HERMES_ROUTER_SECRET here is the
+    // *provisioning* secret (not the proxy secret); they are distinct.
+    if (process.env.HOMEHUB_USE_HERMES_ROUTER === '1') {
+      const routerUrl = process.env.HOMEHUB_HERMES_ROUTER_URL;
+      const provisionSecret = process.env.HOMEHUB_HERMES_PROVISION_SECRET;
+      if (routerUrl && provisionSecret) {
+        void fetch(`${routerUrl.replace(/\/$/, '')}/provision/${result.household.id}`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${provisionSecret}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        }).catch((err) => {
+          console.warn('[createHouseholdAction] hermes pre-provision failed', {
+            householdId: result.household.id,
+            message: err instanceof Error ? err.message : String(err),
+          });
+        });
+      }
+    }
+
     return ok(result);
   } catch (err) {
     return toErr(err);

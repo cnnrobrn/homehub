@@ -1,0 +1,4 @@
+# Superseded. After the Cloud Run Sandboxes pivot this image is no
+# longer deployed as a Railway service per household. It is pushed to
+# Artifact Registry once and spawned inside a Cloud Run Sandbox per
+# chat turn by apps/hermes-router. See tasks/hermes/todo.md.

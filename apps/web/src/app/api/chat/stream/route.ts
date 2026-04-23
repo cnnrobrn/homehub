@@ -128,8 +128,18 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
-  // Build the foreground-agent deps.
-  const runtimeEnv = memoryRuntimeEnv();
+  // Two possible backends for a chat turn:
+  //   (A) Local foreground-agent loop — the legacy path, runs the model
+  //       call + tool orchestration in this Node runtime.
+  //   (B) hermes-router — forwards the turn to a per-household Hermes
+  //       Agent service running on Railway (Shape A from the
+  //       architecture: container-per-household, universal BYOK).
+  // Flip HOMEHUB_USE_HERMES_ROUTER=1 to move a deployment to (B). The
+  // legacy code stays in place until every household is provisioned.
+  const useRouter = process.env.HOMEHUB_USE_HERMES_ROUTER === '1';
+  const routerUrl = process.env.HOMEHUB_HERMES_ROUTER_URL;
+  const routerSecret = process.env.HOMEHUB_HERMES_ROUTER_SECRET;
+
   const log = {
     trace: () => {},
     debug: () => {},
@@ -142,6 +152,57 @@ export async function POST(request: NextRequest): Promise<Response> {
       return this;
     },
   };
+
+  if (useRouter) {
+    if (!routerUrl || !routerSecret) {
+      return NextResponse.json(
+        {
+          error: 'router_misconfigured',
+          message: 'HOMEHUB_USE_HERMES_ROUTER=1 but router URL/secret unset',
+        },
+        { status: 500 },
+      );
+    }
+    const upstream = await fetch(`${routerUrl.replace(/\/$/, '')}/chat/stream`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${routerSecret}`,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({
+        household_id: ctx.household.id,
+        member_id: memberId,
+        member_role: ctx.member.role === 'non_connected' ? 'guest' : ctx.member.role,
+        user_id: user.id,
+        conversation_id: parsed.data.conversationId,
+        turn_id: memberTurn.id,
+        message: parsed.data.message,
+      }),
+    });
+    if (!upstream.ok || !upstream.body) {
+      const text = await upstream.text().catch(() => '');
+      log.error('hermes router upstream error', {
+        status: upstream.status,
+        text: text.slice(0, 500),
+      });
+      return NextResponse.json(
+        { error: 'hermes_upstream_error', status: upstream.status },
+        { status: 502 },
+      );
+    }
+    return new Response(upstream.body, {
+      headers: {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      },
+    });
+  }
+
+  // Legacy local-loop path.
+  const runtimeEnv = memoryRuntimeEnv();
   const modelClient = createModelClient(runtimeEnv, { supabase: service, logger: log });
   const queryMemory = createQueryMemory({ supabase: service, modelClient, log });
   const foregroundModel = createOpenRouterForegroundModel(runtimeEnv, {

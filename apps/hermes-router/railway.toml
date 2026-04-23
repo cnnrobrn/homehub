@@ -1,0 +1,18 @@
+# Railway service config for @homehub/hermes-router.
+#
+# Always-on (no scale-to-zero). E2B handles per-turn sandbox spawn;
+# Railway just keeps the router hot 24/7 so there's no cold-start
+# between a user's tabs.
+
+[build]
+builder = "DOCKERFILE"
+dockerfilePath = "../workers/foreground-agent/Dockerfile"
+
+[build.args]
+SERVICE_NAME = "hermes-router"
+
+[deploy]
+healthcheckPath = "/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 10
