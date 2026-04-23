@@ -319,6 +319,7 @@ describe('getGroceryList tool', () => {
             planned_for: null,
             provider: null,
             external_order_id: null,
+            external_url: null,
             created_at: '2026-04-20T00:00:00Z',
             updated_at: '2026-04-20T00:00:00Z',
           },

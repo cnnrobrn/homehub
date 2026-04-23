@@ -12,3 +12,10 @@ each HomeHub section there is a matching Claude Code skill at
 `.claude/skills/<section>-section/` — the intent and surface overlap; the
 Hermes skill is the runtime tool for the chat agent, the Claude Code
 skill is the dev-time playbook for whoever's editing the code.
+
+The shared reference in `_shared/README.md` is part of the default
+template every generic skill can use. It includes the food pantry →
+grocery list → Instacart handoff rule: agents may manage HomeHub meal,
+pantry, and grocery-list data, but Instacart checkout links are created
+by HomeHub server code with the app API key and opened by the user on
+Instacart.

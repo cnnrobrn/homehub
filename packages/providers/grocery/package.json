@@ -2,7 +2,7 @@
   "name": "@homehub/providers-grocery",
   "version": "0.0.0",
   "private": true,
-  "description": "GroceryProvider interface + StubProvider implementation. Instacart API access is human-gated; the stub returns empty arrays so sync-grocery + the food UI can exercise the contract end-to-end before a real adapter lands. Owned by @integrations.",
+  "description": "GroceryProvider interface, Instacart Developer Platform shopping-list link adapter, and local stub provider. Owned by @integrations.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",

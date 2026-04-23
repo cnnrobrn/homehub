@@ -65,6 +65,28 @@ curl -fsSL -X POST \
    `status='pending'` instead of executing. The household approves in
    `/suggestions`.
 
+## Built-in Food + Instacart Handoff
+
+Every generic Hermes skill can rely on the baked `food` skill for meal
+planning, pantry inventory, grocery lists, and Instacart handoff. The
+safe pattern is:
+
+1. Read meals and pantry from the `app` schema, scoped by
+   `household_id`.
+2. Create or update HomeHub grocery-list rows for low-stakes list
+   management.
+3. For "order this", "send to Instacart", or any checkout-like request,
+   create a food suggestion or direct the user to the Food UI. The
+   sandbox does **not** receive the Instacart API key.
+4. If a list already has `external_url`, surface that URL as the
+   Instacart link. Users sign in, choose a store, review items, and
+   check out on Instacart.
+
+Do not ask the user to "connect Instacart" through settings. HomeHub's
+Instacart integration is app-configured with
+`INSTACART_DEVELOPER_API_KEY`; member login happens on Instacart after
+they open the generated shopping-list URL.
+
 ## Schemas
 
 - `app` — user-facing data (event, transaction, meal, conversation, …)

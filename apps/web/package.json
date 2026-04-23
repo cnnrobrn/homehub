@@ -19,6 +19,7 @@
     "@homehub/db": "workspace:*",
     "@homehub/dlq-admin": "workspace:*",
     "@homehub/providers-email": "workspace:*",
+    "@homehub/providers-grocery": "workspace:*",
     "@homehub/query-memory": "workspace:*",
     "@homehub/shared": "workspace:*",
     "@homehub/tools": "workspace:*",

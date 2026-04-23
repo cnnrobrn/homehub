@@ -5,8 +5,9 @@
  * - Pantry CRUD (`upsertPantryItem`, `deletePantryItem`).
  * - Grocery-draft approve/reject (`approveGroceryDraftAction`,
  *   `rejectGroceryDraftAction`). Approval materializes the
- *   suggestion's `preview.items` into an `app.grocery_list` draft; the
- *   provider-side order placement lives in M9.
+ *   suggestion's `preview.items` into an `app.grocery_list` draft.
+ * - Meal-plan-to-Instacart handoff creates a provider shopping-list
+ *   URL and stores it on `app.grocery_list.external_url`.
  *
  * Every action Zod-validates, catches into the shared `ActionResult`
  * envelope, and writes an `audit.event` row.
@@ -23,17 +24,15 @@ import {
   resolveMemberId,
   writeAuditEvent,
 } from '@homehub/auth-server';
+import { createInstacartProvider } from '@homehub/providers-grocery';
 import { z } from 'zod';
 
 import { type ActionResult, ok, toErr } from './_envelope';
 
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
-import {
-  getFoodProviderConnectionStatus,
-  loadMealPlanPantrySummary,
-  type MealPlanGroceryItem,
-} from '@/lib/food';
+import { serverEnv } from '@/lib/env';
+import { loadMealPlanPantrySummary, type MealPlanGroceryItem } from '@/lib/food';
 
 type ServiceClient = ReturnType<typeof createServiceClient>;
 
@@ -87,6 +86,11 @@ function shoppingDateForWeek(weekStartIso: string): string {
 function groceryQuantity(item: MealPlanGroceryItem): number | null {
   if (item.shortageQuantity !== null && item.shortageQuantity > 0) return item.shortageQuantity;
   return item.neededQuantity;
+}
+
+function instacartQuantity(item: MealPlanGroceryItem): number {
+  const quantity = groceryQuantity(item);
+  return quantity && quantity > 0 ? quantity : 1;
 }
 
 // ==========================================================================
@@ -309,7 +313,7 @@ export async function createInstacartDraftFromMealPlanAction(
     groceryListId: string;
     itemCount: number;
     plannedFor: string;
-    instacartConnected: boolean;
+    externalUrl: string;
   }>
 > {
   try {
@@ -340,6 +344,34 @@ export async function createInstacartDraftFromMealPlanAction(
     }
 
     const plannedFor = shoppingDateForWeek(parsed.from);
+    const env = serverEnv();
+    if (!env.INSTACART_DEVELOPER_API_KEY) {
+      throw new ValidationError('Instacart checkout is not configured', [
+        {
+          path: 'instacart',
+          message: 'set INSTACART_DEVELOPER_API_KEY to create Instacart shopping-list links',
+        },
+      ]);
+    }
+    const instacart = createInstacartProvider({
+      apiKey: env.INSTACART_DEVELOPER_API_KEY,
+      baseUrl: env.INSTACART_DEVELOPER_API_BASE_URL,
+    });
+    const appUrl = env.NEXT_PUBLIC_APP_URL.replace(/\/$/, '');
+    const created = await instacart.createDraftOrder({
+      connectionId: `household:${actor.householdId}`,
+      items: items.map((item) => ({
+        name: item.name,
+        quantity: instacartQuantity(item),
+        ...(item.unit ? { unit: item.unit } : {}),
+      })),
+      metadata: {
+        title: `HomeHub groceries for ${plannedFor}`,
+        expires_in: 30,
+        partner_linkback_url: `${appUrl}/food/groceries`,
+      },
+    });
+
     const { data: existing, error: existingErr } = await actor.service
       .schema('app')
       .from('grocery_list')
@@ -361,7 +393,11 @@ export async function createInstacartDraftFromMealPlanAction(
       const { error: updateErr } = await actor.service
         .schema('app')
         .from('grocery_list')
-        .update({ updated_at: stamp })
+        .update({
+          external_order_id: created.draftId,
+          external_url: created.url,
+          updated_at: stamp,
+        })
         .eq('id', groceryListId)
         .eq('household_id', actor.householdId);
       if (updateErr) {
@@ -376,6 +412,8 @@ export async function createInstacartDraftFromMealPlanAction(
           planned_for: plannedFor,
           status: 'draft',
           provider: 'instacart',
+          external_order_id: created.draftId,
+          external_url: created.url,
         })
         .select('id')
         .single();
@@ -414,11 +452,6 @@ export async function createInstacartDraftFromMealPlanAction(
       throw new Error(`createInstacartDraftFromMealPlanAction item insert: ${itemErr.message}`);
     }
 
-    const connection = await getFoodProviderConnectionStatus(
-      { householdId: actor.householdId, provider: 'instacart' },
-      { client: actor.service, grants: [{ segment: 'food', access: 'write' }] },
-    );
-
     await writeAuditEvent(actor.service, {
       household_id: actor.householdId,
       actor_user_id: actor.userId,
@@ -431,7 +464,7 @@ export async function createInstacartDraftFromMealPlanAction(
         planned_for: plannedFor,
         item_count: items.length,
         provider: 'instacart',
-        instacart_connected: connection.active,
+        instacart_url_created: true,
       },
     });
 
@@ -439,7 +472,7 @@ export async function createInstacartDraftFromMealPlanAction(
       groceryListId,
       itemCount: items.length,
       plannedFor,
-      instacartConnected: connection.active,
+      externalUrl: created.url,
     });
   } catch (err) {
     return toErr(err);

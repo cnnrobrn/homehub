@@ -38,6 +38,7 @@ export interface GroceryListRow {
   status: GroceryStatus;
   provider: string | null;
   externalOrderId: string | null;
+  externalUrl: string | null;
   createdAt: string;
   updatedAt: string;
   items: GroceryListItemRow[];
@@ -63,7 +64,7 @@ export async function listGroceryLists(
     .schema('app')
     .from('grocery_list')
     .select(
-      'id, household_id, planned_for, status, provider, external_order_id, created_at, updated_at',
+      'id, household_id, planned_for, status, provider, external_order_id, external_url, created_at, updated_at',
     )
     .eq('household_id', parsed.householdId);
   if (parsed.statuses && parsed.statuses.length > 0) {
@@ -106,6 +107,7 @@ export async function listGroceryLists(
     status: r.status as GroceryStatus,
     provider: r.provider ?? null,
     externalOrderId: r.external_order_id ?? null,
+    externalUrl: r.external_url ?? null,
     createdAt: r.created_at,
     updatedAt: r.updated_at,
     items: itemsByList.get(r.id) ?? [],

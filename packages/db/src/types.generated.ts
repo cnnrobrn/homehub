@@ -671,6 +671,7 @@ export type Database = {
         Row: {
           created_at: string;
           external_order_id: string | null;
+          external_url: string | null;
           household_id: string;
           id: string;
           planned_for: string | null;
@@ -681,6 +682,7 @@ export type Database = {
         Insert: {
           created_at?: string;
           external_order_id?: string | null;
+          external_url?: string | null;
           household_id: string;
           id?: string;
           planned_for?: string | null;
@@ -691,6 +693,7 @@ export type Database = {
         Update: {
           created_at?: string;
           external_order_id?: string | null;
+          external_url?: string | null;
           household_id?: string;
           id?: string;
           planned_for?: string | null;

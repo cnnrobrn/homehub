@@ -3,9 +3,9 @@
  *
  * Long-running HTTP server with a pgmq consumer loop. The concrete
  * `GroceryProvider` is selected per connection-row's `provider`
- * column — today only the stub provider is wired; Instacart sits
- * behind the `HOMEHUB_GROCERY_INGESTION_ENABLED` flag until operator
- * credentials land.
+ * column. Instacart Developer Platform shopping links do not expose
+ * HomeHub-readable order history, so grocery ingestion remains gated by
+ * `HOMEHUB_GROCERY_INGESTION_ENABLED` and usually no-ops.
  */
 
 import { createServer } from 'node:http';
@@ -18,7 +18,6 @@ import {
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
-  createNangoClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -57,25 +56,13 @@ const exitCode = await runWorker(
     initTracing(env);
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
-    const nango = createNangoClient(env);
 
-    // Concrete providers. Instacart throws `InstacartNotConfiguredError`
-    // on every call until operator credentials ship; the stub returns
-    // empty arrays so the pipeline exercises without a real upstream.
+    // Concrete providers. Instacart shopping links don't expose order
+    // history; the adapter returns no recent orders and rejects direct
+    // order reads, while the stub keeps local queue paths testable.
     const instacart = createInstacartProvider({
-      nango,
-      resolveStoreId: async (connectionId) => {
-        const { data } = await supabase
-          .schema('sync')
-          .from('provider_connection')
-          .select('metadata')
-          .eq('provider', 'instacart')
-          .eq('nango_connection_id', connectionId)
-          .maybeSingle();
-        const metadata = data?.metadata as { instacart_store_id?: unknown } | null;
-        const raw = metadata?.instacart_store_id;
-        return typeof raw === 'string' && raw.length > 0 ? raw : undefined;
-      },
+      baseUrl: env.INSTACART_DEVELOPER_API_BASE_URL,
+      ...(env.INSTACART_DEVELOPER_API_KEY ? { apiKey: env.INSTACART_DEVELOPER_API_KEY } : {}),
     });
     const stub = createStubGroceryProvider();
 

@@ -6,7 +6,9 @@
  * "Connect Google Calendar" button is a plain anchor to the route
  * handler that kicks off the Nango hosted-auth flow. "Connect Gmail"
  * opens the `EmailConnectDialog` client island first for category
- * opt-in + privacy preview before redirecting.
+ * opt-in + privacy preview before redirecting. Instacart is configured
+ * with an app API key and hands shoppers off to Instacart-hosted
+ * checkout links, not a member OAuth connection.
  */
 
 import { listConnectionsAction } from '@/app/actions/integrations';
@@ -93,11 +95,9 @@ export default async function ConnectionsPage() {
           <Button asChild>
             <a href="/api/integrations/connect?provider=ynab">Connect YNAB</a>
           </Button>
-          <Button asChild variant="outline">
-            <a href="/api/integrations/connect?provider=instacart">Connect Instacart</a>
-          </Button>
           <span className="text-sm text-fg-muted" aria-live="polite">
-            Monarch and Plaid land in later milestones.
+            Instacart checkout links are enabled from server config. Monarch and Plaid land in later
+            milestones.
           </span>
         </div>
       </section>

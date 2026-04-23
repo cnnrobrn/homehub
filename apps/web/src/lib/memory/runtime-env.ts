@@ -28,6 +28,10 @@ export function memoryRuntimeEnv(): WorkerRuntimeEnv {
     SUPABASE_ANON_KEY: env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     NANGO_HOST: env.NANGO_HOST,
     NANGO_SECRET_KEY: env.NANGO_SECRET_KEY,
+    ...(env.INSTACART_DEVELOPER_API_KEY
+      ? { INSTACART_DEVELOPER_API_KEY: env.INSTACART_DEVELOPER_API_KEY }
+      : {}),
+    INSTACART_DEVELOPER_API_BASE_URL: env.INSTACART_DEVELOPER_API_BASE_URL,
     // OpenRouter knobs — optional. When unset, semantic seeding is
     // skipped and `query_memory` falls back to structural retrieval.
     OPENROUTER_API_KEY: process.env.OPENROUTER_API_KEY,

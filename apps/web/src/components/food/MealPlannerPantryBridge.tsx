@@ -8,12 +8,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useState, useTransition } from 'react';
 
-import type {
-  FoodProviderConnectionStatus,
-  GroceryListRow,
-  MealPlanGroceryItem,
-  MealPlanPantrySummary,
-} from '@/lib/food';
+import type { GroceryListRow, MealPlanGroceryItem, MealPlanPantrySummary } from '@/lib/food';
 
 import { createInstacartDraftFromMealPlanAction, upsertPantryItemAction } from '@/app/actions/food';
 
@@ -23,7 +18,7 @@ interface Props {
   weekEndDate: string;
   summary: MealPlanPantrySummary;
   draftLists: readonly GroceryListRow[];
-  instacart: FoodProviderConnectionStatus;
+  instacartConfigured: boolean;
   canWrite: boolean;
 }
 
@@ -101,18 +96,20 @@ export function MealPlannerPantryBridge({
   weekEndDate,
   summary,
   draftLists,
-  instacart,
+  instacartConfigured,
   canWrite,
 }: Props) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [instacartUrl, setInstacartUrl] = useState<string | null>(null);
   const [pantryDraft, setPantryDraft] = useState<PantryDraft>(EMPTY_PANTRY_DRAFT);
 
   function createDraft() {
     setError(null);
     setNotice(null);
+    setInstacartUrl(null);
     startTransition(async () => {
       const res = await createInstacartDraftFromMealPlanAction({
         householdId,
@@ -124,8 +121,9 @@ export function MealPlannerPantryBridge({
         return;
       }
       setNotice(
-        `${res.data.itemCount} item${res.data.itemCount === 1 ? '' : 's'} staged for ${res.data.plannedFor}.`,
+        `${res.data.itemCount} item${res.data.itemCount === 1 ? '' : 's'} sent to Instacart for ${res.data.plannedFor}.`,
       );
+      setInstacartUrl(res.data.externalUrl);
       router.refresh();
     });
   }
@@ -137,6 +135,7 @@ export function MealPlannerPantryBridge({
     }
     setError(null);
     setNotice(null);
+    setInstacartUrl(null);
     startTransition(async () => {
       const res = await upsertPantryItemAction({
         householdId,
@@ -171,12 +170,12 @@ export function MealPlannerPantryBridge({
         </div>
         <span
           className={
-            instacart.active
+            instacartConfigured
               ? 'rounded-full bg-accent/15 px-2 py-1 text-[11px] font-medium text-accent'
               : 'rounded-full border border-border px-2 py-1 text-[11px] text-fg-muted'
           }
         >
-          {instacart.active ? 'Instacart connected' : 'Instacart not connected'}
+          {instacartConfigured ? 'Instacart ready' : 'Instacart not configured'}
         </span>
       </div>
 
@@ -188,9 +187,28 @@ export function MealPlannerPantryBridge({
       {notice ? (
         <div className="rounded-md border border-accent/40 bg-accent/5 p-2 text-sm text-fg">
           {notice}{' '}
-          <Link href="/food/groceries" className="text-accent underline underline-offset-2">
-            Open groceries
-          </Link>
+          {instacartUrl ? (
+            <a
+              href={instacartUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="text-accent underline underline-offset-2"
+            >
+              Open in Instacart
+            </a>
+          ) : (
+            <Link href="/food/groceries" className="text-accent underline underline-offset-2">
+              Open groceries
+            </Link>
+          )}
+          {instacartUrl ? (
+            <>
+              {' '}
+              <Link href="/food/groceries" className="text-fg-muted underline underline-offset-2">
+                View list
+              </Link>
+            </>
+          ) : null}
         </div>
       ) : null}
 
@@ -241,17 +259,13 @@ export function MealPlannerPantryBridge({
         type="button"
         className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-accent-foreground disabled:opacity-60"
         onClick={createDraft}
-        disabled={!canWrite || pending || summary.missingItems.length === 0}
+        disabled={!canWrite || !instacartConfigured || pending || summary.missingItems.length === 0}
       >
-        {pending ? 'Preparing…' : 'Create Instacart draft'}
+        {pending ? 'Preparing…' : 'Create Instacart checkout link'}
       </button>
-      {!instacart.active ? (
+      {!instacartConfigured ? (
         <p className="text-xs leading-5 text-fg-muted">
-          This will stage an Instacart-labeled list in HomeHub. Connect Instacart in{' '}
-          <Link href="/settings/connections" className="text-accent underline underline-offset-2">
-            settings
-          </Link>{' '}
-          when provider credentials are available.
+          Set <code>INSTACART_DEVELOPER_API_KEY</code> to create Instacart shopping-list links.
         </p>
       ) : null}
 

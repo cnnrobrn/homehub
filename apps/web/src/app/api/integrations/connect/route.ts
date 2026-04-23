@@ -2,7 +2,6 @@
  * GET /api/integrations/connect?provider=google-calendar
  * GET /api/integrations/connect?provider=google-mail&categories=receipt,shipping
  * GET /api/integrations/connect?provider=ynab
- * GET /api/integrations/connect?provider=instacart
  *
  * Mints a Nango Connect session scoped to `(household_id, member_id,
  * provider)` and redirects the browser to Nango's hosted-auth URL.
@@ -48,7 +47,7 @@ export const dynamic = 'force-dynamic';
  * Nango integration configured in the admin UI (see
  * `infra/nango/providers/<provider>.md`).
  */
-const ALLOWED_PROVIDERS = new Set(['google-calendar', 'google-mail', 'ynab', 'instacart']);
+const ALLOWED_PROVIDERS = new Set(['google-calendar', 'google-mail', 'ynab']);
 
 export async function GET(request: NextRequest): Promise<Response> {
   const provider = request.nextUrl.searchParams.get('provider') ?? '';

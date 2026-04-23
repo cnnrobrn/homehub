@@ -2,11 +2,11 @@
  * Canonical grocery-provider shapes HomeHub stores in
  * `app.grocery_list` / `app.grocery_list_item`.
  *
- * Provider-agnostic on purpose: the only concrete adapter shipping in
- * M6 is a **stub** (Instacart API access is human-gated; see the M6
- * dispatch brief). The shape intentionally mirrors the financial
- * provider pattern so real adapters drop in without churning the
- * sync-grocery worker.
+ * Provider-agnostic on purpose. The Instacart Developer Platform
+ * adapter creates shopper-facing Marketplace URLs; the stub provider
+ * keeps local flows testable without a provider key. The shape mirrors
+ * the financial provider pattern so future grocery adapters can drop in
+ * without churning worker code.
  *
  * Monetary amounts:
  *   - `pricePerUnitCents` + `totalCents` use signed cents in the
@@ -48,7 +48,7 @@ export interface GroceryOrder {
 }
 
 export interface ListRecentOrdersArgs {
-  /** Nango connection id (when a real provider is wired). */
+  /** Provider connection id or HomeHub household sentinel. */
   connectionId: string;
   sinceDays?: number;
 }
@@ -80,7 +80,8 @@ export interface CreateDraftOrderResult {
  * interface, not the concrete adapter — so a future Instacart /
  * custom-store adapter drops in without touching sync-grocery code.
  *
- * NOTE: Instacart is deferred; the shipping adapter in M6 is a stub.
+ * NOTE: Instacart shopping links do not expose order-history reads, so
+ * its adapter returns no recent orders and rejects `getOrder`.
  */
 export interface GroceryProvider {
   listRecentOrders(args: ListRecentOrdersArgs): Promise<GroceryOrder[]>;

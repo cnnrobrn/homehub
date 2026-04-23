@@ -51,6 +51,13 @@ const serverSchema = baseServerEnvSchema.extend({
    */
   NANGO_HOST: z.string().url().optional(),
   NANGO_SECRET_KEY: z.string().min(1).optional(),
+  /**
+   * Instacart Developer Platform app credentials. HomeHub uses these to
+   * create Marketplace shopping-list URLs; shoppers log in and check out
+   * on Instacart.
+   */
+  INSTACART_DEVELOPER_API_KEY: z.string().min(1).optional(),
+  INSTACART_DEVELOPER_API_BASE_URL: z.string().url().default('https://connect.instacart.com'),
 });
 
 export type PublicEnv = z.infer<typeof publicSchema>;

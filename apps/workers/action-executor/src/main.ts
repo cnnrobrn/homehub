@@ -28,7 +28,7 @@ import { createServer } from 'node:http';
 import { registerAllExecutors } from '@homehub/action-executors';
 import { createGoogleCalendarProvider } from '@homehub/providers-calendar';
 import { createGoogleMailProvider } from '@homehub/providers-email';
-import { createStubGroceryProvider } from '@homehub/providers-grocery';
+import { createInstacartProvider, createStubGroceryProvider } from '@homehub/providers-grocery';
 import { loadEnv } from '@homehub/shared';
 import {
   createLogger,
@@ -61,10 +61,15 @@ const exitCode = await runWorker(
     const nango = createNangoClient(env);
     const calendar = createGoogleCalendarProvider({ nango });
     const email = createGoogleMailProvider({ nango });
-    // Grocery: Instacart API is human-gated. Ship the stub adapter by
-    // default — `createDraftOrder` returns a sentinel that the UI
-    // branches on to render a "copy this list" export.
-    const grocery = createStubGroceryProvider();
+    // Grocery: when the Instacart Developer Platform API key is
+    // present, create Marketplace shopping-list URLs. Otherwise keep
+    // the stub so draft-write flows can still exercise locally.
+    const grocery = env.INSTACART_DEVELOPER_API_KEY
+      ? createInstacartProvider({
+          apiKey: env.INSTACART_DEVELOPER_API_KEY,
+          baseUrl: env.INSTACART_DEVELOPER_API_BASE_URL,
+        })
+      : createStubGroceryProvider();
 
     // Wire the executor registry once, before the claim loops start.
     // Every draft-write action kind HomeHub supports registers here.

@@ -26,6 +26,9 @@ export const workerRuntimeEnvSchema = baseServerEnvSchema.extend({
   NANGO_HOST: z.string().url().optional(),
   NANGO_SECRET_KEY: z.string().min(1).optional(),
 
+  INSTACART_DEVELOPER_API_KEY: z.string().min(1).optional(),
+  INSTACART_DEVELOPER_API_BASE_URL: z.string().url().default('https://connect.instacart.com'),
+
   OPENROUTER_API_KEY: z.string().min(1).optional(),
   OPENROUTER_BASE_URL: z.string().url().default('https://openrouter.ai/api/v1'),
   OPENROUTER_HTTP_REFERER: z.string().url().default('https://app.homehub.ing'),

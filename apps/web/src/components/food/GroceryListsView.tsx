@@ -6,7 +6,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useTransition, useState } from 'react';
+import { useState, useTransition } from 'react';
 
 import type { FoodSuggestionRow } from '@/lib/food/listFoodSuggestions';
 import type { GroceryListRow } from '@/lib/food/listGroceryLists';
@@ -181,6 +181,18 @@ export function GroceryListsView({ lists, pendingSuggestions }: GroceryListsView
                       </li>
                     ))}
                   </ul>
+                ) : null}
+                {list.externalUrl ? (
+                  <div className="mt-3">
+                    <a
+                      href={list.externalUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex rounded-md bg-accent px-3 py-1.5 text-xs font-medium text-accent-foreground no-underline"
+                    >
+                      Open in Instacart
+                    </a>
+                  </div>
                 ) : null}
               </li>
             ))}

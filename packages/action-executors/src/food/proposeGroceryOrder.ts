@@ -1,11 +1,11 @@
 /**
  * Executor for the `propose_grocery_order` action kind.
  *
- * Calls `GroceryProvider.createDraftOrder`. The current provider wired
- * in production is the stub (Instacart API access is human-gated); it
- * returns a sentinel draft URL that the UI branches on to render a
- * "copy this list" export instead of a deep link. The executor does
- * not distinguish — both return a `{ draft_id, url }` pair.
+ * Calls `GroceryProvider.createDraftOrder`. With Instacart configured,
+ * this returns a shopper-facing Marketplace shopping-list URL. Without
+ * provider credentials, the local stub returns a sentinel URL. The
+ * executor does not distinguish — both return a `{ draft_id, url }`
+ * pair.
  *
  * See `specs/13-conversation/tools.md` § propose_grocery_order and
  * `packages/providers/grocery/src/stub.ts` for the sentinel URL.

@@ -41,6 +41,9 @@ const providersEmailSrc = fileURLToPath(
 const providersEmailClientSrc = fileURLToPath(
   new URL('../../packages/providers/email/src/client.ts', import.meta.url),
 );
+const providersGrocerySrc = fileURLToPath(
+  new URL('../../packages/providers/grocery/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   plugins: [react()],
@@ -57,6 +60,7 @@ export default defineConfig({
       '@homehub/worker-runtime': workerRuntimeSrc,
       '@homehub/providers-email': providersEmailSrc,
       '@homehub/providers-email/client': providersEmailClientSrc,
+      '@homehub/providers-grocery': providersGrocerySrc,
     },
   },
   test: {

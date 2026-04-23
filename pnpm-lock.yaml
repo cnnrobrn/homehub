@@ -214,6 +214,9 @@ importers:
       '@homehub/providers-email':
         specifier: workspace:*
         version: link:../../packages/providers/email
+      '@homehub/providers-grocery':
+        specifier: workspace:*
+        version: link:../../packages/providers/grocery
       '@homehub/query-memory':
         specifier: workspace:*
         version: link:../../packages/query-memory

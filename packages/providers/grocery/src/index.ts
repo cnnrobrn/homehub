@@ -2,15 +2,15 @@
  * `@homehub/providers-grocery` — public surface.
  *
  * Keep this barrel tight. Consumers:
- *   - `apps/workers/sync-grocery` imports the stub provider (the
- *     Instacart adapter is wired but gated behind
- *     `HOMEHUB_GROCERY_INGESTION_ENABLED` and
- *     `InstacartNotConfiguredError`).
+ *   - `apps/web` and `apps/workers/action-executor` create Instacart
+ *     shopping-list links when `INSTACART_DEVELOPER_API_KEY` is set.
+ *   - `apps/workers/sync-grocery` still imports the interface, but
+ *     Instacart shopping links do not expose order-history reads.
  *   - `apps/workers/pantry-diff` doesn't call providers directly — it
  *     only writes `app.grocery_list` drafts from pantry deficits.
  *
- * Future adapters (Instacart live, Amazon Fresh, local stores) export
- * alongside the stub here.
+ * Future adapters (Amazon Fresh, local stores) export alongside the
+ * stub here.
  */
 
 export { GroceryNotFoundError, GroceryRateLimitError, GrocerySyncError } from './errors.js';

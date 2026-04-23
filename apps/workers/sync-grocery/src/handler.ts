@@ -6,12 +6,11 @@
  *   - `sync_delta:{provider}` — incremental pull triggered by cron or
  *     webhook ingestion.
  *
- * Today the only provider wired up is the stub (see
- * `@homehub/providers-grocery`). The real Instacart adapter throws
- * `InstacartNotConfiguredError` until operator credentials land, so we
- * gate ingestion behind `HOMEHUB_GROCERY_INGESTION_ENABLED` (default
- * false). When the flag is off, the worker still exercises the queue +
- * audit path but performs no DB writes.
+ * Instacart's Developer Platform creates shopper-facing links but does
+ * not expose HomeHub-readable order history. We gate ingestion behind
+ * `HOMEHUB_GROCERY_INGESTION_ENABLED` (default false). When the flag is
+ * off, the worker still exercises the queue + audit path but performs
+ * no provider fetches or DB writes.
  *
  * Error policy mirrors `sync-financial`:
  *   - `GroceryRateLimitError` → nack with the carried retry-after.

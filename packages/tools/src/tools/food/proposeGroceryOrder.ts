@@ -2,11 +2,13 @@
  * `propose_grocery_order` — draft-write.
  *
  * Writes `app.suggestion kind='propose_grocery_order'` with a preview
- * payload the UI renders as an approval card. M9 turns an approval into
- * a real grocery-list + provider draft-order call.
+ * payload the UI renders as an approval card. The action executor can
+ * turn an approved suggestion into a provider draft-order/shopping-list
+ * URL when a grocery provider is configured.
  *
  * The agent passes `items` (what to include) and an optional
- * `provider` — if absent, the stub provider is used on approval.
+ * `provider` — use `instacart` when the user specifically asks for an
+ * Instacart handoff.
  */
 
 import { z } from 'zod';
@@ -49,7 +51,7 @@ type Output = z.infer<typeof outputSchema>;
 export const proposeGroceryOrderTool: ToolDefinition<Input, Output> = {
   name: 'propose_grocery_order',
   description:
-    'Propose a grocery order with explicit items. Writes an app.suggestion row the member approves; M9 executes the approved draft against the grocery provider.',
+    'Propose a grocery order with explicit items. Writes an app.suggestion row the member approves; the executor creates a provider shopping-list link when configured.',
   class: 'draft-write',
   input: inputSchema,
   output: outputSchema,

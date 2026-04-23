@@ -6,8 +6,8 @@ import { FoodRealtimeRefresher } from '@/components/food/FoodRealtimeRefresher';
 import { MealPlannerGrid } from '@/components/food/MealPlannerGrid';
 import { MealPlannerPantryBridge } from '@/components/food/MealPlannerPantryBridge';
 import { getHouseholdContext } from '@/lib/auth/context';
+import { serverEnv } from '@/lib/env';
 import {
-  getFoodProviderConnectionStatus,
   hasFoodWrite,
   listGroceryLists,
   listMeals,
@@ -32,13 +32,14 @@ export default async function MealPlannerPage() {
     access: g.access,
   }));
   const canWrite = hasFoodWrite(grants);
+  const instacartConfigured = Boolean(serverEnv().INSTACART_DEVELOPER_API_KEY);
 
   const weekStart = thisMondayUtc(new Date());
   const weekEnd = new Date(`${weekStart}T00:00:00Z`);
   weekEnd.setUTCDate(weekEnd.getUTCDate() + 6);
   const weekEndIso = weekEnd.toISOString().slice(0, 10);
 
-  const [meals, pantrySummary, draftLists, instacart] = await Promise.all([
+  const [meals, pantrySummary, draftLists] = await Promise.all([
     listMeals(
       { householdId: ctx.household.id, from: weekStart, to: weekEndIso, limit: 200 },
       { grants },
@@ -48,10 +49,6 @@ export default async function MealPlannerPage() {
       { grants },
     ),
     listGroceryLists({ householdId: ctx.household.id, statuses: ['draft'], limit: 5 }, { grants }),
-    getFoodProviderConnectionStatus(
-      { householdId: ctx.household.id, provider: 'instacart' },
-      { grants },
-    ),
   ]);
 
   return (
@@ -70,7 +67,7 @@ export default async function MealPlannerPage() {
           weekEndDate={weekEndIso}
           summary={pantrySummary}
           draftLists={draftLists}
-          instacart={instacart}
+          instacartConfigured={instacartConfigured}
           canWrite={canWrite}
         />
       </div>

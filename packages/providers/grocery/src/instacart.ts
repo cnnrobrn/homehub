@@ -17,7 +17,7 @@ import {
   type ListRecentOrdersArgs,
 } from './types.js';
 
-/** Nango provider-config key for Instacart. */
+/** Provider key stamped on HomeHub grocery lists and sync rows. */
 export const INSTACART_PROVIDER_KEY = 'instacart';
 
 export const INSTACART_SOURCE = 'instacart' as const;
@@ -100,26 +100,26 @@ const UNIT_ALIASES: Record<string, string> = {
 
 function normalizeUnit(unit: string | undefined): string {
   if (!unit) return 'each';
-  return UNIT_ALIASES[unit.trim().toLowerCase()] ?? unit.trim().toLowerCase();
+  return UNIT_ALIASES[unit.trim().toLowerCase()] ?? 'each';
 }
 
 function lineItemsFor(args: CreateDraftOrderArgs): Array<Record<string, unknown>> {
-  return args.items.map((item) => ({
-    name: item.name,
-    display_text:
-      item.quantity && item.unit
+  return args.items.map((item) => {
+    const productId = item.sku ? Number(item.sku) : null;
+    return {
+      name: item.name,
+      display_text: item.unit
         ? `${item.quantity} ${item.unit} ${item.name}`
-        : item.quantity
-          ? `${item.quantity} ${item.name}`
-          : item.name,
-    line_item_measurements: [
-      {
-        quantity: item.quantity || 1,
-        unit: normalizeUnit(item.unit),
-      },
-    ],
-    ...(item.sku ? { product_ids: [Number(item.sku)].filter(Number.isFinite) } : {}),
-  }));
+        : `${item.quantity} ${item.name}`,
+      line_item_measurements: [
+        {
+          quantity: item.quantity,
+          unit: normalizeUnit(item.unit),
+        },
+      ],
+      ...(productId !== null && Number.isFinite(productId) ? { product_ids: [productId] } : {}),
+    };
+  });
 }
 
 function metadataString(metadata: Record<string, unknown> | undefined, key: string): string | null {

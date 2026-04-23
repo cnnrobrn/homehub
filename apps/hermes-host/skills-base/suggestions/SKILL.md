@@ -55,6 +55,12 @@ curl -fsSL -X POST \
 ```
 
 `proposed_action` shapes mirror the `propose*` tool schemas in HomeHub.
+For food checkout handoffs, prefer
+`kind='propose_grocery_order'`, `segment='food'`, and
+`preview.provider='instacart'` when the user asks to send groceries to
+Instacart. Do not call Instacart directly from the sandbox; HomeHub
+server code creates the provider `external_url` after approval/configured
+handoff.
 
 ## Approve / dismiss
 

@@ -16,6 +16,7 @@ interface ListRow {
   planned_for: string | null;
   provider: string | null;
   external_order_id: string | null;
+  external_url: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -40,6 +41,7 @@ const outputSchema = z.object({
       planned_for: z.string().nullable(),
       provider: z.string().nullable(),
       external_order_id: z.string().nullable(),
+      external_url: z.string().nullable(),
       created_at: z.string(),
       updated_at: z.string(),
     })
@@ -69,7 +71,9 @@ export const getGroceryListTool: ToolDefinition<Input, Output> = {
     let listQ = ctx.supabase
       .schema('app')
       .from('grocery_list')
-      .select('id, status, planned_for, provider, external_order_id, created_at, updated_at')
+      .select(
+        'id, status, planned_for, provider, external_order_id, external_url, created_at, updated_at',
+      )
       .eq('household_id', ctx.householdId);
     if (args.status) {
       listQ = listQ.eq('status', args.status);
@@ -97,6 +101,7 @@ export const getGroceryListTool: ToolDefinition<Input, Output> = {
         planned_for: list.planned_for,
         provider: list.provider,
         external_order_id: list.external_order_id,
+        external_url: list.external_url,
         created_at: list.created_at,
         updated_at: list.updated_at,
       },
