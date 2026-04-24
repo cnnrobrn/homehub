@@ -18,6 +18,8 @@
     "@homehub/auth-server": "workspace:*",
     "@homehub/db": "workspace:*",
     "@homehub/dlq-admin": "workspace:*",
+    "@homehub/oauth-google": "workspace:*",
+    "@homehub/providers-calendar": "workspace:*",
     "@homehub/providers-email": "workspace:*",
     "@homehub/providers-grocery": "workspace:*",
     "@homehub/query-memory": "workspace:*",

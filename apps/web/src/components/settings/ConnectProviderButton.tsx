@@ -129,10 +129,14 @@ export function ConnectProviderButton({
       }
       onStarted?.();
 
-      if (!window.open(res.data.connectUrl, 'homehub-nango-connect', POPUP_FEATURES)) {
-        // Popup blocked — fall back to full-page nav. The user will have
-        // to navigate back manually after OAuth; the connection itself
-        // still persists via the Nango webhook.
+      // `_blank` forces a fresh popup every time. A stable window name
+      // (the old `homehub-nango-connect`) would route subsequent clicks
+      // into a still-open stale popup — e.g. a previous Nango session
+      // would be reused even after we switched google to native OAuth.
+      if (!window.open(res.data.connectUrl, '_blank', POPUP_FEATURES)) {
+        // Popup blocked — fall back to full-page nav. The user will
+        // have to navigate back manually after OAuth; the connection
+        // itself still persists via the callback / Nango webhook.
         window.location.href = res.data.connectUrl;
         return;
       }

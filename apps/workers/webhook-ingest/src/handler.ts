@@ -58,12 +58,19 @@ import {
   isEmailCategory,
 } from '@homehub/providers-email';
 import { type FinancialProvider } from '@homehub/providers-financial';
-import { type Logger, type QueueClient, queueNames } from '@homehub/worker-runtime';
+import {
+  type Logger,
+  type QueueClient,
+  queueNames,
+  runGcalPostConnect,
+  runGmailPostConnect,
+  GCAL_CHANNEL_KIND as GCAL_CHANNEL_KIND_SHARED,
+} from '@homehub/worker-runtime';
 import { type SupabaseClient } from '@supabase/supabase-js';
 
 import { verifyHmac, verifyNangoLegacySignature } from './hmac.js';
 
-export const GCAL_CHANNEL_KIND = 'gcal.channel';
+export const GCAL_CHANNEL_KIND = GCAL_CHANNEL_KIND_SHARED;
 export const GCAL_SYNC_TOKEN_KIND = 'gcal.sync_token';
 export const GCAL_PROVIDER_KEY = 'google-calendar';
 export const GCAL_PROVIDER = 'gcal';
@@ -431,6 +438,20 @@ export async function handleNangoWebhook(
     return { status: 204, body: {} };
   }
 
+  // Post-cutover safety net: Google now flows through native OAuth
+  // (`/api/oauth/google/callback`), not Nango. Any `google-*` webhook
+  // that still arrives is from a legacy-managed connection we already
+  // marked revoked during migration 0020 rollout, or from a retried
+  // Nango event. Swallow it quietly so we don't double-process.
+  // TODO(@integrations, remove one release after the cutover): delete
+  // the GCAL/GMAIL branches in this file entirely.
+  if (providerKey === GCAL_PROVIDER_KEY || providerKey === GMAIL_PROVIDER_KEY) {
+    deps.log.info('nango webhook for google provider; ignoring (native oauth path)', {
+      provider: providerKey,
+    });
+    return { status: 204, body: {} };
+  }
+
   const isCreated =
     eventType === 'connection.created' || eventType === 'auth' || eventType.endsWith('.created');
   const isDeleted = eventType === 'connection.deleted' || eventType.endsWith('.deleted');
@@ -523,52 +544,24 @@ async function handleGcalConnectionCreated(
     throw new Error('provider_connection upsert returned no row');
   }
 
-  try {
-    if (deps.env.WEBHOOK_PUBLIC_URL) {
-      const channelId = (deps.channelIdFactory ?? defaultGcalChannelIdFactory)();
-      const watchResult = await deps.calendar.watch({
-        connectionId: args.nangoConnectionId,
-        channelId,
-        webhookUrl: `${deps.env.WEBHOOK_PUBLIC_URL.replace(/\/$/, '')}/webhooks/google-calendar`,
-      });
-
-      const value: GcalChannelValue & { channel_id: string } = {
-        channel_id: watchResult.channelId,
-        resource_id: watchResult.resourceId,
-        expiration: watchResult.expiration,
-      };
-      const { error: cursorErr } = await deps.supabase
-        .schema('sync')
-        .from('cursor')
-        .upsert(
-          {
-            connection_id: upserted.id,
-            kind: GCAL_CHANNEL_KIND,
-            value: JSON.stringify(value),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'connection_id,kind' },
-        );
-      if (cursorErr) {
-        deps.log.error('failed to persist gcal channel cursor', { error: cursorErr.message });
-      }
-    } else {
-      deps.log.warn('WEBHOOK_PUBLIC_URL unset; skipping events.watch subscription');
-    }
-  } catch (err) {
-    deps.log.error('events.watch failed for new gcal connection', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  const now = (deps.now ?? (() => new Date()))();
-  await deps.queues.send(queueNames.syncFull(GCAL_PROVIDER), {
-    household_id: upserted.household_id,
-    kind: 'sync.gcal.full',
-    entity_id: upserted.id,
-    version: 1,
-    enqueued_at: now.toISOString(),
-  });
+  await runGcalPostConnect(
+    {
+      supabase: deps.supabase as unknown as SupabaseClient,
+      queues: deps.queues,
+      calendar: deps.calendar,
+      log: deps.log,
+      env: {
+        ...(deps.env.WEBHOOK_PUBLIC_URL ? { WEBHOOK_PUBLIC_URL: deps.env.WEBHOOK_PUBLIC_URL } : {}),
+      },
+      ...(deps.now ? { now: deps.now } : {}),
+      ...(deps.channelIdFactory ? { channelIdFactory: deps.channelIdFactory } : {}),
+    },
+    {
+      connectionId: args.nangoConnectionId,
+      providerConnectionId: upserted.id,
+      householdId: upserted.household_id,
+    },
+  );
 
   await writeAudit(deps.supabase, {
     household_id: upserted.household_id,
@@ -692,81 +685,27 @@ async function handleGmailConnectionCreated(
     throw new Error('provider_connection upsert returned no row');
   }
 
-  // Ensure the label exists so the first full-sync can apply it
-  // immediately. Non-fatal on failure — the worker ensures it again.
-  try {
-    await deps.email.ensureLabel({
+  await runGmailPostConnect(
+    {
+      supabase: deps.supabase as unknown as SupabaseClient,
+      queues: deps.queues,
+      email: deps.email,
+      log: deps.log,
+      env: {
+        ...(deps.env.NANGO_GMAIL_PUBSUB_TOPIC
+          ? { NANGO_GMAIL_PUBSUB_TOPIC: deps.env.NANGO_GMAIL_PUBSUB_TOPIC }
+          : {}),
+      },
+      ...(deps.now ? { now: deps.now } : {}),
+    },
+    {
       connectionId: args.nangoConnectionId,
-      name: HOMEHUB_INGESTED_LABEL_NAME,
-    });
-  } catch (err) {
-    deps.log.warn('gmail ensureLabel failed in webhook; worker will retry', {
-      error: err instanceof Error ? err.message : String(err),
-    });
-  }
-
-  // Subscribe to Gmail push via Pub/Sub when the topic is configured.
-  // Without a topic we fall back to the hourly poll only (polled by
-  // the sync-gmail worker when it sees a stale last_synced_at).
-  if (deps.env.NANGO_GMAIL_PUBSUB_TOPIC) {
-    try {
-      const watchResult = await deps.email.watch({
-        connectionId: args.nangoConnectionId,
-        topicName: deps.env.NANGO_GMAIL_PUBSUB_TOPIC,
-        labelIds: ['INBOX'],
-      });
-      const watchValue: GmailWatchValue = {
-        history_id: watchResult.historyId,
-        expiration: watchResult.expiration,
-        ...(emailAddress ? { email_address: emailAddress } : {}),
-      };
-      const { error: watchErr } = await deps.supabase
-        .schema('sync')
-        .from('cursor')
-        .upsert(
-          {
-            connection_id: upserted.id,
-            kind: GMAIL_WATCH_KIND,
-            value: JSON.stringify(watchValue),
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: 'connection_id,kind' },
-        );
-      if (watchErr) {
-        deps.log.error('failed to persist gmail watch cursor', { error: watchErr.message });
-      }
-
-      // Seed the history-id cursor so the first delta has a starting
-      // point. The full sync that runs next will advance it.
-      const { error: hidErr } = await deps.supabase.schema('sync').from('cursor').upsert(
-        {
-          connection_id: upserted.id,
-          kind: GMAIL_HISTORY_ID_KIND,
-          value: watchResult.historyId,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'connection_id,kind' },
-      );
-      if (hidErr) {
-        deps.log.error('failed to seed gmail history_id cursor', { error: hidErr.message });
-      }
-    } catch (err) {
-      deps.log.error('gmail users.watch failed for new connection', {
-        error: err instanceof Error ? err.message : String(err),
-      });
-    }
-  } else {
-    deps.log.warn('NANGO_GMAIL_PUBSUB_TOPIC unset; skipping users.watch subscription');
-  }
-
-  const now = (deps.now ?? (() => new Date()))();
-  await deps.queues.send(queueNames.syncFull(GMAIL_PROVIDER), {
-    household_id: upserted.household_id,
-    kind: 'sync.gmail.full',
-    entity_id: upserted.id,
-    version: 1,
-    enqueued_at: now.toISOString(),
-  });
+      providerConnectionId: upserted.id,
+      householdId: upserted.household_id,
+      labelName: HOMEHUB_INGESTED_LABEL_NAME,
+      ...(emailAddress ? { emailAddress } : {}),
+    },
+  );
 
   await writeAudit(deps.supabase, {
     household_id: upserted.household_id,
@@ -1155,10 +1094,6 @@ function parseGcalChannelValue(
   } catch {
     return null;
   }
-}
-
-function defaultGcalChannelIdFactory(): string {
-  return `hh-gcal-${globalThis.crypto.randomUUID()}`;
 }
 
 /**

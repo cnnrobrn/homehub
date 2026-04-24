@@ -8,6 +8,11 @@
  *    holders of this key.
  *  - `NANGO_SECRET_KEY` + `NANGO_HOST` are required even on workers that
  *    don't currently call Nango — the runtime composes a client lazily.
+ *  - `GOOGLE_OAUTH_*` + `GOOGLE_TOKEN_ENCRYPTION_KEY_V{N}` replace the
+ *    Nango broker for Google (gmail + calendar). The V{N} split on the
+ *    encryption key lets operators rotate by provisioning a V2 alongside
+ *    V1 and running a re-encrypt pass against `sync.google_connection`.
+ *    Rows carry `key_version` so both keys are resolvable concurrently.
  *  - `OPENROUTER_API_KEY` is required for any worker that will call
  *    `generate()`. Make it optional here and let `createModelClient`
  *    throw if it's missing, so workers that never call a model don't
@@ -25,6 +30,12 @@ export const workerRuntimeEnvSchema = baseServerEnvSchema.extend({
 
   NANGO_HOST: z.string().url().optional(),
   NANGO_SECRET_KEY: z.string().min(1).optional(),
+
+  GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().url().optional(),
+  GOOGLE_TOKEN_ENCRYPTION_KEY_V1: z.string().min(1).optional(),
+  GOOGLE_TOKEN_ENCRYPTION_KEY_V2: z.string().min(1).optional(),
 
   INSTACART_DEVELOPER_API_KEY: z.string().min(1).optional(),
   INSTACART_DEVELOPER_API_BASE_URL: z.string().url().default('https://connect.instacart.com'),

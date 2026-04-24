@@ -18,9 +18,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   GCAL_CHANNEL_KIND,
   GCAL_PROVIDER,
-  GMAIL_HISTORY_ID_KIND,
   GMAIL_PROVIDER,
-  GMAIL_WATCH_KIND,
   INSTACART_PROVIDER,
   YNAB_PROVIDER,
   handleGoogleCalendarWebhook,
@@ -530,7 +528,11 @@ describe('handleNangoWebhook — gcal', () => {
     expect(res.status).toBe(401);
   });
 
-  it('on connection.created: upserts connection, enqueues full sync, attempts watch', async () => {
+  it('on connection.created: is a no-op safety net post-cutover (google-calendar)', async () => {
+    // Google now flows through native OAuth (/api/oauth/google/callback),
+    // so a Nango webhook for `google-calendar` is either a legacy-managed
+    // connection we revoked during cutover or a duplicate retry. The
+    // handler ignores it quietly — no DB writes, no enqueue.
     const payload = {
       type: 'connection.created',
       providerConfigKey: 'google-calendar',
@@ -557,15 +559,9 @@ describe('handleNangoWebhook — gcal', () => {
       { headers, rawBody },
     );
     expect(res.status).toBe(204);
-    expect(connectionUpserts).toHaveLength(1);
-    expect(connectionUpserts[0]).toMatchObject({
-      provider: GCAL_PROVIDER,
-      nango_connection_id: 'nango-1',
-      status: 'active',
-    });
-    expect(cursorUpserts).toHaveLength(1);
-    expect(cursorUpserts[0]?.kind).toBe(GCAL_CHANNEL_KIND);
-    expect(sends[0]?.queue).toBe(queueNames.syncFull(GCAL_PROVIDER));
+    expect(connectionUpserts).toHaveLength(0);
+    expect(cursorUpserts).toHaveLength(0);
+    expect(sends).toHaveLength(0);
   });
 
   it('accepts the legacy X-Nango-Signature format', async () => {
@@ -606,7 +602,10 @@ describe('handleNangoWebhook — gmail', () => {
     return { rawBody, headers: { 'x-nango-hmac-sha256': signature } };
   }
 
-  it('on connection.created: upserts with email_categories metadata, watches, enqueues full', async () => {
+  it('on connection.created: is a no-op safety net post-cutover (google-mail)', async () => {
+    // Post-cutover: google-mail connection.created is handled by the
+    // native callback route; the Nango webhook short-circuits to 204
+    // with no side effects.
     const payload = {
       type: 'connection.created',
       providerConfigKey: 'google-mail',
@@ -644,28 +643,11 @@ describe('handleNangoWebhook — gmail', () => {
       { headers, rawBody },
     );
     expect(res.status).toBe(204);
-    expect(connectionUpserts).toHaveLength(1);
-    expect(connectionUpserts[0]).toMatchObject({
-      provider: GMAIL_PROVIDER,
-      nango_connection_id: 'nango-gm-1',
-      status: 'active',
-    });
-    // 'bogus' category dropped.
-    expect(connectionUpserts[0]?.metadata).toEqual({
-      email_categories: ['receipt', 'shipping'],
-      email_address: 'alice@example.com',
-    });
-    // Both watch + history_id cursors seeded.
-    const kinds = cursorUpserts.map((c) => c.kind).sort();
-    expect(kinds).toEqual([GMAIL_HISTORY_ID_KIND, GMAIL_WATCH_KIND].sort());
-    expect(sends[0]?.queue).toBe(queueNames.syncFull(GMAIL_PROVIDER));
-    expect(email.watch).toHaveBeenCalledWith(
-      expect.objectContaining({
-        connectionId: 'nango-gm-1',
-        topicName: 'projects/p/topics/gmail-push',
-      }),
-    );
-    expect(email.ensureLabel).toHaveBeenCalledTimes(1);
+    expect(connectionUpserts).toHaveLength(0);
+    expect(cursorUpserts).toHaveLength(0);
+    expect(sends).toHaveLength(0);
+    expect(email.watch).not.toHaveBeenCalled();
+    expect(email.ensureLabel).not.toHaveBeenCalled();
   });
 
   it('on connection.created: skips watch when topic is not configured', async () => {
@@ -702,7 +684,10 @@ describe('handleNangoWebhook — gmail', () => {
     expect(email.watch).not.toHaveBeenCalled();
   });
 
-  it('on connection.deleted: marks revoked and unwatches', async () => {
+  it('on connection.deleted: is a no-op safety net post-cutover (google-mail)', async () => {
+    // Google disconnect is now handled by the native
+    // `disconnectConnectionAction` → `revokeGoogleConnection`. The
+    // Nango webhook safety-net returns 204 without touching anything.
     const payload = {
       type: 'connection.deleted',
       providerConfigKey: 'google-mail',
@@ -733,11 +718,14 @@ describe('handleNangoWebhook — gmail', () => {
       { headers, rawBody },
     );
     expect(res.status).toBe(204);
-    expect(email.unwatch).toHaveBeenCalledWith({ connectionId: 'nango-gm-del' });
-    expect(seeded.connectionUpdates[0]).toMatchObject({ status: 'revoked' });
+    expect(email.unwatch).not.toHaveBeenCalled();
+    expect(seeded.connectionUpdates).toHaveLength(0);
   });
 
-  it('on connection.created: rejects when household_id tag missing', async () => {
+  it('on connection.created: safety-net ignores google-mail webhooks even with missing household_id', async () => {
+    // Pre-cutover this path returned 400 to reject the malformed
+    // request. Post-cutover, we drop all google webhooks before tag
+    // validation runs, so the short-circuit 204 wins.
     const payload = {
       type: 'connection.created',
       providerConfigKey: 'google-mail',
@@ -756,7 +744,7 @@ describe('handleNangoWebhook — gmail', () => {
       },
       { headers, rawBody },
     );
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(204);
   });
 });
 

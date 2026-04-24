@@ -31,8 +31,8 @@ import { createGoogleMailProvider } from '@homehub/providers-email';
 import { createInstacartProvider, createStubGroceryProvider } from '@homehub/providers-grocery';
 import { loadEnv } from '@homehub/shared';
 import {
+  createGoogleProviderHttpClient,
   createLogger,
-  createNangoClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -58,9 +58,9 @@ const exitCode = await runWorker(
     initTracing(env);
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
-    const nango = createNangoClient(env);
-    const calendar = createGoogleCalendarProvider({ nango });
-    const email = createGoogleMailProvider({ nango });
+    const googleHttp = createGoogleProviderHttpClient({ env, supabase, log });
+    const calendar = createGoogleCalendarProvider({ nango: googleHttp });
+    const email = createGoogleMailProvider({ nango: googleHttp });
     // Grocery: when the Instacart Developer Platform API key is
     // present, create Marketplace shopping-list URLs. Otherwise keep
     // the stub so draft-write flows can still exercise locally.

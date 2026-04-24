@@ -211,6 +211,12 @@ importers:
       '@homehub/dlq-admin':
         specifier: workspace:*
         version: link:../../packages/dlq-admin
+      '@homehub/oauth-google':
+        specifier: workspace:*
+        version: link:../../packages/oauth-google
+      '@homehub/providers-calendar':
+        specifier: workspace:*
+        version: link:../../packages/providers/calendar
       '@homehub/providers-email':
         specifier: workspace:*
         version: link:../../packages/providers/email
@@ -1059,6 +1065,15 @@ importers:
         specifier: ^4.1.4
         version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
 
+  packages/oauth-google:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^4.1.4
+        version: 4.1.4(@opentelemetry/api@1.9.1)(@types/node@20.19.39)(jsdom@25.0.1)(vite@8.0.9(@types/node@20.19.39)(esbuild@0.27.7)(jiti@2.6.1)(tsx@4.21.0)(yaml@2.8.3))
+
   packages/prompts:
     dependencies:
       '@homehub/shared':
@@ -1221,6 +1236,9 @@ importers:
       '@homehub/db':
         specifier: workspace:*
         version: link:../db
+      '@homehub/oauth-google':
+        specifier: workspace:*
+        version: link:../oauth-google
       '@homehub/shared':
         specifier: workspace:*
         version: link:../shared

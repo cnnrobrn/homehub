@@ -13,6 +13,9 @@ import { defineConfig } from 'vitest/config';
 const runtimeSrc = fileURLToPath(
   new URL('../../../packages/worker-runtime/src/index.ts', import.meta.url),
 );
+const oauthGoogleSrc = fileURLToPath(
+  new URL('../../../packages/oauth-google/src/index.ts', import.meta.url),
+);
 const sharedSrc = fileURLToPath(new URL('../../../packages/shared/src/index.ts', import.meta.url));
 const dbSrc = fileURLToPath(new URL('../../../packages/db/src/index.ts', import.meta.url));
 const promptsSrc = fileURLToPath(
@@ -26,6 +29,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@homehub/worker-runtime': runtimeSrc,
+      '@homehub/oauth-google': oauthGoogleSrc,
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
       // handler.ts imports from @homehub/prompts and @homehub/enrichment;

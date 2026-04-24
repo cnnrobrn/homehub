@@ -13,6 +13,7 @@ const sharedSrc = fileURLToPath(new URL('../shared/src/index.ts', import.meta.ur
 const dbSrc = fileURLToPath(new URL('../db/src/index.ts', import.meta.url));
 const approvalFlowSrc = fileURLToPath(new URL('../approval-flow/src/index.ts', import.meta.url));
 const runtimeSrc = fileURLToPath(new URL('../worker-runtime/src/index.ts', import.meta.url));
+const oauthGoogleSrc = fileURLToPath(new URL('../oauth-google/src/index.ts', import.meta.url));
 
 export default defineConfig({
   resolve: {
@@ -21,6 +22,7 @@ export default defineConfig({
       '@homehub/db': dbSrc,
       '@homehub/approval-flow': approvalFlowSrc,
       '@homehub/worker-runtime': runtimeSrc,
+      '@homehub/oauth-google': oauthGoogleSrc,
     },
   },
 });

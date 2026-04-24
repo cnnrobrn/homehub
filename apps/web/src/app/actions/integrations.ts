@@ -30,7 +30,9 @@ import {
   getUser,
   resolveMemberId,
 } from '@homehub/auth-server';
+import { createGoogleOAuthClient } from '@homehub/oauth-google';
 import { ALL_EMAIL_CATEGORIES, isEmailCategory } from '@homehub/providers-email/client';
+import { createTokenCryptoFromEnv } from '@homehub/worker-runtime';
 import { z } from 'zod';
 
 import { type ActionResult, ok, toErr } from './_envelope';
@@ -38,8 +40,8 @@ import { type ActionResult, ok, toErr } from './_envelope';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
+import { serverEnv } from '@/lib/env';
 import { NangoNotConfiguredError, createWebNangoClient } from '@/lib/nango/client';
-
 
 export interface ConnectionSummary {
   id: string;
@@ -103,13 +105,22 @@ export async function startConnectSessionAction(
       emailCategoriesCsv = valid.join(',');
     }
 
+    // Google now runs through our native OAuth service (not Nango).
+    // The /api/oauth/google/start route mints state + PKCE and 302s to
+    // Google's authorize endpoint; the popup handles the rest. Nango
+    // remains the broker for other providers (ynab today).
+    if (parsed.provider === 'google-calendar' || parsed.provider === 'google-mail') {
+      const internalProvider = parsed.provider === 'google-calendar' ? 'gcal' : 'gmail';
+      const search = new URLSearchParams({ provider: internalProvider });
+      if (emailCategoriesCsv) search.set('categories', emailCategoriesCsv);
+      return ok({ connectUrl: `/api/oauth/google/start?${search.toString()}` });
+    }
+
     const tags: Record<string, string> = {
       household_id: ctx.household.id,
       member_id: ctx.member.id,
       provider: parsed.provider,
     };
-    if (emailCategoriesCsv) tags.email_categories = emailCategoriesCsv;
-    if (parsed.provider === 'google-mail' && user.email) tags.email_address = user.email;
 
     const nango = createWebNangoClient();
     const session = await nango.createConnectSession({
@@ -218,7 +229,7 @@ export async function disconnectConnectionAction(
     const callerMemberId = await resolveMemberId(service, ctx.household.id, user.id);
     if (!callerMemberId) throw new ForbiddenError('not a member of this household');
 
-    // Read the connection first so we can call Nango with the right id.
+    // Read the connection first so we can dispatch to the right broker.
     const { data: connection, error: readErr } = await service
       .schema('sync')
       .from('provider_connection')
@@ -229,22 +240,28 @@ export async function disconnectConnectionAction(
     if (readErr) throw readErr;
     if (!connection) throw new ForbiddenError('connection not found for this household');
 
-    // Delete in Nango first; if that fails, we keep the row active so
-    // the retry path is obvious. Swallowing a 404 from Nango (already
-    // deleted upstream) is fine — we still flip the row.
-    //
-    // Nango identifies providers by `providerConfigKey` (e.g.
-    // `google-calendar`), but the row stores HomeHub's short provider
-    // label (`gcal`, `gmail`). Translate here.
-    try {
-      const nango = createWebNangoClient();
-      const providerConfigKey = toNangoProviderKey(connection.provider);
-      await nango.deleteConnection(providerConfigKey, connection.nango_connection_id);
-    } catch (err) {
-      // Log via console because server actions have no logger injected
-      // and the operator will see this in Vercel logs.
-
-      console.warn('[disconnect] nango delete failed; continuing to mark revoked', err);
+    if (connection.provider === 'gcal' || connection.provider === 'gmail') {
+      // Native Google path: revoke the refresh token at Google and
+      // flip both rows (google_connection + provider_connection) to
+      // revoked. The provider-side `watch` teardown is handled lazily
+      // by the sync workers the next time they see the revoked status
+      // — we don't instantiate providers here to keep the action lean.
+      await revokeGoogleConnection(service, connection);
+    } else {
+      // Delete in Nango first; if that fails, we keep the row active
+      // so the retry path is obvious. Swallowing a 404 from Nango
+      // (already deleted upstream) is fine — we still flip the row.
+      //
+      // Nango identifies providers by `providerConfigKey` (e.g.
+      // `google-calendar`), but the row stores HomeHub's short provider
+      // label (`gcal`, `gmail`). Translate here.
+      try {
+        const nango = createWebNangoClient();
+        const providerConfigKey = toNangoProviderKey(connection.provider);
+        await nango.deleteConnection(providerConfigKey, connection.nango_connection_id);
+      } catch (err) {
+        console.warn('[disconnect] nango delete failed; continuing to mark revoked', err);
+      }
     }
 
     const { error: updateErr } = await service
@@ -257,5 +274,90 @@ export async function disconnectConnectionAction(
     return ok({ ok: true });
   } catch (err) {
     return toErr(err);
+  }
+}
+
+/**
+ * Native-Google disconnect path.
+ *
+ * Steps:
+ *   1. Load the peer `sync.google_connection` row for this
+ *      `provider_connection`. If present (it should be), decrypt the
+ *      refresh token and POST to Google's /revoke endpoint so the
+ *      consent shows up as disconnected in the member's Google account
+ *      security page.
+ *   2. Flip the `sync.google_connection` row to `status='revoked'`.
+ *
+ * The outer action flips `sync.provider_connection` after we return.
+ * Watch-channel teardown + cursor cleanup are handled lazily: the sync
+ * workers see a revoked connection, stop polling, and let existing
+ * channels expire naturally (Google caps at 7 days). Eager teardown
+ * would require instantiating providers-calendar/providers-email here,
+ * which is overkill for a disconnect action that must be fast.
+ */
+async function revokeGoogleConnection(
+  service: ReturnType<typeof createServiceClient>,
+  connection: {
+    id: string;
+    household_id: string;
+    provider: string;
+    nango_connection_id: string;
+  },
+): Promise<void> {
+  const env = serverEnv();
+
+  const { data: gcRow, error: readErr } = await (service
+    .schema('sync' as never)
+    .from('google_connection' as never)
+    .select('id, refresh_token_ciphertext, refresh_token_iv, refresh_token_auth_tag, key_version')
+    .eq('id', connection.nango_connection_id)
+    .maybeSingle() as unknown as Promise<{
+    data: {
+      id: string;
+      refresh_token_ciphertext: string;
+      refresh_token_iv: string;
+      refresh_token_auth_tag: string;
+      key_version: number;
+    } | null;
+    error: { message: string } | null;
+  }>);
+  if (readErr) {
+    console.warn('[disconnect] google_connection lookup failed', readErr);
+  }
+
+  // Best-effort revoke at Google. 400 invalid_token is already a success
+  // in `createGoogleOAuthClient.revoke`.
+  if (
+    gcRow &&
+    env.GOOGLE_OAUTH_CLIENT_ID &&
+    env.GOOGLE_OAUTH_CLIENT_SECRET &&
+    env.GOOGLE_OAUTH_REDIRECT_URI &&
+    (process.env.GOOGLE_TOKEN_ENCRYPTION_KEY_V1 || process.env.GOOGLE_TOKEN_ENCRYPTION_KEY_V2)
+  ) {
+    try {
+      const crypto = createTokenCryptoFromEnv(process.env);
+      const refreshToken = crypto.decrypt({
+        ciphertext: Buffer.from(gcRow.refresh_token_ciphertext, 'base64'),
+        iv: Buffer.from(gcRow.refresh_token_iv, 'base64'),
+        authTag: Buffer.from(gcRow.refresh_token_auth_tag, 'base64'),
+        keyVersion: gcRow.key_version,
+      });
+      const oauth = createGoogleOAuthClient({
+        clientId: env.GOOGLE_OAUTH_CLIENT_ID,
+        clientSecret: env.GOOGLE_OAUTH_CLIENT_SECRET,
+        redirectUri: env.GOOGLE_OAUTH_REDIRECT_URI,
+      });
+      await oauth.revoke(refreshToken);
+    } catch (err) {
+      console.warn('[disconnect] google revoke failed; continuing to mark revoked', err);
+    }
+  }
+
+  if (gcRow) {
+    await service
+      .schema('sync' as never)
+      .from('google_connection' as never)
+      .update({ status: 'revoked', updated_at: new Date().toISOString() } as never)
+      .eq('id', gcRow.id);
   }
 }

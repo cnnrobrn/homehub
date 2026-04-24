@@ -23,8 +23,8 @@ import { createServer } from 'node:http';
 import { createGoogleMailProvider } from '@homehub/providers-email';
 import { loadEnv } from '@homehub/shared';
 import {
+  createGoogleProviderHttpClient,
   createLogger,
-  createNangoClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -66,8 +66,8 @@ const exitCode = await runWorker(
     initTracing(env);
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
-    const nango = createNangoClient(env);
-    const email = createGoogleMailProvider({ nango });
+    const http = createGoogleProviderHttpClient({ env, supabase, log });
+    const email = createGoogleMailProvider({ nango: http });
 
     let ready = false;
     let stopping = false;

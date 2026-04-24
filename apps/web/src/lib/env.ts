@@ -52,6 +52,21 @@ const serverSchema = baseServerEnvSchema.extend({
   NANGO_HOST: z.string().url().optional(),
   NANGO_SECRET_KEY: z.string().min(1).optional(),
   /**
+   * Google OAuth credentials for the native OAuth service that replaces
+   * Nango for Gmail + Calendar. `GOOGLE_OAUTH_REDIRECT_URI` is the
+   * callback URL registered with the GCP OAuth client; it must match
+   * the public origin the web app is served from. The V{N} encryption
+   * keys protect refresh tokens at rest (AES-256-GCM); see
+   * `packages/worker-runtime/src/google-oauth/crypto.ts`. The web app
+   * uses them inside the callback route to encrypt tokens before
+   * writing to `sync.google_connection`.
+   */
+  GOOGLE_OAUTH_CLIENT_ID: z.string().min(1).optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().min(1).optional(),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().url().optional(),
+  GOOGLE_TOKEN_ENCRYPTION_KEY_V1: z.string().min(1).optional(),
+  GOOGLE_TOKEN_ENCRYPTION_KEY_V2: z.string().min(1).optional(),
+  /**
    * Instacart Developer Platform app credentials. HomeHub uses these to
    * create Marketplace shopping-list URLs; shoppers log in and check out
    * on Instacart.

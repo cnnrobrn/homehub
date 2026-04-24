@@ -48,6 +48,43 @@ export {
   type ProxyOptions,
 } from './nango/client.js';
 
+export {
+  createGoogleHttpClient,
+  type CreateGoogleHttpClientDeps,
+  type GoogleHttpClient,
+  type ProviderHttpClient,
+} from './google-oauth/client.js';
+
+export {
+  createTokenCrypto,
+  createTokenCryptoFromEnv,
+  isTokenCryptoConfigured,
+  type EncryptedBlob,
+  type TokenCrypto,
+  type TokenCryptoConfig,
+} from './google-oauth/crypto.js';
+
+export {
+  createGoogleProviderHttpClient,
+  isGoogleOAuthConfigured,
+  GoogleOAuthNotConfiguredError,
+} from './google-oauth/factory.js';
+
+export {
+  GCAL_CHANNEL_KIND,
+  GMAIL_HISTORY_ID_KIND,
+  GMAIL_WATCH_KIND,
+  runGcalPostConnect,
+  runGmailPostConnect,
+  runGoogleDisconnectCleanup,
+  type GmailPostConnectOptions,
+  type GoogleConnectionIdentity,
+  type MinimalCalendarProvider,
+  type MinimalEmailProvider,
+  type PostConnectDeps,
+  type PostConnectEnv,
+} from './post-connect/google.js';
+
 export { initTracing, type TracingHandle } from './otel/tracing.js';
 
 export { initSentry, type InitSentryOptions, type SentryHandle } from './sentry/init.js';

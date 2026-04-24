@@ -21,7 +21,7 @@
  *     entries).
  */
 
-import { type NangoClient, NangoError } from '@homehub/worker-runtime';
+import { type ProviderHttpClient, NangoError } from '@homehub/worker-runtime';
 
 import { CalendarSyncError, FullResyncRequiredError, RateLimitError } from './errors.js';
 import {
@@ -257,7 +257,12 @@ function normalizeEvent(raw: RawEvent, ownerEmail: string): CalendarEvent | null
 }
 
 export interface CreateGoogleCalendarProviderArgs {
-  nango: NangoClient;
+  /**
+   * HTTP client that satisfies the Nango-style `proxy(options)` shape.
+   * Named `nango` for historical reasons; `ProviderHttpClient` is the
+   * abstract type so either `NangoClient` or `GoogleHttpClient` works.
+   */
+  nango: ProviderHttpClient;
   /**
    * Logger-compatible. Optional; the adapter itself is quiet — the worker
    * logs boundaries. Pass in if you want provider-level trace lines.

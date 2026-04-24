@@ -13,12 +13,14 @@ import { defineConfig } from 'vitest/config';
 
 const sharedSrc = fileURLToPath(new URL('../shared/src/index.ts', import.meta.url));
 const dbSrc = fileURLToPath(new URL('../db/src/index.ts', import.meta.url));
+const oauthGoogleSrc = fileURLToPath(new URL('../oauth-google/src/index.ts', import.meta.url));
 
 export default defineConfig({
   resolve: {
     alias: {
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
+      '@homehub/oauth-google': oauthGoogleSrc,
     },
   },
 });

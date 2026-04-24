@@ -25,6 +25,9 @@ const providersEmailSrc = fileURLToPath(
 const providersFinancialSrc = fileURLToPath(
   new URL('../../../packages/providers/financial/src/index.ts', import.meta.url),
 );
+const oauthGoogleSrc = fileURLToPath(
+  new URL('../../../packages/oauth-google/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   resolve: {
@@ -32,6 +35,7 @@ export default defineConfig({
       '@homehub/worker-runtime': runtimeSrc,
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
+      '@homehub/oauth-google': oauthGoogleSrc,
       '@homehub/providers-calendar': providersCalendarSrc,
       '@homehub/providers-email': providersEmailSrc,
       '@homehub/providers-financial': providersFinancialSrc,

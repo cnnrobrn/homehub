@@ -24,7 +24,7 @@
  *     missing and caches the id per connection.
  */
 
-import { type NangoClient, NangoError } from '@homehub/worker-runtime';
+import { type ProviderHttpClient, NangoError } from '@homehub/worker-runtime';
 
 import { EmailSyncError, HistoryIdExpiredError, RateLimitError } from './errors.js';
 
@@ -392,7 +392,12 @@ export function normalizeMessage(raw: RawMessage): EmailMessage | null {
 }
 
 export interface CreateGoogleMailProviderArgs {
-  nango: NangoClient;
+  /**
+   * HTTP client that satisfies the Nango-style `proxy(options)` shape.
+   * Named `nango` for historical reasons; `ProviderHttpClient` is the
+   * abstract type so either `NangoClient` or `GoogleHttpClient` works.
+   */
+  nango: ProviderHttpClient;
   log?: {
     debug?: (msg: string, ctx?: Record<string, unknown>) => void;
   };

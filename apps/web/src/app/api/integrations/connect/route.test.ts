@@ -71,7 +71,37 @@ beforeEach(() => {
 });
 
 describe('GET /api/integrations/connect', () => {
-  it('redirects to the Nango-generated connect_link', async () => {
+  it('redirects google-calendar to the native /api/oauth/google/start flow', async () => {
+    // Post-cutover: google providers no longer mint a Nango session. The
+    // legacy route redirects to the native /api/oauth/google/start so
+    // bookmarks + stale client bundles end up in the right place.
+    const createConnectSession = vi.fn();
+    mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
+
+    const response = await GET(request('/api/integrations/connect?provider=google-calendar'));
+    expect(response.status).toBe(302);
+    const location = response.headers.get('location') ?? '';
+    expect(location).toContain('/api/oauth/google/start');
+    expect(location).toContain('provider=gcal');
+    expect(createConnectSession).not.toHaveBeenCalled();
+  });
+
+  it('forwards google-mail + categories to /api/oauth/google/start', async () => {
+    const createConnectSession = vi.fn();
+    mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
+
+    const response = await GET(
+      request('/api/integrations/connect?provider=google-mail&categories=receipt,shipping'),
+    );
+    expect(response.status).toBe(302);
+    const location = response.headers.get('location') ?? '';
+    expect(location).toContain('/api/oauth/google/start');
+    expect(location).toContain('provider=gmail');
+    expect(location).toContain('categories=receipt%2Cshipping');
+    expect(createConnectSession).not.toHaveBeenCalled();
+  });
+
+  it('redirects ynab to the Nango-generated connect_link', async () => {
     const createConnectSession = vi.fn().mockResolvedValue({
       token: 'session-token',
       connectLink: 'https://connect.nango.dev/session/session-token',
@@ -79,7 +109,7 @@ describe('GET /api/integrations/connect', () => {
     });
     mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
 
-    const response = await GET(request('/api/integrations/connect?provider=google-calendar'));
+    const response = await GET(request('/api/integrations/connect?provider=ynab'));
 
     expect(response.status).toBe(302);
     expect(response.headers.get('location')).toBe(
@@ -92,19 +122,19 @@ describe('GET /api/integrations/connect', () => {
         tags: {
           household_id: HOUSEHOLD_ID,
           member_id: MEMBER_ID,
-          provider: 'google-calendar',
+          provider: 'ynab',
         },
       },
-      allowedIntegrations: ['google-calendar'],
+      allowedIntegrations: ['ynab'],
       tags: {
         household_id: HOUSEHOLD_ID,
         member_id: MEMBER_ID,
-        provider: 'google-calendar',
+        provider: 'ynab',
       },
     });
   });
 
-  it('returns a 502 if Nango omits a usable connect_link', async () => {
+  it('returns a 502 if Nango omits a usable connect_link (ynab)', async () => {
     mocks.createWebNangoClient.mockReturnValue({
       createConnectSession: vi.fn().mockResolvedValue({
         token: 'session-token',
@@ -113,7 +143,7 @@ describe('GET /api/integrations/connect', () => {
       }),
     });
 
-    const response = await GET(request('/api/integrations/connect?provider=google-calendar'));
+    const response = await GET(request('/api/integrations/connect?provider=ynab'));
     const body = (await response.json()) as { error: string; detail: string };
 
     expect(response.status).toBe(502);

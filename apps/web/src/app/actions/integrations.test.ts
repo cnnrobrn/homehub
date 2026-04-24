@@ -217,7 +217,7 @@ describe('disconnectConnectionAction', () => {
     expect(res.ok).toBe(false);
   });
 
-  it('happy path marks the connection revoked even if Nango delete fails', async () => {
+  it('happy path marks a Nango connection revoked even if Nango delete fails', async () => {
     mocks.getUser.mockResolvedValue(USER);
     mocks.getHouseholdContext.mockResolvedValue({
       household: { id: HOUSEHOLD_ID },
@@ -229,7 +229,10 @@ describe('disconnectConnectionAction', () => {
         connection: {
           id: CONNECTION_ID,
           household_id: HOUSEHOLD_ID,
-          provider: 'gcal',
+          // Use ynab so the action takes the Nango branch. Google
+          // disconnects flow through `revokeGoogleConnection`, which
+          // has its own targeted tests.
+          provider: 'ynab',
           nango_connection_id: 'nango-1',
         },
       }),
@@ -257,30 +260,25 @@ describe('disconnectConnectionAction', () => {
 });
 
 describe('startConnectSessionAction', () => {
-  it('returns a Nango connect URL for google-calendar', async () => {
+  it('returns the native /api/oauth/google/start URL for google-calendar', async () => {
     mocks.getUser.mockResolvedValue(USER);
     mocks.getHouseholdContext.mockResolvedValue({
       household: { id: HOUSEHOLD_ID },
       member: { id: MEMBER_ID, role: 'owner' },
       grants: [],
     });
-    const createConnectSession = vi.fn().mockResolvedValue({
-      token: 'tok_abc',
-      connectLink: 'https://connect.nango.test/session/session-token',
-      expiresAt: '2026-04-23T01:00:00Z',
-    });
+    // Google now bypasses Nango entirely — the connect URL is a local
+    // API route that handles state + PKCE + redirect-to-Google inline.
+    const createConnectSession = vi.fn();
     mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
 
     const res = await startConnectSessionAction({ provider: 'google-calendar' });
     expect(res.ok).toBe(true);
     if (res.ok) {
-      expect(res.data.connectUrl).toBe('https://connect.nango.test/session/session-token');
+      expect(res.data.connectUrl).toBe('/api/oauth/google/start?provider=gcal');
     }
-    expect(createConnectSession).toHaveBeenCalledTimes(1);
-    const call = createConnectSession.mock.calls[0]?.[0];
-    expect(call?.allowedIntegrations).toEqual(['google-calendar']);
-    expect(call?.tags?.household_id).toBe(HOUSEHOLD_ID);
-    expect(call?.tags?.member_id).toBe(MEMBER_ID);
+    // Nango must not be touched for google providers.
+    expect(createConnectSession).not.toHaveBeenCalled();
   });
 
   it('rejects google-mail without any valid categories', async () => {
@@ -297,18 +295,14 @@ describe('startConnectSessionAction', () => {
     expect(res.ok).toBe(false);
   });
 
-  it('passes email_categories tag for google-mail', async () => {
+  it('embeds email_categories in the /start URL for google-mail', async () => {
     mocks.getUser.mockResolvedValue(USER);
     mocks.getHouseholdContext.mockResolvedValue({
       household: { id: HOUSEHOLD_ID },
       member: { id: MEMBER_ID, role: 'owner' },
       grants: [],
     });
-    const createConnectSession = vi.fn().mockResolvedValue({
-      token: 't',
-      connectLink: 'https://connect.nango.test/session/gmail',
-      expiresAt: 'x',
-    });
+    const createConnectSession = vi.fn();
     mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
 
     const res = await startConnectSessionAction({
@@ -316,12 +310,37 @@ describe('startConnectSessionAction', () => {
       categories: ['receipt', 'shipping'],
     });
     expect(res.ok).toBe(true);
-    const call = createConnectSession.mock.calls[0]?.[0];
-    expect(call?.tags?.email_categories).toBe('receipt,shipping');
-    expect(call?.tags?.email_address).toBe(USER.email);
+    if (res.ok) {
+      expect(res.data.connectUrl).toBe(
+        '/api/oauth/google/start?provider=gmail&categories=receipt%2Cshipping',
+      );
+    }
+    expect(createConnectSession).not.toHaveBeenCalled();
   });
 
-  it('rejects an invalid Nango connect_link', async () => {
+  it('returns the Nango connectLink for ynab', async () => {
+    mocks.getUser.mockResolvedValue(USER);
+    mocks.getHouseholdContext.mockResolvedValue({
+      household: { id: HOUSEHOLD_ID },
+      member: { id: MEMBER_ID, role: 'owner' },
+      grants: [],
+    });
+    const createConnectSession = vi.fn().mockResolvedValue({
+      token: 'tok',
+      connectLink: 'https://connect.nango.test/session/ynab',
+      expiresAt: 'x',
+    });
+    mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
+
+    const res = await startConnectSessionAction({ provider: 'ynab' });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.connectUrl).toBe('https://connect.nango.test/session/ynab');
+    }
+    expect(createConnectSession).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an invalid Nango connect_link for non-google providers', async () => {
     mocks.getUser.mockResolvedValue(USER);
     mocks.getHouseholdContext.mockResolvedValue({
       household: { id: HOUSEHOLD_ID },
@@ -336,7 +355,7 @@ describe('startConnectSessionAction', () => {
       }),
     });
 
-    const res = await startConnectSessionAction({ provider: 'google-calendar' });
+    const res = await startConnectSessionAction({ provider: 'ynab' });
     expect(res.ok).toBe(false);
     if (!res.ok) {
       expect(res.error.message).toContain('connect_link');

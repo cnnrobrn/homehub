@@ -31,9 +31,9 @@ import { createServer } from 'node:http';
 import { createGoogleMailProvider, type EmailProvider } from '@homehub/providers-email';
 import { loadEnv } from '@homehub/shared';
 import {
+  createGoogleProviderHttpClient,
   createLogger,
   createModelClient,
-  createNangoClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -73,16 +73,16 @@ const exitCode = await runWorker(
       );
     }
 
-    // Email provider is optional: when Nango env isn't wired the email
-    // handler falls back to the stored body_preview (lower quality but
-    // functional). Missing Nango does not starve the queue.
+    // Email provider is optional: when Google OAuth env isn't wired the
+    // email handler falls back to the stored body_preview (lower quality
+    // but functional). Missing Google OAuth does not starve the queue.
     let emailProvider: EmailProvider | undefined;
     try {
-      const nango = createNangoClient(env);
-      emailProvider = createGoogleMailProvider({ nango });
+      const googleHttp = createGoogleProviderHttpClient({ env, supabase, log });
+      emailProvider = createGoogleMailProvider({ nango: googleHttp });
     } catch (err) {
       log.warn(
-        'Nango client not constructed; enrich_email will fall back to app.email.body_preview for extraction',
+        'Google OAuth client not constructed; enrich_email will fall back to app.email.body_preview for extraction',
         { error: err instanceof Error ? err.message : String(err) },
       );
     }

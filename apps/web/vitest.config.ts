@@ -44,6 +44,12 @@ const providersEmailClientSrc = fileURLToPath(
 const providersGrocerySrc = fileURLToPath(
   new URL('../../packages/providers/grocery/src/index.ts', import.meta.url),
 );
+const providersCalendarSrc = fileURLToPath(
+  new URL('../../packages/providers/calendar/src/index.ts', import.meta.url),
+);
+const oauthGoogleSrc = fileURLToPath(
+  new URL('../../packages/oauth-google/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   plugins: [react()],
@@ -64,6 +70,8 @@ export default defineConfig({
       '@homehub/providers-email/client': providersEmailClientSrc,
       '@homehub/providers-email': providersEmailSrc,
       '@homehub/providers-grocery': providersGrocerySrc,
+      '@homehub/providers-calendar': providersCalendarSrc,
+      '@homehub/oauth-google': oauthGoogleSrc,
     },
   },
   test: {

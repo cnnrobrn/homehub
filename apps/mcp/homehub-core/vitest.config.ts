@@ -18,6 +18,9 @@ const dbSrc = fileURLToPath(new URL('../../../packages/db/src/index.ts', import.
 const queryMemorySrc = fileURLToPath(
   new URL('../../../packages/query-memory/src/index.ts', import.meta.url),
 );
+const oauthGoogleSrc = fileURLToPath(
+  new URL('../../../packages/oauth-google/src/index.ts', import.meta.url),
+);
 
 export default defineConfig({
   resolve: {
@@ -26,6 +29,7 @@ export default defineConfig({
       '@homehub/shared': sharedSrc,
       '@homehub/db': dbSrc,
       '@homehub/query-memory': queryMemorySrc,
+      '@homehub/oauth-google': oauthGoogleSrc,
     },
   },
 });

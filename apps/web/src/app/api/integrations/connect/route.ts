@@ -72,8 +72,23 @@ export async function GET(request: NextRequest): Promise<Response> {
     );
   }
 
+  // Google now flows through the native OAuth service, not Nango.
+  // Redirect any direct hit on this legacy route to `/api/oauth/google/start`
+  // so bookmarks, stale client bundles, and external links land in the
+  // new flow instead of minting a Nango Connect session.
+  if (provider === 'google-calendar' || provider === 'google-mail') {
+    const internalProvider = provider === 'google-calendar' ? 'gcal' : 'gmail';
+    const forwarded = new URL('/api/oauth/google/start', request.nextUrl);
+    forwarded.searchParams.set('provider', internalProvider);
+    const categories = request.nextUrl.searchParams.get('categories');
+    if (categories) forwarded.searchParams.set('categories', categories);
+    return NextResponse.redirect(forwarded, { status: 302 });
+  }
+
   // Gmail-specific: require a confirmed category opt-in from the
-  // privacy-preview dialog.
+  // privacy-preview dialog. (Dead code now that google-mail redirects
+  // above, but retained so any ynab/future-provider fallthrough is
+  // obvious.)
   let emailCategoriesCsv: string | undefined;
   if (provider === 'google-mail') {
     const raw = request.nextUrl.searchParams.get('categories');

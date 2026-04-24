@@ -17,8 +17,8 @@ import { createServer } from 'node:http';
 import { createGoogleCalendarProvider } from '@homehub/providers-calendar';
 import { loadEnv } from '@homehub/shared';
 import {
+  createGoogleProviderHttpClient,
   createLogger,
-  createNangoClient,
   createQueueClient,
   createServiceClient,
   initTracing,
@@ -42,8 +42,12 @@ const exitCode = await runWorker(
     initTracing(env);
     const supabase = createServiceClient(env);
     const queues = createQueueClient(supabase);
-    const nango = createNangoClient(env);
-    const calendar = createGoogleCalendarProvider({ nango });
+    // Google providers now go through the native `GoogleHttpClient`
+    // (refresh tokens live encrypted in `sync.google_connection`). Nango
+    // stays on the YNAB path elsewhere; sync-gcal has no non-Google
+    // providers so we don't need a Nango client here at all.
+    const http = createGoogleProviderHttpClient({ env, supabase, log });
+    const calendar = createGoogleCalendarProvider({ nango: http });
 
     let ready = false;
     let stopping = false;
