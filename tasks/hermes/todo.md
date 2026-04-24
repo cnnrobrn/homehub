@@ -100,7 +100,7 @@ Trade-off accepted: per-turn network round-trip for state. For typical HomeHub f
   - (b) Rsync only additive changes (append-only `memories/`, `sessions/` subdirs) and accept concurrency on the rest.
   - (c) Warn the user if a second turn arrives while the first is running.
 - [ ] **Observability.** Cloud Run structured logs on the router include per-turn sandbox spawn latency, hydrate latency, turn duration, persist latency. Surface in Cloud Monitoring; one dashboard per household probably overkill.
-- [ ] **Playbook for killing a runaway sandbox.** Hermes `--max-turns 10` bounds tool iterations, but a runaway can still hit the sandbox timeout (`HERMES_SANDBOX_TIMEOUT_SECONDS`, default 120). Verify the router cleans up the SSE stream when the sandbox dies with a timeout.
+- [ ] **Playbook for killing a runaway sandbox.** Hermes `--max-turns 10` bounds tool iterations, but a runaway can still hit the sandbox timeout (`HERMES_SANDBOX_TIMEOUT_SECONDS`, default 3600). Verify the router cleans up the SSE stream when the sandbox dies with a timeout.
 
 ### P2 — scale-out
 
@@ -137,7 +137,7 @@ Trade-off accepted: per-turn network round-trip for state. For typical HomeHub f
 - `HERMES_JWT_TTL_SECONDS` (default `600`)
 - `E2B_API_KEY` — authenticates `Sandbox.create()`
 - `E2B_TEMPLATE` (default `homehub-hermes`)
-- `HERMES_SANDBOX_TIMEOUT_SECONDS` (default `120`)
+- `HERMES_SANDBOX_TIMEOUT_SECONDS` (default `3600`) — applied to both the sandbox lifetime and the per-turn `commands.run` call (E2B's command default is only 60s)
 - `HERMES_STORAGE_BUCKET` (default `hermes-state`) — Supabase Storage bucket
 - `HOMEHUB_PROXY_SECRET`, `HOMEHUB_PROVISION_SECRET` — distinct, 32+ chars
 - `HERMES_SHARED_SECRET` — injected into every sandbox

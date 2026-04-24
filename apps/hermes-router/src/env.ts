@@ -34,7 +34,7 @@ export const routerEnvSchema = z.object({
     .min(1)
     .default('homehub-hermes')
     .describe('E2B template tag built from apps/hermes-host/template.ts'),
-  HERMES_SANDBOX_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(120),
+  HERMES_SANDBOX_TIMEOUT_SECONDS: z.coerce.number().int().positive().default(3600),
 
   // State storage — Supabase Storage. One bucket, household-scoped
   // paths enforced by RLS (see migration 0017).

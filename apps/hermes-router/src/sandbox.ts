@@ -125,6 +125,10 @@ export async function runSandboxedTurn(
     // sandbox defaults, and keeping this explicit prevents a partial
     // per-command env from dropping history or Storage credentials.
     envs: sandboxEnvs,
+    // E2B's per-command timeout defaults to 60s and is independent from
+    // the sandbox lifetime. Mirror the sandbox timeout so a long turn
+    // doesn't die at one minute while the VM is still alive.
+    timeoutMs: env.HERMES_SANDBOX_TIMEOUT_SECONDS * 1000,
     onStdout: (data: string) => {
       streamController?.enqueue(new TextEncoder().encode(data));
     },
