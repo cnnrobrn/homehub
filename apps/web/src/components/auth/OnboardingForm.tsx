@@ -28,7 +28,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/ui/use-toast';
 import { ASSISTANT_NAME } from '@/lib/assistant';
-import { buildHermesOnboardingStartPrompt } from '@/lib/onboarding/setup';
+import { cn } from '@/lib/cn';
+import { ONBOARDING_START_PROMPTS, buildHermesOnboardingStartPrompt } from '@/lib/onboarding/setup';
 
 const createSchema = z.object({
   name: z.string().min(1, 'Give your household a name.').max(200),
@@ -97,6 +98,7 @@ export function OnboardingForm() {
 
 function CreateHouseholdInner() {
   const router = useRouter();
+  const [selectedPromptId, setSelectedPromptId] = React.useState(ONBOARDING_START_PROMPTS[0]!.id);
 
   // Pick up the user's browser timezone as a default. `Intl.DateTimeFormat`
   // is stable on a given client, so reading it during render avoids both a
@@ -133,13 +135,17 @@ function CreateHouseholdInner() {
   const timezone = watch('timezone');
 
   async function onSubmit(values: CreateValues) {
-    const setupPrompt = buildHermesOnboardingStartPrompt({ householdName: values.name });
+    const setupPrompt = buildHermesOnboardingStartPrompt({
+      householdName: values.name,
+      promptId: selectedPromptId,
+    });
     const res = await createHouseholdAction({
       name: values.name,
       timezone: values.timezone,
       currency: DEFAULT_CURRENCY,
       setupSegments: [],
       setupPromptIds: [],
+      setupSurfaces: [],
       setupPrompt,
     });
     if (!res.ok) {
@@ -196,9 +202,41 @@ function CreateHouseholdInner() {
         </Select>
         <FormMessage error={errors.timezone?.message ?? null} />
       </div>
+      <div className="flex flex-col gap-2">
+        <Label id="setup-prompt-label">Start with {ASSISTANT_NAME}</Label>
+        <div
+          role="radiogroup"
+          aria-labelledby="setup-prompt-label"
+          className="grid grid-cols-1 gap-2 sm:grid-cols-2"
+        >
+          {ONBOARDING_START_PROMPTS.map((prompt) => {
+            const selected = prompt.id === selectedPromptId;
+            return (
+              <button
+                key={prompt.id}
+                type="button"
+                role="radio"
+                aria-checked={selected}
+                onClick={() => setSelectedPromptId(prompt.id)}
+                className={cn(
+                  'min-h-[72px] rounded-[6px] border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2',
+                  selected
+                    ? 'border-accent bg-surface text-fg'
+                    : 'border-border bg-surface-soft text-fg-muted hover:bg-surface hover:text-fg',
+                )}
+              >
+                <span className="block text-[13px] font-medium leading-[1.35]">{prompt.label}</span>
+                <span className="mt-1 block text-[12px] leading-[1.45] text-fg-muted">
+                  {prompt.detail}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
       <div className="rounded-[6px] border border-border bg-surface-soft px-3 py-2.5 text-[12.5px] leading-[1.5] text-fg-muted">
-        After this, {ASSISTANT_NAME} will ask what you want HomeHub to handle first, gather the
-        details, and reveal each section once there is something useful to show.
+        After this, {ASSISTANT_NAME} opens chat, asks one thing at a time, and reveals each surface
+        once there is something useful to show.
       </div>
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Creating…' : `Create household with ${ASSISTANT_NAME}`}

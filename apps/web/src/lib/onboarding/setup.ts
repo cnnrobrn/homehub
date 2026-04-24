@@ -1,5 +1,8 @@
 import { SEGMENT_ORDER, SEGMENTS, type SegmentId } from '@/components/design-system/segment';
 
+const SETUP_SURFACE_ORDER = ['calendar', 'decisions'] as const;
+export type SetupSurfaceId = (typeof SETUP_SURFACE_ORDER)[number];
+
 export interface SetupPrompt {
   id: string;
   label: string;
@@ -13,6 +16,13 @@ export interface SetupSection {
   title: string;
   description: string;
   prompts: readonly SetupPrompt[];
+}
+
+export interface OnboardingStartPrompt {
+  id: string;
+  label: string;
+  detail: string;
+  prompt: string;
 }
 
 export const SETUP_SECTIONS: readonly SetupSection[] = [
@@ -158,6 +168,44 @@ export const SETUP_SECTIONS: readonly SetupSection[] = [
   },
 ];
 
+export const ONBOARDING_START_PROMPTS: readonly OnboardingStartPrompt[] = [
+  {
+    id: 'guided',
+    label: 'Ask what matters first',
+    detail: 'Money, meals, plans, or people.',
+    prompt:
+      'Ask what I want HomeHub to handle first, then use your HomeHub onboarding skill to collect the key details.',
+  },
+  {
+    id: 'week',
+    label: 'Set up this week',
+    detail: 'Plans, calendar items, and open decisions.',
+    prompt:
+      'Start with this week: plans, calendar items, bills, meals, and any decisions that need a yes.',
+  },
+  {
+    id: 'food',
+    label: 'Meals first',
+    detail: 'Dinner rhythm, pantry, and groceries.',
+    prompt:
+      'Start with food: our meal rhythm, pantry staples, grocery needs, and dishes worth remembering.',
+  },
+  {
+    id: 'money',
+    label: 'Bills first',
+    detail: 'Accounts, subscriptions, and due dates.',
+    prompt:
+      'Start with money: accounts, recurring bills, subscriptions, budgets, and upcoming due dates.',
+  },
+  {
+    id: 'people',
+    label: 'People first',
+    detail: 'Family, friends, birthdays, and follow-ups.',
+    prompt:
+      'Start with people: important family and friends, birthdays, groups, and follow-ups worth remembering.',
+  },
+];
+
 const ALL_PROMPTS = SETUP_SECTIONS.flatMap((section) =>
   section.prompts.map((prompt) => ({
     ...prompt,
@@ -172,6 +220,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isSegmentId(value: unknown): value is SegmentId {
   return typeof value === 'string' && SEGMENT_ORDER.includes(value as SegmentId);
+}
+
+function isSetupSurfaceId(value: unknown): value is SetupSurfaceId {
+  return typeof value === 'string' && SETUP_SURFACE_ORDER.includes(value as SetupSurfaceId);
 }
 
 function unique<T>(items: readonly T[]): T[] {
@@ -201,6 +253,24 @@ export function getSelectedSetupPromptIds(settings: unknown): string[] {
   return unique(onboarding.setup_prompt_ids.filter((id): id is string => typeof id === 'string'));
 }
 
+export function getConfiguredSetupSurfaces(settings: unknown): SetupSurfaceId[] {
+  if (!hasStoredSetup(settings)) return [...SETUP_SURFACE_ORDER];
+
+  const onboarding = onboardingSettings(settings);
+  if (!onboarding) return [];
+
+  const explicit = Array.isArray(onboarding.setup_surface_ids)
+    ? unique(onboarding.setup_surface_ids.filter(isSetupSurfaceId))
+    : [];
+  const visible = new Set<SetupSurfaceId>(explicit);
+
+  for (const promptId of getSelectedSetupPromptIds(settings)) {
+    if (promptId.endsWith('.calendar')) visible.add('calendar');
+  }
+
+  return SETUP_SURFACE_ORDER.filter((id) => visible.has(id));
+}
+
 export function getVisibleSetupHrefs(
   settings: unknown,
   segment: SegmentId,
@@ -218,13 +288,20 @@ export function chatPromptHref(prompt: string): string {
 
 export function buildHermesOnboardingStartPrompt({
   householdName,
+  promptId,
 }: {
   householdName: string;
+  promptId?: string;
 }): string {
+  const selected =
+    ONBOARDING_START_PROMPTS.find((prompt) => prompt.id === promptId) ??
+    ONBOARDING_START_PROMPTS[0]!;
+
   return [
     `Alfred, start HomeHub onboarding for ${householdName || 'my household'}.`,
-    'Ask what I want HomeHub to handle first, then use your HomeHub onboarding skill to collect the key details.',
-    'Ask one follow-up at a time. Once you have enough to create something useful, populate the matching HomeHub data and reveal the section or tab.',
+    selected.prompt,
+    'Ask one follow-up at a time. Once you have enough to create something useful, populate the matching HomeHub data.',
+    'Only reveal Calendar, Decisions, sections, or tabs when there is information worth showing.',
   ].join('\n\n');
 }
 
@@ -253,6 +330,6 @@ export function buildAlfredSetupPrompt({
     `Alfred, help me set up HomeHub for ${householdName || 'my household'}.`,
     `Focus on: ${sectionLabels}.`,
     focus,
-    'Use your HomeHub onboarding skill. Ask one follow-up at a time, create useful HomeHub records when you can, and only reveal UI sections or tabs when there is information worth showing.',
+    'Use your HomeHub onboarding skill. Ask one follow-up at a time, create useful HomeHub records when you can, and only reveal Calendar, Decisions, sections, or tabs when there is information worth showing.',
   ].join('\n\n');
 }

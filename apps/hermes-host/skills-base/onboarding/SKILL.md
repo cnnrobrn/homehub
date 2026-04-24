@@ -1,6 +1,6 @@
 ---
 name: onboarding
-description: Guide HomeHub first-run setup through chat. Use when the user asks to set up HomeHub, make a section or tab appear, start tracking a household area, or populate an empty Money/Food/Fun/People surface. This skill asks for the minimum useful details, writes safe HomeHub rows when possible, then reveals the matching UI section/tabs through household onboarding settings.
+description: Guide HomeHub first-run setup through chat. Use when the user asks to set up HomeHub, make a section, tab, Calendar, or Decisions appear, start tracking a household area, or populate an empty Money/Food/Fun/People surface. This skill asks for the minimum useful details, writes safe HomeHub rows when possible, then reveals the matching UI surfaces through household onboarding settings.
 version: 0.1.0
 metadata:
   hermes:
@@ -21,7 +21,7 @@ required_environment_variables:
 Use this skill to replace pre-setup checkboxes with a conversation.
 Your job is to discover what the member wants HomeHub to handle, collect
 the key facts, populate the relevant HomeHub data, and reveal only the
-section/tab that now has something useful to show.
+surface that now has something useful to show.
 
 See `_shared` for Supabase auth and scoping rules.
 
@@ -37,12 +37,13 @@ See `_shared` for Supabase auth and scoping rules.
    suggestion instead or ask for confirmation.
 5. Reveal the matching section/tab by updating
    `app.household.settings.onboarding.setup_segments` and
-   `setup_prompt_ids`.
+   `setup_prompt_ids`. Reveal top-level Calendar or Decisions with
+   `setup_surface_ids`.
 6. Tell the user what appeared and what you added.
 
-Do not reveal a tab just because the user mentioned it. Reveal it after
-you have populated something or collected enough information that the
-tab is no longer empty.
+Do not reveal a tab or top-level surface just because the user mentioned
+it. Reveal it after you have populated something or collected enough
+information that the surface is no longer empty.
 
 ## Section And Tab IDs
 
@@ -66,6 +67,18 @@ Use these exact IDs in `setup_prompt_ids`:
 | groups, circles                      | social    | `social.groups`           | `/social/groups`           |
 | birthdays, anniversaries             | social    | `social.calendar`         | `/social/calendar`         |
 | check-ins, gifts, hosting follow-ups | social    | `social.alerts`           | `/social/alerts`           |
+
+Top-level surface IDs live in
+`household.settings.onboarding.setup_surface_ids`:
+
+| Surface wording                      | Surface id  | UI             |
+| ------------------------------------ | ----------- | -------------- |
+| calendar, schedule, week, events     | `calendar`  | `/calendar`    |
+| decisions, approvals, drafts, yes/no | `decisions` | `/suggestions` |
+
+Reveal `calendar` when you create or find events/reminders worth
+showing. Reveal `decisions` when you create a suggestion, draft, approval
+card, or any item that needs a human yes/no.
 
 ## Minimum Useful Details
 
@@ -99,10 +112,12 @@ Use these exact IDs in `setup_prompt_ids`:
 - `social.calendar`: birthday/anniversary/social plan name and date.
 - `social.alerts`: person, reason to reach out, target date.
 
-## Reveal A Section Or Tab
+## Reveal A Surface
 
-Run this after you have created data. Edit `segment` and `prompt_ids`
-before running. It preserves existing revealed sections/tabs.
+Run this after you have created data. Edit `segment`, `prompt_ids`, and
+`surface_ids` before running. Use an empty `surface_ids` list if no
+top-level surface should appear yet. It preserves existing revealed
+sections, tabs, and surfaces.
 
 ```bash
 python - <<'PY'
@@ -114,6 +129,7 @@ import urllib.request
 
 segment = "food"
 prompt_ids = ["food.groceries"]
+surface_ids = []
 
 base = os.environ["HOMEHUB_SUPABASE_URL"].rstrip("/")
 household_id = os.environ["HOUSEHOLD_ID"]
@@ -144,14 +160,19 @@ try:
 
     segments = list(onboarding.get("setup_segments") or [])
     ids = list(onboarding.get("setup_prompt_ids") or [])
+    surfaces = list(onboarding.get("setup_surface_ids") or [])
     if segment not in segments:
         segments.append(segment)
     for prompt_id in prompt_ids:
         if prompt_id not in ids:
             ids.append(prompt_id)
+    for surface_id in surface_ids:
+        if surface_id in ("calendar", "decisions") and surface_id not in surfaces:
+            surfaces.append(surface_id)
 
     onboarding["setup_segments"] = segments
     onboarding["setup_prompt_ids"] = ids
+    onboarding["setup_surface_ids"] = surfaces
     onboarding["last_onboarded_at"] = datetime.datetime.now(datetime.UTC).isoformat()
     settings["onboarding"] = onboarding
 
@@ -215,7 +236,8 @@ financial commitments as suggestions.
 Keep the response short:
 
 - Ask for the next missing detail, or
-- Say what was added and name the section/tab now visible.
+- Say what was added and name the section, tab, or top-level surface now
+  visible.
 
 Good: "I added the pantry staples and opened Food -> Pantry. What else
 should be in there?"

@@ -25,10 +25,11 @@
  *          write any opt-in metadata into
  *          `sync.provider_connection.metadata`.
  *        - `allowed_integrations` = [provider]
- *   5. 302 directly to Nango's provider OAuth endpoint. We bypass
- *      Nango's hosted Connect UI so members never land on the Nango
- *      dashboard/hosted UI; HomeHub already collected the provider and
- *      Gmail category consent before creating the session.
+ *   5. 302 to the Nango-generated `connect_link`. We intentionally do
+ *      not reconstruct this URL from `NANGO_HOST`: in production that
+ *      host can be private server-to-server infrastructure, while
+ *      `connect_link` is the browser-facing Connect/OAuth URL Nango
+ *      minted for this session.
  *
  * Error shape: anything that fails resolution returns a 4xx JSON body
  * rather than redirecting.
@@ -41,7 +42,6 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
-import { serverEnv } from '@/lib/env';
 import { NangoNotConfiguredError, createWebNangoClient } from '@/lib/nango/client';
 
 export const dynamic = 'force-dynamic';
@@ -52,6 +52,16 @@ export const dynamic = 'force-dynamic';
  * `infra/nango/providers/<provider>.md`).
  */
 const ALLOWED_PROVIDERS = new Set(['google-calendar', 'google-mail', 'ynab']);
+
+function parseConnectLink(raw: string | undefined): URL | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
 
 export async function GET(request: NextRequest): Promise<Response> {
   const provider = request.nextUrl.searchParams.get('provider') ?? '';
@@ -147,9 +157,16 @@ export async function GET(request: NextRequest): Promise<Response> {
       tags,
     });
 
-    const { NANGO_HOST } = serverEnv();
-    const connectUrl = new URL(`/oauth/connect/${encodeURIComponent(provider)}`, NANGO_HOST);
-    connectUrl.searchParams.set('connect_session_token', session.token);
+    const connectUrl = parseConnectLink(session.connectLink);
+    if (!connectUrl) {
+      return NextResponse.json(
+        {
+          error: 'failed to create Nango session',
+          detail: 'Nango did not return a valid connect_link',
+        },
+        { status: 502 },
+      );
+    }
     return NextResponse.redirect(connectUrl, { status: 302 });
   } catch (err) {
     if (err instanceof NangoNotConfiguredError) {

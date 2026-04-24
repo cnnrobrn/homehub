@@ -18,20 +18,26 @@ import { OpenCommandK } from '@/components/shell/OpenCommandK';
 import { ASSISTANT_NAME } from '@/lib/assistant';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { cn } from '@/lib/cn';
-import { getConfiguredSetupSegments, hasStoredSetup } from '@/lib/onboarding/setup';
+import {
+  getConfiguredSetupSegments,
+  getConfiguredSetupSurfaces,
+  hasStoredSetup,
+  type SetupSurfaceId,
+} from '@/lib/onboarding/setup';
 
 interface NavItem {
   label: string;
   href: string;
   /** When set, the row shows a small count badge on the right (accent pill). */
   count?: number;
+  surface?: SetupSurfaceId;
 }
 
 const PRIMARY: NavItem[] = [
   { label: 'Today', href: '/' },
   { label: ASSISTANT_NAME, href: '/chat' },
-  { label: 'Calendar', href: '/calendar' },
-  { label: 'Decisions', href: '/suggestions' },
+  { label: 'Calendar', href: '/calendar', surface: 'calendar' },
+  { label: 'Decisions', href: '/suggestions', surface: 'decisions' },
 ];
 
 /** Friendly segment labels come from SEGMENTS; href matches the app routes. */
@@ -58,6 +64,10 @@ export async function AppSidebar() {
   const members = membersRes.ok ? membersRes.data : [];
   const memberNames = members.map((m) => m.displayName);
   const visibleSegments = getConfiguredSetupSegments(ctx.household.settings);
+  const visibleSurfaces = getConfiguredSetupSurfaces(ctx.household.settings);
+  const primaryItems = PRIMARY.filter(
+    (item) => !item.surface || visibleSurfaces.includes(item.surface),
+  );
   const animateSegments = hasStoredSetup(ctx.household.settings);
 
   return (
@@ -82,7 +92,7 @@ export async function AppSidebar() {
       <OpenCommandK />
 
       <nav className="flex flex-col gap-0.5" aria-label="Sections">
-        {PRIMARY.map((item) => (
+        {primaryItems.map((item) => (
           <NavRow
             key={item.label}
             href={item.href}

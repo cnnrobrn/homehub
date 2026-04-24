@@ -47,6 +47,8 @@ export type { ForegroundModel } from './model.js';
 
 const MAX_TOOL_ITERATIONS = 5;
 const CHUNK_SIZE = 48; // bytes-ish per token event; makes the UI feel live
+const SETUP_SURFACE_IDS = ['calendar', 'decisions'] as const;
+type SetupSurfaceId = (typeof SETUP_SURFACE_IDS)[number];
 
 export interface ConversationTurnInput {
   readonly conversationId: string;
@@ -219,6 +221,105 @@ function chunkText(text: string, size: number): string[] {
   return out;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function uniqueSurfaces(items: readonly SetupSurfaceId[]): SetupSurfaceId[] {
+  return SETUP_SURFACE_IDS.filter((id) => items.includes(id));
+}
+
+function resultArrayHasItems(result: unknown, key: string): boolean {
+  return isRecord(result) && Array.isArray(result[key]) && result[key].length > 0;
+}
+
+function surfacesForToolCall(args: {
+  tool: string;
+  classification: string;
+  result: unknown;
+}): SetupSurfaceId[] {
+  const surfaces: SetupSurfaceId[] = [];
+  if (args.tool === 'list_events' && resultArrayHasItems(args.result, 'events')) {
+    surfaces.push('calendar');
+  }
+  if (
+    args.classification === 'draft-write' ||
+    (args.tool === 'list_suggestions' && resultArrayHasItems(args.result, 'suggestions'))
+  ) {
+    surfaces.push('decisions');
+  }
+  return uniqueSurfaces(surfaces);
+}
+
+async function revealOnboardingSurfaces(args: {
+  supabase: ServiceSupabaseClient;
+  householdId: string;
+  surfaces: readonly SetupSurfaceId[];
+  now: Date;
+  logger: Logger;
+}): Promise<void> {
+  const surfaces = uniqueSurfaces(args.surfaces);
+  if (surfaces.length === 0) return;
+
+  const { data, error } = await args.supabase
+    .schema('app')
+    .from('household')
+    .select('settings')
+    .eq('id', args.householdId)
+    .single();
+  if (error) {
+    args.logger.warn('onboarding surface reveal skipped: household lookup failed', {
+      household_id: args.householdId,
+      surfaces,
+      error: error.message,
+    });
+    return;
+  }
+
+  const currentSettings = isRecord((data as { settings?: unknown } | null)?.settings)
+    ? (data as { settings: Record<string, unknown> }).settings
+    : {};
+  const currentOnboarding = isRecord(currentSettings.onboarding)
+    ? (currentSettings.onboarding as Record<string, unknown>)
+    : null;
+
+  // Legacy households did not opt into chat-driven reveal state, so
+  // their global links are already visible. Avoid converting them into
+  // a partially hidden onboarding household as a side effect of chat.
+  if (!currentOnboarding || !Array.isArray(currentOnboarding.setup_segments)) return;
+
+  const existingSurfaceIds = Array.isArray(currentOnboarding.setup_surface_ids)
+    ? currentOnboarding.setup_surface_ids.filter(
+        (id): id is SetupSurfaceId =>
+          typeof id === 'string' && SETUP_SURFACE_IDS.includes(id as SetupSurfaceId),
+      )
+    : [];
+  const nextSurfaceIds = uniqueSurfaces([...existingSurfaceIds, ...surfaces]);
+  if (nextSurfaceIds.length === existingSurfaceIds.length) return;
+
+  const settings = {
+    ...currentSettings,
+    onboarding: {
+      ...currentOnboarding,
+      setup_surface_ids: nextSurfaceIds,
+      last_onboarded_at: args.now.toISOString(),
+    },
+  };
+
+  const { error: updateError } = await args.supabase
+    .schema('app')
+    .from('household')
+    .update({ settings: settings as never })
+    .eq('id', args.householdId);
+  if (updateError) {
+    args.logger.warn('onboarding surface reveal skipped: household update failed', {
+      household_id: args.householdId,
+      surfaces,
+      error: updateError.message,
+    });
+  }
+}
+
 /**
  * Run a single conversation turn. Yields events in order; the caller
  * is responsible for transporting them to the client. Throws on hard
@@ -388,6 +489,17 @@ export async function* runConversationTurnStream(
             preview: (maybePreview.preview as unknown) ?? null,
           };
         }
+        await revealOnboardingSurfaces({
+          supabase: deps.supabase,
+          householdId: input.memberContext.householdId as string,
+          surfaces: surfacesForToolCall({
+            tool: call.name,
+            classification: result.classification,
+            result: result.result,
+          }),
+          now: now(),
+          logger: log,
+        });
         messages.push({
           role: 'tool',
           toolCallId: call.id,

@@ -43,6 +43,7 @@ import { authEnv } from '@/lib/auth/env';
 
 const segmentSchema = z.enum(['financial', 'food', 'fun', 'social', 'system']);
 const setupSegmentSchema = z.enum(['financial', 'food', 'fun', 'social']);
+const setupSurfaceSchema = z.enum(['calendar', 'decisions']);
 const accessSchema = z.enum(['none', 'read', 'write']);
 const roleSchema = z.enum(['owner', 'adult', 'child', 'guest']);
 
@@ -53,6 +54,7 @@ const createHouseholdFormSchema = z.object({
   weekStart: z.enum(['sunday', 'monday']).optional(),
   setupSegments: z.array(setupSegmentSchema).max(4).optional(),
   setupPromptIds: z.array(z.string().min(1).max(80)).max(24).optional(),
+  setupSurfaces: z.array(setupSurfaceSchema).max(2).optional(),
   setupPrompt: z.string().max(4000).optional(),
 });
 
@@ -78,6 +80,7 @@ export async function createHouseholdAction(
     const hasSetup =
       parsed.setupSegments !== undefined ||
       parsed.setupPromptIds !== undefined ||
+      parsed.setupSurfaces !== undefined ||
       parsed.setupPrompt !== undefined;
     if (hasSetup) {
       const currentSettings =
@@ -94,14 +97,17 @@ export async function createHouseholdAction(
           : {};
       const setupSegments = [...new Set(parsed.setupSegments ?? [])];
       const setupPromptIds = [...new Set(parsed.setupPromptIds ?? [])];
+      const setupSurfaceIds = [...new Set(parsed.setupSurfaces ?? [])];
       const setupAt = new Date().toISOString();
-      const hasPreselectedSetup = setupSegments.length > 0 || setupPromptIds.length > 0;
+      const hasPreselectedSetup =
+        setupSegments.length > 0 || setupPromptIds.length > 0 || setupSurfaceIds.length > 0;
       const settings: Record<string, Json> = {
         ...currentSettings,
         onboarding: {
           ...currentOnboarding,
           setup_segments: setupSegments,
           setup_prompt_ids: setupPromptIds,
+          setup_surface_ids: setupSurfaceIds,
           ...(parsed.setupPrompt ? { alfred_setup_prompt: parsed.setupPrompt } : {}),
           ...(currentOnboarding.started_at ? {} : { started_at: setupAt }),
           ...(hasPreselectedSetup ? { completed_at: setupAt } : {}),
