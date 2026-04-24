@@ -44,7 +44,6 @@ import {
 } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 
-
 const INITIAL_CATEGORIES: readonly EmailCategory[] = ALL_EMAIL_CATEGORIES;
 
 export function EmailConnectDialog() {
