@@ -18,6 +18,7 @@
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
+
 import { Composer } from './Composer';
 import { StreamingMessage } from './StreamingMessage';
 import { ToolCard, type ToolCallDisplay } from './ToolCard';
@@ -97,6 +98,43 @@ function renderTurnBody(body: string): React.ReactElement {
   );
 }
 
+function isMemberTurn(turn: ConversationTurnDisplayRow): boolean {
+  return turn.role !== 'assistant';
+}
+
+function optimisticTurnId(): string {
+  const random =
+    typeof crypto !== 'undefined' && 'randomUUID' in crypto
+      ? crypto.randomUUID()
+      : Math.random().toString(36).slice(2);
+  return `optimistic-${random}`;
+}
+
+function withoutPersistedOptimisticTurns(
+  optimisticTurns: ConversationTurnDisplayRow[],
+  persistedTurns: ConversationTurnDisplayRow[],
+): ConversationTurnDisplayRow[] {
+  const usedPersistedIndexes = new Set<number>();
+
+  return optimisticTurns.filter((optimistic) => {
+    const submittedAt = new Date(optimistic.created_at).getTime();
+    const matchIndex = persistedTurns.findIndex((persisted, index) => {
+      if (usedPersistedIndexes.has(index)) return false;
+      if (!isMemberTurn(persisted)) return false;
+      if (persisted.body_md !== optimistic.body_md) return false;
+
+      const persistedAt = new Date(persisted.created_at).getTime();
+      // Client and database clocks can drift a little, but an older
+      // matching turn should not erase a newly submitted optimistic one.
+      return persistedAt >= submittedAt - 30_000;
+    });
+
+    if (matchIndex === -1) return true;
+    usedPersistedIndexes.add(matchIndex);
+    return false;
+  });
+}
+
 export function ChatThread({
   conversationId,
   initialTurns,
@@ -107,27 +145,67 @@ export function ChatThread({
   const router = useRouter();
   const [activeStream, setActiveStream] = React.useState<AsyncIterable<StreamEvent> | null>(null);
   const [streamKey, setStreamKey] = React.useState(0);
+  const [optimisticTurns, setOptimisticTurns] = React.useState<ConversationTurnDisplayRow[]>([]);
   const [prefill, setPrefill] = React.useState<string | undefined>(initialPrefill);
   const scrollRef = React.useRef<HTMLDivElement>(null);
 
-  React.useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
-  }, [initialTurns, activeStream]);
+  const displayedTurns = React.useMemo(
+    () => [...initialTurns, ...withoutPersistedOptimisticTurns(optimisticTurns, initialTurns)],
+    [initialTurns, optimisticTurns],
+  );
 
-  function handleStreamStart(events: AsyncIterable<StreamEvent>) {
+  const scrollToBottom = React.useCallback(() => {
+    const scroll = () => {
+      scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    };
+    if (typeof requestAnimationFrame === 'function') {
+      requestAnimationFrame(scroll);
+    } else {
+      setTimeout(scroll, 0);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    scrollToBottom();
+  }, [activeStream, displayedTurns, scrollToBottom]);
+
+  React.useEffect(() => {
+    setOptimisticTurns((current) => withoutPersistedOptimisticTurns(current, initialTurns));
+  }, [initialTurns]);
+
+  function handleStreamStart(events: AsyncIterable<StreamEvent>, submittedMessage: string) {
+    const now = new Date().toISOString();
+    setOptimisticTurns((current) => [
+      ...current,
+      {
+        id: optimisticTurnId(),
+        role: 'member',
+        body_md: submittedMessage,
+        author_member_id: null,
+        author_display_name: null,
+        created_at: now,
+        tool_calls: [],
+        citations: [],
+        model: null,
+      },
+    ]);
     setActiveStream(events);
     setStreamKey((k) => k + 1);
   }
 
-  function handleFinal() {
+  const handleStreamUpdate = React.useCallback(() => {
+    scrollToBottom();
+  }, [scrollToBottom]);
+
+  const handleFinal = React.useCallback(() => {
     // Let the router fetch the canonical turn list.
     setTimeout(() => {
       setActiveStream(null);
       router.refresh();
     }, 100);
-  }
+  }, [router]);
 
-  const isEmpty = initialTurns.length === 0 && !activeStream;
+  const isEmpty = displayedTurns.length === 0 && !activeStream;
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
@@ -135,14 +213,14 @@ export function ChatThread({
         <div className="mx-auto flex w-full max-w-[640px] flex-col gap-6">
           {isEmpty ? <EmptyAskState /> : null}
 
-          {initialTurns.map((turn, i) => {
+          {displayedTurns.map((turn, i) => {
             const role = turn.role;
             const isAssistant = role === 'assistant';
             const toolCalls = Array.isArray(turn.tool_calls)
               ? (turn.tool_calls as ToolCallDisplay[])
               : [];
 
-            const prev = i > 0 ? initialTurns[i - 1] : null;
+            const prev = i > 0 ? displayedTurns[i - 1] : null;
             const showStamp =
               !prev ||
               new Date(turn.created_at).getTime() - new Date(prev.created_at).getTime() >
@@ -171,7 +249,12 @@ export function ChatThread({
           })}
 
           {activeStream ? (
-            <StreamingMessage key={streamKey} events={activeStream} onFinal={handleFinal} />
+            <StreamingMessage
+              key={streamKey}
+              events={activeStream}
+              onFinal={handleFinal}
+              onUpdate={handleStreamUpdate}
+            />
           ) : null}
         </div>
       </div>

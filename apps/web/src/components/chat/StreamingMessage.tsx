@@ -22,6 +22,7 @@
 
 import * as React from 'react';
 
+
 import { SuggestionCard } from './SuggestionCard';
 import { ToolCard, type ToolCallDisplay } from './ToolCard';
 
@@ -33,6 +34,8 @@ interface StreamingMessageProps {
   events: AsyncIterable<StreamEvent>;
   /** Called when the stream finishes; used by the parent to refresh. */
   onFinal?: () => void;
+  /** Called after visible stream state changes; used by parents to keep the latest turn in view. */
+  onUpdate?: () => void;
 }
 
 interface ToolCallState {
@@ -40,7 +43,7 @@ interface ToolCallState {
   streaming: boolean;
 }
 
-export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
+export function StreamingMessage({ events, onFinal, onUpdate }: StreamingMessageProps) {
   const [text, setText] = React.useState('');
   const [calls, setCalls] = React.useState<ToolCallState[]>([]);
   const [suggestions, setSuggestions] = React.useState<
@@ -50,6 +53,16 @@ export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
   const [thinkingStatus, setThinkingStatus] = React.useState('');
   const [thinking, setThinking] = React.useState(true);
   const [done, setDone] = React.useState(false);
+  const onFinalRef = React.useRef(onFinal);
+  const onUpdateRef = React.useRef(onUpdate);
+
+  React.useEffect(() => {
+    onFinalRef.current = onFinal;
+  }, [onFinal]);
+
+  React.useEffect(() => {
+    onUpdateRef.current = onUpdate;
+  }, [onUpdate]);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -59,7 +72,7 @@ export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
       finished = true;
       setThinking(false);
       setDone(true);
-      if (onFinal) onFinal();
+      if (onFinalRef.current) onFinalRef.current();
     }
     (async () => {
       for await (const ev of events) {
@@ -155,6 +168,7 @@ export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
             // a [node:uuid] marker; we let the final render resolve it.
             break;
           case 'final':
+            setText((prev) => ev.assistantBody || prev);
             finish();
             break;
           case 'error':
@@ -168,7 +182,11 @@ export function StreamingMessage({ events, onFinal }: StreamingMessageProps) {
     return () => {
       cancelled = true;
     };
-  }, [events, onFinal]);
+  }, [events]);
+
+  React.useEffect(() => {
+    if (onUpdateRef.current) onUpdateRef.current();
+  }, [text, calls, suggestions, thinkingText, thinkingStatus, thinking, done]);
 
   const hasThinkingDetails = thinkingText.trim().length > 0;
   const showThinking = (thinking && !done) || Boolean(thinkingStatus) || hasThinkingDetails;

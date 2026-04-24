@@ -31,7 +31,7 @@ import { cn } from '@/lib/cn';
 
 interface ComposerProps {
   conversationId: string;
-  onStreamStart: (events: AsyncIterable<StreamEvent>) => void;
+  onStreamStart: (events: AsyncIterable<StreamEvent>, submittedMessage: string) => void;
   onFinal?: () => void;
   placeholder?: string;
   /** Optional value to seed the textarea (e.g. a tapped suggestion pill). */
@@ -89,7 +89,7 @@ export function Composer({
         setSubmitting(false);
       }
     }
-    onStreamStart(wrap());
+    onStreamStart(wrap(), trimmed);
   }
 
   function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {

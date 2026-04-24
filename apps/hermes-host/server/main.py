@@ -41,6 +41,8 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 
+from run_turn import build_contextual_message
+
 HERMES_HOME = Path(os.environ.get("HERMES_HOME", "/tmp/hermes"))
 HERMES_BIN = Path("/opt/hermes-agent/venv/bin/hermes")
 SHARED_SECRET = os.environ.get("HERMES_SHARED_SECRET", "")
@@ -49,12 +51,19 @@ HOUSEHOLD_ID = os.environ.get("HOUSEHOLD_ID", "")
 app = FastAPI(title="hermes-host", version="0.1.0")
 
 
+class ConversationHistoryTurn(BaseModel):
+    role: str = Field(..., min_length=1)
+    body_md: str = Field(..., min_length=1)
+    created_at: str = Field("")
+
+
 class ChatTurnRequest(BaseModel):
     conversation_id: str = Field(..., min_length=1)
     turn_id: str = Field(..., min_length=1)
     member_id: str = Field(..., min_length=1)
     message: str = Field(..., min_length=1, max_length=8000)
     member_role: str = Field("adult")
+    conversation_history: list[ConversationHistoryTurn] = Field(default_factory=list)
 
 
 def _require_router(auth_header: str | None) -> None:
@@ -114,6 +123,9 @@ async def _stream_turn(body: ChatTurnRequest) -> AsyncIterator[dict]:
     env["HOMEHUB_TURN_ID"] = body.turn_id
     env["HOMEHUB_MEMBER_ID"] = body.member_id
     env["HOMEHUB_MEMBER_ROLE"] = body.member_role
+    history = [turn.model_dump() for turn in body.conversation_history]
+    env["HOMEHUB_CONVERSATION_HISTORY"] = json.dumps(history)
+    contextual_message = build_contextual_message(body.message, history)
 
     default_model = os.environ.get("HERMES_DEFAULT_MODEL", "moonshotai/kimi-k2.6")
     toolsets = os.environ.get("HERMES_TOOLSETS", "skills")
@@ -132,7 +144,7 @@ async def _stream_turn(body: ChatTurnRequest) -> AsyncIterator[dict]:
             "--source", "homehub",
             "--max-turns", max_turns,
             "--yolo",
-            "-q", body.message,
+            "-q", contextual_message,
         ]
 
     proc = await asyncio.create_subprocess_exec(

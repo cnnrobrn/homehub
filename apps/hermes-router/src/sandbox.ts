@@ -54,6 +54,33 @@ export interface SandboxRunResult {
   wait: () => Promise<number>;
 }
 
+export function buildSandboxTurnEnvs(
+  env: RouterEnv,
+  args: SandboxTurnInput,
+): Record<string, string> {
+  return {
+    // E2B commands run as a non-root sandbox user even when the template
+    // image was built from a root-based Dockerfile. Keep mutable Hermes
+    // state under /tmp so the per-turn entrypoint can hydrate and persist it.
+    HERMES_HOME: '/tmp/hermes',
+    HERMES_SHARED_SECRET: env.HERMES_SHARED_SECRET,
+    OPENROUTER_API_KEY: env.HOMEHUB_OPENROUTER_API_KEY,
+    HERMES_DEFAULT_MODEL: env.HERMES_DEFAULT_MODEL,
+    HOMEHUB_SUPABASE_URL: env.HOMEHUB_SUPABASE_URL,
+    HOMEHUB_SUPABASE_ANON_KEY: env.HOMEHUB_SUPABASE_ANON_KEY,
+    HOMEHUB_SUPABASE_JWT: args.supabaseJwt,
+    HOUSEHOLD_ID: args.householdId,
+    HOMEHUB_CONVERSATION_ID: args.conversationId,
+    HOMEHUB_TURN_ID: args.turnId,
+    HOMEHUB_MEMBER_ID: args.memberId,
+    HOMEHUB_MEMBER_ROLE: args.memberRole,
+    HOMEHUB_MEMBER_MESSAGE: args.message,
+    ...(args.conversationHistoryJson
+      ? { HOMEHUB_CONVERSATION_HISTORY: args.conversationHistoryJson }
+      : {}),
+  };
+}
+
 export async function runSandboxedTurn(
   env: RouterEnv,
   args: {
@@ -66,23 +93,9 @@ export async function runSandboxedTurn(
   // reads them to hydrate state from Supabase Storage, run the turn,
   // and persist a tarball back.
   const sandboxEnvs: Record<string, string> = {
-    // E2B commands run as a non-root sandbox user even when the template
-    // image was built from a root-based Dockerfile. Keep mutable Hermes
-    // state under /tmp so the per-turn entrypoint can hydrate and persist it.
-    HERMES_HOME: '/tmp/hermes',
+    ...buildSandboxTurnEnvs(env, args.turn),
     HERMES_STORAGE_BUCKET: args.storageBucket,
     HERMES_STORAGE_PATH: args.storagePath,
-    HERMES_SHARED_SECRET: env.HERMES_SHARED_SECRET,
-    OPENROUTER_API_KEY: env.HOMEHUB_OPENROUTER_API_KEY,
-    HERMES_DEFAULT_MODEL: env.HERMES_DEFAULT_MODEL,
-    HOMEHUB_SUPABASE_URL: env.HOMEHUB_SUPABASE_URL,
-    HOMEHUB_SUPABASE_ANON_KEY: env.HOMEHUB_SUPABASE_ANON_KEY,
-    HOMEHUB_SUPABASE_JWT: args.turn.supabaseJwt,
-    HOUSEHOLD_ID: args.turn.householdId,
-    HOMEHUB_CONVERSATION_ID: args.turn.conversationId,
-    HOMEHUB_TURN_ID: args.turn.turnId,
-    HOMEHUB_MEMBER_ID: args.turn.memberId,
-    HOMEHUB_MEMBER_ROLE: args.turn.memberRole,
   };
 
   const sandbox = await Sandbox.create(env.E2B_TEMPLATE, {
@@ -104,16 +117,10 @@ export async function runSandboxedTurn(
   });
 
   const commandPromise = sandbox.commands.run('/entrypoint.sh run-turn', {
-    // The member message is passed via stdin inside the entrypoint
-    // (bash reads it with `read -r message`). E2B's commands.run
-    // doesn't expose stdin directly, so we shell-quote the message
-    // into an env var the entrypoint reads instead.
-    envs: {
-      HOMEHUB_MEMBER_MESSAGE: args.turn.message,
-      ...(args.turn.conversationHistoryJson
-        ? { HOMEHUB_CONVERSATION_HISTORY: args.turn.conversationHistoryJson }
-        : {}),
-    },
+    // Pass the complete boot env again. E2B command env vars override
+    // sandbox defaults, and keeping this explicit prevents a partial
+    // per-command env from dropping history or Storage credentials.
+    envs: sandboxEnvs,
     onStdout: (data: string) => {
       streamController?.enqueue(new TextEncoder().encode(data));
     },

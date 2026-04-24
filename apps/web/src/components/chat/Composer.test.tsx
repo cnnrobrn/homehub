@@ -35,7 +35,7 @@ describe('Composer', () => {
       status: 200,
       text: async () => '',
     } as unknown as Response);
-    const onStart = vi.fn(async (events) => {
+    const onStart = vi.fn(async (events: AsyncIterable<unknown>, _submittedMessage: string) => {
       // Drain
       for await (const _ of events) void _;
     });
@@ -46,5 +46,6 @@ describe('Composer', () => {
     await waitFor(() => expect(fetchSpy).toHaveBeenCalled());
     expect(fetchSpy.mock.calls[0]?.[0]).toBe('/api/chat/stream');
     expect(onStart).toHaveBeenCalled();
+    expect(onStart.mock.calls[0]?.[1]).toBe('hello');
   });
 });
