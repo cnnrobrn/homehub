@@ -79,7 +79,26 @@ vi.mock('@/lib/nango/client', () => ({
   NangoNotConfiguredError: class extends Error {},
 }));
 
-import { disconnectConnectionAction, listConnectionsAction } from './integrations';
+vi.mock('@/lib/env', () => ({
+  publicEnv: {
+    NEXT_PUBLIC_SUPABASE_URL: 'http://localhost',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon',
+    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+  },
+  serverEnv: () => ({
+    NEXT_PUBLIC_SUPABASE_URL: 'http://localhost',
+    NEXT_PUBLIC_SUPABASE_ANON_KEY: 'anon',
+    NEXT_PUBLIC_APP_URL: 'http://localhost:3000',
+    NANGO_HOST: 'https://nango.test',
+    NANGO_SECRET_KEY: 'secret',
+  }),
+}));
+
+import {
+  disconnectConnectionAction,
+  listConnectionsAction,
+  startConnectSessionAction,
+} from './integrations';
 
 const USER = { id: '11111111-1111-4111-8111-111111111111', email: 'o@example.com' };
 const HOUSEHOLD_ID = '22222222-2222-4222-8222-222222222222';
@@ -233,6 +252,91 @@ describe('disconnectConnectionAction', () => {
     mocks.resolveMemberId.mockResolvedValue(MEMBER_ID);
     mocks.createServiceClient.mockReturnValue(makeServiceClient({ connection: null }));
     const res = await disconnectConnectionAction({ connectionId: CONNECTION_ID });
+    expect(res.ok).toBe(false);
+  });
+});
+
+describe('startConnectSessionAction', () => {
+  it('returns a Nango connect URL for google-calendar', async () => {
+    mocks.getUser.mockResolvedValue(USER);
+    mocks.getHouseholdContext.mockResolvedValue({
+      household: { id: HOUSEHOLD_ID },
+      member: { id: MEMBER_ID, role: 'owner' },
+      grants: [],
+    });
+    const createConnectSession = vi.fn().mockResolvedValue({
+      token: 'tok_abc',
+      connectLink: 'https://nango.test/connect?token=abc',
+      expiresAt: '2026-04-23T01:00:00Z',
+    });
+    mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
+
+    const res = await startConnectSessionAction({ provider: 'google-calendar' });
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.data.connectUrl).toBe(
+        'https://nango.test/oauth/connect/google-calendar?connect_session_token=tok_abc',
+      );
+    }
+    expect(createConnectSession).toHaveBeenCalledTimes(1);
+    const call = createConnectSession.mock.calls[0]?.[0];
+    expect(call?.allowedIntegrations).toEqual(['google-calendar']);
+    expect(call?.tags?.household_id).toBe(HOUSEHOLD_ID);
+    expect(call?.tags?.member_id).toBe(MEMBER_ID);
+  });
+
+  it('rejects google-mail without any valid categories', async () => {
+    mocks.getUser.mockResolvedValue(USER);
+    mocks.getHouseholdContext.mockResolvedValue({
+      household: { id: HOUSEHOLD_ID },
+      member: { id: MEMBER_ID, role: 'owner' },
+      grants: [],
+    });
+    const res = await startConnectSessionAction({
+      provider: 'google-mail',
+      categories: ['not-a-real-category'],
+    });
+    expect(res.ok).toBe(false);
+  });
+
+  it('passes email_categories tag for google-mail', async () => {
+    mocks.getUser.mockResolvedValue(USER);
+    mocks.getHouseholdContext.mockResolvedValue({
+      household: { id: HOUSEHOLD_ID },
+      member: { id: MEMBER_ID, role: 'owner' },
+      grants: [],
+    });
+    const createConnectSession = vi.fn().mockResolvedValue({
+      token: 't',
+      connectLink: 'x',
+      expiresAt: 'x',
+    });
+    mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
+
+    const res = await startConnectSessionAction({
+      provider: 'google-mail',
+      categories: ['receipt', 'shipping'],
+    });
+    expect(res.ok).toBe(true);
+    const call = createConnectSession.mock.calls[0]?.[0];
+    expect(call?.tags?.email_categories).toBe('receipt,shipping');
+    expect(call?.tags?.email_address).toBe(USER.email);
+  });
+
+  it('rejects unauthenticated callers', async () => {
+    mocks.getUser.mockResolvedValue(null);
+    const res = await startConnectSessionAction({ provider: 'google-calendar' });
+    expect(res.ok).toBe(false);
+  });
+
+  it('rejects unknown providers', async () => {
+    mocks.getUser.mockResolvedValue(USER);
+    mocks.getHouseholdContext.mockResolvedValue({
+      household: { id: HOUSEHOLD_ID },
+      member: { id: MEMBER_ID, role: 'owner' },
+      grants: [],
+    });
+    const res = await startConnectSessionAction({ provider: 'not-a-provider' as never });
     expect(res.ok).toBe(false);
   });
 });
