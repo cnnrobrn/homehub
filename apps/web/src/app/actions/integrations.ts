@@ -41,7 +41,6 @@ import { authEnv } from '@/lib/auth/env';
 import { serverEnv } from '@/lib/env';
 import { NangoNotConfiguredError, createWebNangoClient } from '@/lib/nango/client';
 
-
 export interface ConnectionSummary {
   id: string;
   provider: string;
