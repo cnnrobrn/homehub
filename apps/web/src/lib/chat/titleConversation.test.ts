@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   CONVERSATION_TITLE_MODEL,
   conversationTitleNeedsGeneration,
+  fallbackConversationTitleFromPrompt,
   normalizeGeneratedConversationTitle,
   titleConversationFromFirstPrompt,
 } from './titleConversation';
@@ -24,6 +25,16 @@ describe('conversation title generation', () => {
         'A very long conversation title about coordinating spring break logistics and budgets',
       ),
     ).toBe('A very long conversation title about coordinating spring');
+  });
+
+  it('builds a deterministic fallback title from the first prompt', () => {
+    expect(fallbackConversationTitleFromPrompt('what do i owe for the group trip?')).toBe(
+      'Owe Group Trip',
+    );
+    expect(fallbackConversationTitleFromPrompt('/remember Sarah is vegetarian now')).toBe(
+      'Sarah Vegetarian Now',
+    );
+    expect(fallbackConversationTitleFromPrompt('https://example.com')).toBeNull();
   });
 
   it('uses Gemma on OpenRouter and writes the generated title', async () => {

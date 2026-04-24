@@ -43,7 +43,9 @@ import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
 import {
   conversationTitleNeedsGeneration,
+  fallbackConversationTitleFromPrompt,
   titleConversationFromFirstPrompt,
+  updateConversationTitle,
 } from '@/lib/chat/titleConversation';
 import { memoryRuntimeEnv } from '@/lib/memory/runtime-env';
 
@@ -55,9 +57,60 @@ const bodySchema = z.object({
   message: z.string().min(1).max(8000),
 });
 
+interface HermesConversationHistoryTurn {
+  role: string;
+  body_md: string;
+  created_at: string;
+}
+
 function encodeEvent(event: AgentStreamEvent): Uint8Array {
   const payload = `data: ${JSON.stringify(event)}\n\n`;
   return new TextEncoder().encode(payload);
+}
+
+function streamHeaders(): HeadersInit {
+  return {
+    'Content-Type': 'text/event-stream; charset=utf-8',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  };
+}
+
+async function loadRecentConversationHistory(args: {
+  supabase: ReturnType<typeof createServiceClient>;
+  householdId: string;
+  conversationId: string;
+  currentTurnId: string;
+  limit?: number;
+  logger: { warn(message: string, context?: Record<string, unknown>): void };
+}): Promise<HermesConversationHistoryTurn[]> {
+  const { data, error } = await args.supabase
+    .schema('app')
+    .from('conversation_turn')
+    .select('id, role, body_md, created_at')
+    .eq('household_id', args.householdId)
+    .eq('conversation_id', args.conversationId)
+    .neq('id', args.currentTurnId)
+    .order('created_at', { ascending: false })
+    .limit(args.limit ?? 20);
+
+  if (error) {
+    args.logger.warn('conversation history load failed', {
+      household_id: args.householdId,
+      conversation_id: args.conversationId,
+      error: error.message,
+    });
+    return [];
+  }
+
+  return ((data ?? []) as Array<HermesConversationHistoryTurn & { id: string }>)
+    .reverse()
+    .map((turn) => ({
+      role: turn.role,
+      body_md: turn.body_md,
+      created_at: turn.created_at,
+    }));
 }
 
 export async function POST(request: NextRequest): Promise<Response> {
@@ -124,8 +177,9 @@ export async function POST(request: NextRequest): Promise<Response> {
     throw new UnauthorizedError('member resolution failed');
   }
 
+  const titleNeedsGeneration = conversationTitleNeedsGeneration(conv.title);
   let isFirstTurn = false;
-  if (conversationTitleNeedsGeneration(conv.title)) {
+  if (titleNeedsGeneration) {
     const { data: existingTurns, error: existingTurnErr } = await service
       .schema('app')
       .from('conversation_turn')
@@ -165,35 +219,44 @@ export async function POST(request: NextRequest): Promise<Response> {
     );
   }
 
+  if (titleNeedsGeneration) {
+    const fallbackTitle = fallbackConversationTitleFromPrompt(parsed.data.message);
+    if (fallbackTitle) {
+      await updateConversationTitle({
+        supabase: service,
+        logger: log,
+        householdId: ctx.household.id as string,
+        conversationId: parsed.data.conversationId,
+        title: fallbackTitle,
+      });
+    } else {
+      log.warn('conversation title fallback skipped: first prompt was not titleable', {
+        household_id: ctx.household.id,
+        conversation_id: parsed.data.conversationId,
+      });
+    }
+  }
+
   const runtimeEnv = memoryRuntimeEnv();
   const modelClient = runtimeEnv.OPENROUTER_API_KEY
     ? createModelClient(runtimeEnv, { supabase: service, logger: log })
     : null;
 
-  if (isFirstTurn) {
-    if (modelClient) {
-      try {
-        await titleConversationFromFirstPrompt({
-          supabase: service,
-          modelClient,
-          logger: log,
-          householdId: ctx.household.id as string,
-          conversationId: parsed.data.conversationId,
-          firstPrompt: parsed.data.message,
-        });
-      } catch (err) {
-        log.warn('conversation title generation failed', {
-          household_id: ctx.household.id,
-          conversation_id: parsed.data.conversationId,
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    } else {
-      log.warn('conversation title generation skipped: OPENROUTER_API_KEY is not configured', {
+  if (isFirstTurn && modelClient) {
+    void titleConversationFromFirstPrompt({
+      supabase: service,
+      modelClient,
+      logger: log,
+      householdId: ctx.household.id as string,
+      conversationId: parsed.data.conversationId,
+      firstPrompt: parsed.data.message,
+    }).catch((err) => {
+      log.warn('conversation title generation failed', {
         household_id: ctx.household.id,
         conversation_id: parsed.data.conversationId,
+        error: err instanceof Error ? err.message : String(err),
       });
-    }
+    });
   }
 
   // Two possible backends for a chat turn:
@@ -218,42 +281,85 @@ export async function POST(request: NextRequest): Promise<Response> {
         { status: 500 },
       );
     }
-    const upstream = await fetch(`${routerUrl.replace(/\/$/, '')}/chat/stream`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${routerSecret}`,
-        'Content-Type': 'application/json',
-        Accept: 'text/event-stream',
-      },
-      body: JSON.stringify({
-        household_id: ctx.household.id,
-        member_id: memberId,
-        member_role: ctx.member.role === 'non_connected' ? 'guest' : ctx.member.role,
-        user_id: user.id,
-        conversation_id: parsed.data.conversationId,
-        turn_id: memberTurn.id,
-        message: parsed.data.message,
-      }),
+    const conversationHistory = await loadRecentConversationHistory({
+      supabase: service,
+      householdId: ctx.household.id as string,
+      conversationId: parsed.data.conversationId,
+      currentTurnId: memberTurn.id,
+      logger: log,
     });
-    if (!upstream.ok || !upstream.body) {
-      const text = await upstream.text().catch(() => '');
-      log.error('hermes router upstream error', {
-        status: upstream.status,
-        text: text.slice(0, 500),
-      });
-      return NextResponse.json(
-        { error: 'hermes_upstream_error', status: upstream.status },
-        { status: 502 },
-      );
-    }
-    return new Response(upstream.body, {
-      headers: {
-        'Content-Type': 'text/event-stream; charset=utf-8',
-        'Cache-Control': 'no-cache, no-transform',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(
+          encodeEvent({
+            type: 'start',
+            turnId: memberTurn.id,
+            conversationId: parsed.data.conversationId,
+          }),
+        );
+        controller.enqueue(encodeEvent({ type: 'status', message: 'starting chat runtime' }));
+
+        try {
+          const upstream = await fetch(`${routerUrl.replace(/\/$/, '')}/chat/stream`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${routerSecret}`,
+              'Content-Type': 'application/json',
+              Accept: 'text/event-stream',
+            },
+            body: JSON.stringify({
+              household_id: ctx.household.id,
+              member_id: memberId,
+              member_role: ctx.member.role === 'non_connected' ? 'guest' : ctx.member.role,
+              user_id: user.id,
+              conversation_id: parsed.data.conversationId,
+              turn_id: memberTurn.id,
+              message: parsed.data.message,
+              conversation_history: conversationHistory,
+            }),
+          });
+          if (!upstream.ok || !upstream.body) {
+            const text = await upstream.text().catch(() => '');
+            log.error('hermes router upstream error', {
+              status: upstream.status,
+              text: text.slice(0, 500),
+            });
+            controller.enqueue(
+              encodeEvent({
+                type: 'error',
+                message: `Hermes router returned ${upstream.status}`,
+                code: 'hermes_upstream_error',
+              }),
+            );
+            return;
+          }
+
+          const reader = upstream.body.getReader();
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              controller.enqueue(value);
+            }
+          } finally {
+            reader.releaseLock();
+          }
+        } catch (err) {
+          const message = err instanceof Error ? err.message : 'Hermes router request failed';
+          log.error('hermes router request failed', {
+            household_id: ctx.household.id,
+            conversation_id: parsed.data.conversationId,
+            error: message,
+          });
+          controller.enqueue(
+            encodeEvent({ type: 'error', message, code: 'hermes_upstream_request_failed' }),
+          );
+        } finally {
+          controller.close();
+        }
       },
     });
+    return new Response(stream, { headers: streamHeaders() });
   }
 
   // Legacy local-loop path.
@@ -308,11 +414,6 @@ export async function POST(request: NextRequest): Promise<Response> {
   });
 
   return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache, no-transform',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    },
+    headers: streamHeaders(),
   });
 }

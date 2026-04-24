@@ -40,6 +40,7 @@ export interface SandboxTurnInput {
   memberId: string;
   memberRole: string;
   message: string;
+  conversationHistoryJson?: string;
   /** Household-scoped Supabase JWT minted by the router for this turn.
    *  Replaces the service-role key inside the sandbox so cross-household
    *  reads from a buggy skill are blocked by RLS. */
@@ -107,7 +108,12 @@ export async function runSandboxedTurn(
     // (bash reads it with `read -r message`). E2B's commands.run
     // doesn't expose stdin directly, so we shell-quote the message
     // into an env var the entrypoint reads instead.
-    envs: { HOMEHUB_MEMBER_MESSAGE: args.turn.message },
+    envs: {
+      HOMEHUB_MEMBER_MESSAGE: args.turn.message,
+      ...(args.turn.conversationHistoryJson
+        ? { HOMEHUB_CONVERSATION_HISTORY: args.turn.conversationHistoryJson }
+        : {}),
+    },
     onStdout: (data: string) => {
       streamController?.enqueue(new TextEncoder().encode(data));
     },

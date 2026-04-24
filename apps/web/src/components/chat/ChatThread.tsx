@@ -33,6 +33,8 @@ interface ChatThreadProps {
   conversationId: string;
   initialTurns: ConversationTurnDisplayRow[];
   initialPrefill?: string | undefined;
+  initialNowIso: string;
+  timeZone: string;
 }
 
 const EXAMPLE_PROMPTS: readonly string[] = [
@@ -42,19 +44,29 @@ const EXAMPLE_PROMPTS: readonly string[] = [
   "did i already buy mom's gift?",
 ];
 
-function formatTurnTimestamp(iso: string, now: Date): string {
+function timeZoneDayNumber(iso: string, timeZone: string): number {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date(iso));
+  const byType = new Map(parts.map((part) => [part.type, part.value]));
+  const year = Number(byType.get('year'));
+  const month = Number(byType.get('month'));
+  const day = Number(byType.get('day'));
+  return Math.floor(Date.UTC(year, month - 1, day) / 86_400_000);
+}
+
+function formatTurnTimestamp(iso: string, nowIso: string, timeZone: string): string {
   const d = new Date(iso);
-  const today = new Date(now);
-  today.setHours(0, 0, 0, 0);
-  const turnDay = new Date(d);
-  turnDay.setHours(0, 0, 0, 0);
-  const deltaDays = Math.round((today.getTime() - turnDay.getTime()) / 86_400_000);
-  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const deltaDays = timeZoneDayNumber(nowIso, timeZone) - timeZoneDayNumber(iso, timeZone);
+  const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone });
   if (deltaDays === 0) return `today · ${time}`;
   if (deltaDays === 1) return `yesterday · ${time}`;
   if (deltaDays < 7)
-    return `${d.toLocaleDateString(undefined, { weekday: 'long' }).toLowerCase()} · ${time}`;
-  return `${d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toLowerCase()} · ${time}`;
+    return `${d.toLocaleDateString('en-US', { weekday: 'long', timeZone }).toLowerCase()} · ${time}`;
+  return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone }).toLowerCase()} · ${time}`;
 }
 
 function renderTurnBody(body: string): React.ReactElement {
@@ -85,7 +97,13 @@ function renderTurnBody(body: string): React.ReactElement {
   );
 }
 
-export function ChatThread({ conversationId, initialTurns, initialPrefill }: ChatThreadProps) {
+export function ChatThread({
+  conversationId,
+  initialTurns,
+  initialPrefill,
+  initialNowIso,
+  timeZone,
+}: ChatThreadProps) {
   const router = useRouter();
   const [activeStream, setActiveStream] = React.useState<AsyncIterable<StreamEvent> | null>(null);
   const [streamKey, setStreamKey] = React.useState(0);
@@ -109,7 +127,6 @@ export function ChatThread({ conversationId, initialTurns, initialPrefill }: Cha
     }, 100);
   }
 
-  const now = new Date();
   const isEmpty = initialTurns.length === 0 && !activeStream;
 
   return (
@@ -133,7 +150,13 @@ export function ChatThread({ conversationId, initialTurns, initialPrefill }: Cha
 
             return (
               <React.Fragment key={turn.id}>
-                {showStamp ? <TimestampDivider iso={turn.created_at} now={now} /> : null}
+                {showStamp ? (
+                  <TimestampDivider
+                    iso={turn.created_at}
+                    nowIso={initialNowIso}
+                    timeZone={timeZone}
+                  />
+                ) : null}
                 {isAssistant ? (
                   <BotTurn
                     body={renderTurnBody(turn.body_md)}
@@ -243,11 +266,19 @@ function BotTurn({
 
 /* ── Middot date divider ──────────────────────────────────────── */
 
-function TimestampDivider({ iso, now }: { iso: string; now: Date }) {
+function TimestampDivider({
+  iso,
+  nowIso,
+  timeZone,
+}: {
+  iso: string;
+  nowIso: string;
+  timeZone: string;
+}) {
   return (
     <div className="flex justify-center">
       <span className="font-mono text-[10.5px] tracking-[0.06em] text-fg-muted">
-        {formatTurnTimestamp(iso, now)}
+        {formatTurnTimestamp(iso, nowIso, timeZone)}
       </span>
     </div>
   );

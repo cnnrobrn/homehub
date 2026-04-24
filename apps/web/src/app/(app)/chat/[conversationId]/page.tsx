@@ -38,10 +38,18 @@ function formatLastUpdated(iso: string): string {
   return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }).toLowerCase();
 }
 
+function householdTimeZone(settings: unknown): string {
+  if (!settings || typeof settings !== 'object' || Array.isArray(settings)) return 'UTC';
+  const timeZone = (settings as Record<string, unknown>).timezone;
+  return typeof timeZone === 'string' && timeZone.trim() ? timeZone : 'UTC';
+}
+
 export default async function ChatConversationPage({ params, searchParams }: PageProps) {
   const ctx = await requireHouseholdContext();
   const { conversationId } = await params;
   const query = searchParams ? await searchParams : {};
+  const nowIso = new Date().toISOString();
+  const timeZone = householdTimeZone(ctx.household.settings);
 
   const [conversations, thread] = await Promise.all([
     listConversationsForHousehold(ctx.household.id as string),
@@ -76,6 +84,8 @@ export default async function ChatConversationPage({ params, searchParams }: Pag
           conversationId={conversationId}
           initialTurns={thread.turns}
           initialPrefill={query.prompt?.trim() || undefined}
+          initialNowIso={nowIso}
+          timeZone={timeZone}
         />
       </section>
     </div>

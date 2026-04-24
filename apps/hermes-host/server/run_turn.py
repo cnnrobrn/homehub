@@ -34,6 +34,8 @@ SUPABASE_JWT = os.environ.get("HOMEHUB_SUPABASE_JWT")
 DEFAULT_MODEL = os.environ.get("HERMES_DEFAULT_MODEL", "moonshotai/kimi-k2.6")
 TOOLSETS = os.environ.get("HERMES_TOOLSETS", "skills")
 MAX_TURNS = os.environ.get("HERMES_MAX_TURNS", "10")
+MAX_CONTEXT_TURNS = int(os.environ.get("HOMEHUB_CONTEXT_TURNS", "20"))
+MAX_CONTEXT_CHARS = int(os.environ.get("HOMEHUB_CONTEXT_CHARS", "12000"))
 EVENT_PREFIX = "HOMEHUB_HERMES_EVENT "
 EVENT_STDOUT = sys.stdout
 EVENT_LOCK = threading.Lock()
@@ -165,6 +167,88 @@ def filtered_kwargs(callable_obj: Callable[..., Any], kwargs: dict[str, Any]) ->
     return {key: value for key, value in kwargs.items() if key in params}
 
 
+def load_conversation_history() -> list[dict[str, str]]:
+    raw = os.environ.get("HOMEHUB_CONVERSATION_HISTORY", "")
+    if not raw.strip():
+        return []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"[run_turn] invalid HOMEHUB_CONVERSATION_HISTORY JSON: {exc}", file=sys.stderr)
+        return []
+    if not isinstance(parsed, list):
+        print("[run_turn] HOMEHUB_CONVERSATION_HISTORY was not a list", file=sys.stderr)
+        return []
+
+    history: list[dict[str, str]] = []
+    for item in parsed[-MAX_CONTEXT_TURNS:]:
+        if not isinstance(item, dict):
+            continue
+        role = item.get("role")
+        body = item.get("body_md")
+        created_at = item.get("created_at")
+        if not isinstance(role, str) or not isinstance(body, str) or not body.strip():
+            continue
+        history.append(
+            {
+                "role": role,
+                "body_md": body.strip(),
+                "created_at": created_at if isinstance(created_at, str) else "",
+            }
+        )
+    return history
+
+
+def role_label(role: str) -> str:
+    if role == "member":
+        return "member"
+    if role == "assistant":
+        return "alfred"
+    if role == "tool":
+        return "tool"
+    return role[:24] or "unknown"
+
+
+def clip_context_text(text: str, max_chars: int = 1600) -> str:
+    clean = re.sub(r"\s+", " ", text).strip()
+    if len(clean) <= max_chars:
+        return clean
+    return clean[: max_chars - 1].rstrip() + "…"
+
+
+def build_contextual_message(message: str, history: list[dict[str, str]]) -> str:
+    if not history:
+        return message
+
+    lines = [
+        "[HomeHub same-thread context]",
+        "Previous turns from this exact chat are below, oldest to newest.",
+        "Use them to resolve short follow-ups and references. Do not answer the context itself.",
+        "",
+    ]
+    for turn in history:
+        label = role_label(turn["role"])
+        lines.append(f"{label}: {clip_context_text(turn['body_md'])}")
+
+    lines.extend(
+        [
+            "",
+            "[Current member message]",
+            message,
+        ]
+    )
+    contextual = "\n".join(lines)
+    if len(contextual) <= MAX_CONTEXT_CHARS:
+        return contextual
+
+    # Keep the newest turns when the thread is too long.
+    trimmed_history = history[:]
+    while trimmed_history and len(contextual) > MAX_CONTEXT_CHARS:
+        trimmed_history.pop(0)
+        contextual = build_contextual_message(message, trimmed_history)
+    return contextual
+
+
 def run_hermes_programmatic(message: str) -> int:
     """Run Hermes through its internal API so streaming callbacks stay enabled."""
     prepare_runtime()
@@ -264,8 +348,9 @@ def run_hermes_programmatic(message: str) -> int:
             {"type": "tool_generation", "tool": tool}
         )
 
+        history = load_conversation_history()
         result = agent.run_conversation(
-            user_message=message,
+            user_message=build_contextual_message(message, history),
             conversation_history=getattr(cli, "conversation_history", []),
         )
 
@@ -280,6 +365,7 @@ def run_hermes_programmatic(message: str) -> int:
 
 
 def run_cli_fallback(message: str) -> int:
+    contextual_message = build_contextual_message(message, load_conversation_history())
     args = [
         str(HERMES_BIN),
         "chat",
@@ -297,7 +383,7 @@ def run_cli_fallback(message: str) -> int:
         MAX_TURNS,
         "--yolo",
         "-q",
-        message,
+        contextual_message,
     ]
 
     override = os.environ.get("HERMES_CLI_ARGS")

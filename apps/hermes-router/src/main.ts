@@ -203,6 +203,11 @@ async function handleChatStream(req: IncomingMessage, res: ServerResponse): Prom
     conversation_id?: string;
     turn_id?: string;
     message?: string;
+    conversation_history?: Array<{
+      role?: string;
+      body_md?: string;
+      created_at?: string;
+    }>;
   };
   if (
     !body.household_id ||
@@ -241,6 +246,7 @@ async function handleChatStream(req: IncomingMessage, res: ServerResponse): Prom
       memberId: body.member_id,
       memberRole: body.member_role ?? 'adult',
       message: body.message,
+      conversationHistoryJson: JSON.stringify(body.conversation_history ?? []),
       supabaseJwt,
     },
   });
