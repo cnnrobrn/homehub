@@ -95,19 +95,24 @@ export async function createHouseholdAction(
         !Array.isArray(currentSettings.onboarding)
           ? (currentSettings.onboarding as Record<string, Json>)
           : {};
-      const setupSegments = [...new Set(parsed.setupSegments ?? [])];
-      const setupPromptIds = [...new Set(parsed.setupPromptIds ?? [])];
-      const setupSurfaceIds = [...new Set(parsed.setupSurfaces ?? [])];
+      const setupSegments =
+        parsed.setupSegments === undefined ? undefined : [...new Set(parsed.setupSegments)];
+      const setupPromptIds =
+        parsed.setupPromptIds === undefined ? undefined : [...new Set(parsed.setupPromptIds)];
+      const setupSurfaceIds =
+        parsed.setupSurfaces === undefined ? undefined : [...new Set(parsed.setupSurfaces)];
       const setupAt = new Date().toISOString();
       const hasPreselectedSetup =
-        setupSegments.length > 0 || setupPromptIds.length > 0 || setupSurfaceIds.length > 0;
+        (setupSegments?.length ?? 0) > 0 ||
+        (setupPromptIds?.length ?? 0) > 0 ||
+        (setupSurfaceIds?.length ?? 0) > 0;
       const settings: Record<string, Json> = {
         ...currentSettings,
         onboarding: {
           ...currentOnboarding,
-          setup_segments: setupSegments,
-          setup_prompt_ids: setupPromptIds,
-          setup_surface_ids: setupSurfaceIds,
+          ...(setupSegments !== undefined ? { setup_segments: setupSegments } : {}),
+          ...(setupPromptIds !== undefined ? { setup_prompt_ids: setupPromptIds } : {}),
+          ...(setupSurfaceIds !== undefined ? { setup_surface_ids: setupSurfaceIds } : {}),
           ...(parsed.setupPrompt ? { alfred_setup_prompt: parsed.setupPrompt } : {}),
           ...(currentOnboarding.started_at ? {} : { started_at: setupAt }),
           ...(hasPreselectedSetup ? { completed_at: setupAt } : {}),

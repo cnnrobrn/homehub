@@ -2,8 +2,7 @@
  * Financial segment sub-navigation.
  *
  * Client Component — uses `usePathname` to highlight the active tab
- * without round-tripping the server on navigation. The server can pass
- * the setup-visible hrefs so tabs stay hidden until they have context.
+ * without round-tripping the server on navigation.
  */
 
 'use client';
@@ -37,30 +36,25 @@ const TABS: Tab[] = [
   { label: 'Alerts', href: '/financial/alerts' },
 ];
 
-export function FinancialSubNav({ visibleHrefs }: { visibleHrefs?: readonly string[] }) {
+export function FinancialSubNav() {
   const pathname = usePathname() ?? '/financial';
-  const tabs = visibleHrefs
-    ? TABS.filter((tab) => tab.href === '/financial' || visibleHrefs.includes(tab.href))
-    : TABS;
 
   return (
     <nav
       aria-label="Financial sections"
       className="flex flex-wrap items-center gap-1 rounded-md border border-border bg-surface p-1 text-sm"
     >
-      {tabs.map((tab, index) => {
+      {TABS.map((tab) => {
         const active =
           tab.href === '/financial' ? pathname === '/financial' : pathname.startsWith(tab.href);
         return (
           <Link
             key={tab.href}
             href={tab.href}
-            style={visibleHrefs ? { animationDelay: `${index * 30}ms` } : undefined}
             aria-current={active ? 'page' : undefined}
             className={cn(
               'rounded-sm px-3 py-1.5 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface',
               active ? 'bg-bg/80 text-fg' : 'text-fg-muted hover:bg-bg/50 hover:text-fg',
-              visibleHrefs && 'hh-section-appear',
             )}
           >
             {tab.label}

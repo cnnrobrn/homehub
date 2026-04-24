@@ -48,6 +48,7 @@ export const routerEnvSchema = z.object({
   HERMES_SHARED_SECRET: z.string().min(32),
   HOMEHUB_OPENROUTER_API_KEY: z.string().min(1),
   HERMES_DEFAULT_MODEL: z.string().min(1).default('moonshotai/kimi-k2.6'),
+  HERMES_TOOLSETS: z.string().min(1).default('skills,terminal'),
 });
 
 export type RouterEnv = z.infer<typeof routerEnvSchema>;

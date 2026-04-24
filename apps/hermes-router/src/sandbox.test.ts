@@ -21,6 +21,7 @@ const env = {
   HERMES_SHARED_SECRET: 'shared',
   HOMEHUB_OPENROUTER_API_KEY: 'openrouter-key',
   HERMES_DEFAULT_MODEL: 'moonshotai/kimi-k2.6',
+  HERMES_TOOLSETS: 'skills,terminal',
   HOMEHUB_SUPABASE_URL: 'https://supabase.test',
   HOMEHUB_SUPABASE_ANON_KEY: 'anon-key',
 } as RouterEnv;
@@ -66,6 +67,7 @@ describe('sandbox env assembly', () => {
     const envs = buildSandboxTurnEnvs(env, turn);
 
     expect(envs.HOMEHUB_MEMBER_MESSAGE).toBe('10k, 8k');
+    expect(envs.HERMES_TOOLSETS).toBe('skills,terminal');
     expect(envs.HOMEHUB_CONVERSATION_HISTORY).toContain('build me a budget');
     expect(envs.HOMEHUB_CONVERSATION_HISTORY).toContain('monthly take-home pay');
   });
@@ -85,6 +87,7 @@ describe('sandbox env assembly', () => {
           HOMEHUB_MEMBER_MESSAGE: '10k, 8k',
           HOMEHUB_CONVERSATION_HISTORY: expect.stringContaining('build me a budget'),
           HERMES_STORAGE_PATH: 'household-1/state.tar.gz',
+          HERMES_TOOLSETS: 'skills,terminal',
         }),
       }),
     );
@@ -96,6 +99,7 @@ describe('sandbox env assembly', () => {
           HOMEHUB_CONVERSATION_HISTORY: expect.stringContaining('build me a budget'),
           HERMES_STORAGE_PATH: 'household-1/state.tar.gz',
           OPENROUTER_API_KEY: 'openrouter-key',
+          HERMES_TOOLSETS: 'skills,terminal',
         }),
       }),
     );

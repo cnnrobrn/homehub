@@ -35,10 +35,6 @@
   .slide-out-to-right {
     /* folded into animate-out */
   }
-
-  .hh-section-appear {
-    animation: hh-section-appear 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  }
 }
 
 @keyframes hh-fade-in {
@@ -56,23 +52,6 @@
   }
   to {
     opacity: 0;
-  }
-}
-
-@keyframes hh-section-appear {
-  from {
-    opacity: 0;
-    transform: translateY(6px) scale(0.985);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .hh-section-appear {
-    animation: none;
   }
 }
 

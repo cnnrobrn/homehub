@@ -7,7 +7,6 @@ metadata:
     tags: [homehub, memory, knowledge]
     category: homehub
     requires_toolsets: [terminal]
-    fallback_for_toolsets: [skills]
 required_environment_variables:
   - name: HOUSEHOLD_ID
   - name: HOMEHUB_SUPABASE_URL

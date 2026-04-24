@@ -54,6 +54,9 @@ class RunTurnContextTest(unittest.TestCase):
         self.assertIn("alfred: What is your monthly take-home pay and monthly bills?", contextual)
         self.assertTrue(contextual.endswith("[Current member message]\n10k, 8k"))
 
+    def test_default_toolsets_include_terminal_for_homehub_skills(self) -> None:
+        self.assertEqual(run_turn.DEFAULT_TOOLSETS, "skills,terminal")
+
 
 if __name__ == "__main__":
     unittest.main()

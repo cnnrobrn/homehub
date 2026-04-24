@@ -14,8 +14,8 @@
  *
  * Data comes from the same helpers the rest of the app uses
  * (`listEvents`, `listPendingSuggestions`) so the surface is real even
- * when M0 fixtures are thin. Empty sections stay hidden until there is
- * real data or Alfred setup context to populate them.
+ * when M0 fixtures are thin. Empty data blocks stay quiet until there
+ * is real data or Alfred setup context to populate them.
  */
 
 import Link from 'next/link';
@@ -346,8 +346,8 @@ function AlfredSetupStart({ householdName }: { householdName: string }) {
     <section className="mt-2 border-y border-border py-7">
       <SectionHead>Start with {ASSISTANT_NAME}</SectionHead>
       <p className="m-0 max-w-[560px] text-[14px] leading-[1.6] text-fg-muted">
-        Nothing is surfaced yet. Pick an area and {ASSISTANT_NAME} will ask for the details needed
-        before showing that section here.
+        Nothing has been added yet. Pick an area and {ASSISTANT_NAME} will ask for the details
+        needed to populate it.
       </p>
       <div className="mt-4 flex flex-wrap gap-2">
         {prompts.map(({ section, prompt }) => (

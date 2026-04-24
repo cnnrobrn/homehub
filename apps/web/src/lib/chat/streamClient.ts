@@ -84,6 +84,7 @@ export async function* postChatStream(args: {
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let sawTerminal = false;
   try {
     while (true) {
       const { done, value } = await reader.read();
@@ -102,12 +103,34 @@ export async function* postChatStream(args: {
         const payload = dataLines.join('\n');
         try {
           const parsed = JSON.parse(payload) as StreamEvent;
+          if (parsed.type === 'final' || parsed.type === 'error') sawTerminal = true;
           yield parsed;
         } catch {
           yield { type: 'error', message: 'failed to parse SSE frame' };
         }
       }
     }
+    if (!sawTerminal) {
+      // Server closed the connection without a terminal event — usually
+      // an upstream crash or socket reset mid-turn. Surface this so the
+      // UI can show a real error instead of silently rendering "(no
+      // response)" and triggering a refresh that hides the failure.
+      yield {
+        type: 'error',
+        message: 'Connection closed before the assistant finished. Please try again.',
+        code: 'stream_ended_without_final',
+      };
+    }
+  } catch (err) {
+    if (err instanceof DOMException && err.name === 'AbortError') {
+      // Caller aborted (navigation away, explicit cancel) — silent exit.
+      return;
+    }
+    yield {
+      type: 'error',
+      message: err instanceof Error ? err.message : 'stream read failed',
+      code: 'stream_read_failed',
+    };
   } finally {
     reader.releaseLock();
   }

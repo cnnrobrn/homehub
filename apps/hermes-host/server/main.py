@@ -102,7 +102,8 @@ async def _stream_turn(body: ChatTurnRequest) -> AsyncIterator[dict]:
           --provider openrouter        # force OpenRouter (we set API key
                                        # in the .env, Hermes picks it up)
           --model $HERMES_DEFAULT_MODEL
-          --toolsets skills            # enable skills + whatever else
+          --toolsets skills,terminal   # enable skills and the shell
+                                       # commands HomeHub skills require
           --continue homehub-<conv_id> # resume session by name
           --pass-session-id            # put the session id in the system
                                        # prompt so skills can correlate
@@ -128,7 +129,7 @@ async def _stream_turn(body: ChatTurnRequest) -> AsyncIterator[dict]:
     contextual_message = build_contextual_message(body.message, history)
 
     default_model = os.environ.get("HERMES_DEFAULT_MODEL", "moonshotai/kimi-k2.6")
-    toolsets = os.environ.get("HERMES_TOOLSETS", "skills")
+    toolsets = os.environ.get("HERMES_TOOLSETS", "skills,terminal")
     max_turns = os.environ.get("HERMES_MAX_TURNS", "10")
     override = os.environ.get("HERMES_CLI_ARGS")
     if override:

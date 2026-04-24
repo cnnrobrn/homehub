@@ -13,6 +13,7 @@
 #   HOMEHUB_MEMBER_MESSAGE          the member's chat message (passed as env
 #                                   since E2B commands.run can't pipe stdin)
 #   HERMES_SHARED_SECRET, OPENROUTER_API_KEY, HERMES_DEFAULT_MODEL,
+#   HERMES_TOOLSETS,
 #   HOMEHUB_CONVERSATION_ID, HOMEHUB_TURN_ID, HOMEHUB_MEMBER_ID, HOMEHUB_MEMBER_ROLE
 #
 # Lifecycle per turn:

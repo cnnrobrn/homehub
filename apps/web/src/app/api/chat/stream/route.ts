@@ -317,6 +317,9 @@ export async function POST(request: NextRequest): Promise<Response> {
               message: parsed.data.message,
               conversation_history: conversationHistory,
             }),
+            // If the browser disconnects, abort the upstream Hermes
+            // request so we don't keep a sandbox burning.
+            signal: request.signal,
           });
           if (!upstream.ok || !upstream.body) {
             const text = await upstream.text().catch(() => '');
@@ -345,6 +348,10 @@ export async function POST(request: NextRequest): Promise<Response> {
             reader.releaseLock();
           }
         } catch (err) {
+          if (err instanceof DOMException && err.name === 'AbortError') {
+            // Client navigated away — silent close, no error event.
+            return;
+          }
           const message = err instanceof Error ? err.message : 'Hermes router request failed';
           log.error('hermes router request failed', {
             household_id: ctx.household.id,
@@ -355,7 +362,11 @@ export async function POST(request: NextRequest): Promise<Response> {
             encodeEvent({ type: 'error', message, code: 'hermes_upstream_request_failed' }),
           );
         } finally {
-          controller.close();
+          try {
+            controller.close();
+          } catch {
+            // Already closed (e.g. by abort) — safe to ignore.
+          }
         }
       },
     });
@@ -402,13 +413,23 @@ export async function POST(request: NextRequest): Promise<Response> {
             logger: log,
           },
         )) {
+          if (request.signal.aborted) break;
           controller.enqueue(encodeEvent(event));
         }
       } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') return;
         const message = err instanceof Error ? err.message : 'internal error';
-        controller.enqueue(encodeEvent({ type: 'error', message }));
+        try {
+          controller.enqueue(encodeEvent({ type: 'error', message }));
+        } catch {
+          // Controller already closed via client abort — drop the event.
+        }
       } finally {
-        controller.close();
+        try {
+          controller.close();
+        } catch {
+          // Already closed.
+        }
       }
     },
   });

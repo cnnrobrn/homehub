@@ -57,6 +57,26 @@ describe('postChatStream', () => {
     expect(events[0]?.type).toBe('error');
   });
 
+  it('synthesizes an error event when the stream closes without a terminal frame', async () => {
+    const body = makeBody([
+      'data: {"type":"start","turnId":"t1","conversationId":"c1"}\n\n',
+      'data: {"type":"token","delta":"hello"}\n\n',
+    ]);
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      body,
+      status: 200,
+      text: async () => '',
+    } as unknown as Response);
+
+    const events = await collect(postChatStream({ conversationId: 'c1', message: 'hi' }));
+    const last = events[events.length - 1];
+    expect(last?.type).toBe('error');
+    if (last?.type === 'error') {
+      expect(last.code).toBe('stream_ended_without_final');
+    }
+  });
+
   it('tolerates malformed data frames without aborting the stream', async () => {
     const body = makeBody([
       'data: not-json\n\n',

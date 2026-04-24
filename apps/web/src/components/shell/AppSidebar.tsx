@@ -9,7 +9,7 @@
 import Link from 'next/link';
 
 import type { SegmentId } from '@/components/design-system/segment';
-import type { CSSProperties, ReactNode } from 'react';
+import type { ReactNode } from 'react';
 
 import { listMembersAction } from '@/app/actions/members';
 import { HomeHubMark, MemberAvatar, SegDot } from '@/components/design-system';
@@ -21,7 +21,6 @@ import { cn } from '@/lib/cn';
 import {
   getConfiguredSetupSegments,
   getConfiguredSetupSurfaces,
-  hasStoredSetup,
   type SetupSurfaceId,
 } from '@/lib/onboarding/setup';
 
@@ -68,7 +67,6 @@ export async function AppSidebar() {
   const primaryItems = PRIMARY.filter(
     (item) => !item.surface || visibleSurfaces.includes(item.surface),
   );
-  const animateSegments = hasStoredSetup(ctx.household.settings);
 
   return (
     <aside
@@ -107,14 +105,8 @@ export async function AppSidebar() {
         <>
           <SidebarLabel>Parts of life</SidebarLabel>
           <nav className="flex flex-col gap-0.5" aria-label="Parts of life">
-            {visibleSegments.map((id, index) => (
-              <NavRow
-                key={id}
-                href={SEG_HREF[id]}
-                dot={<SegDot segment={id} size={7} />}
-                appear={animateSegments}
-                appearDelayMs={index * 35}
-              >
+            {visibleSegments.map((id) => (
+              <NavRow key={id} href={SEG_HREF[id]} dot={<SegDot segment={id} size={7} />}>
                 {SEGMENTS[id].label}
               </NavRow>
             ))}
@@ -175,15 +167,11 @@ function NavRow({
   children,
   count,
   dot,
-  appear,
-  appearDelayMs,
 }: {
   href: string;
   children: ReactNode;
   count?: number;
   dot?: ReactNode;
-  appear?: boolean;
-  appearDelayMs?: number;
 }) {
   // Active-state styling belongs on a client component (usePathname). The
   // V2 Indie sidebar intentionally stays calm — we let the hover/focus
@@ -191,14 +179,10 @@ function NavRow({
   return (
     <Link
       href={href as never}
-      style={
-        appear ? ({ animationDelay: `${appearDelayMs ?? 0}ms` } satisfies CSSProperties) : undefined
-      }
       className={cn(
         'flex items-center gap-2.5 rounded-[3px] px-2.5 py-[7px] text-[13.5px] text-fg-muted transition-colors',
         'hover:bg-bg/60 hover:text-fg',
         'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface-soft',
-        appear && 'hh-section-appear',
       )}
     >
       {dot}

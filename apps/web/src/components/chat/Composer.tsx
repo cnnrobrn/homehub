@@ -62,6 +62,15 @@ export function Composer({
     if (onPrefillConsumed) onPrefillConsumed();
   }, [onPrefillConsumed, prefill]);
 
+  React.useEffect(() => {
+    return () => {
+      // Cancel any in-flight stream when the composer unmounts (e.g. user
+      // navigates to another conversation mid-response). Without this the
+      // server holds the SSE socket and the upstream Hermes sandbox open.
+      abortRef.current?.abort();
+    };
+  }, []);
+
   async function submit() {
     const trimmed = value.trim();
     if (!trimmed || submitting) return;

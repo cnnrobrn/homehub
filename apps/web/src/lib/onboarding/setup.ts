@@ -214,72 +214,16 @@ const ALL_PROMPTS = SETUP_SECTIONS.flatMap((section) =>
   })),
 );
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-function isSegmentId(value: unknown): value is SegmentId {
-  return typeof value === 'string' && SEGMENT_ORDER.includes(value as SegmentId);
-}
-
-function isSetupSurfaceId(value: unknown): value is SetupSurfaceId {
-  return typeof value === 'string' && SETUP_SURFACE_ORDER.includes(value as SetupSurfaceId);
-}
-
 function unique<T>(items: readonly T[]): T[] {
   return [...new Set(items)];
 }
 
-function onboardingSettings(settings: unknown): Record<string, unknown> | null {
-  if (!isRecord(settings)) return null;
-  const onboarding = settings.onboarding;
-  return isRecord(onboarding) ? onboarding : null;
+export function getConfiguredSetupSegments(_settings: unknown): SegmentId[] {
+  return [...SEGMENT_ORDER];
 }
 
-export function hasStoredSetup(settings: unknown): boolean {
-  const onboarding = onboardingSettings(settings);
-  return onboarding ? Object.prototype.hasOwnProperty.call(onboarding, 'setup_segments') : false;
-}
-
-export function getConfiguredSetupSegments(settings: unknown): SegmentId[] {
-  const onboarding = onboardingSettings(settings);
-  if (!onboarding || !Array.isArray(onboarding.setup_segments)) return [...SEGMENT_ORDER];
-  return unique(onboarding.setup_segments.filter(isSegmentId));
-}
-
-export function getSelectedSetupPromptIds(settings: unknown): string[] {
-  const onboarding = onboardingSettings(settings);
-  if (!onboarding || !Array.isArray(onboarding.setup_prompt_ids)) return [];
-  return unique(onboarding.setup_prompt_ids.filter((id): id is string => typeof id === 'string'));
-}
-
-export function getConfiguredSetupSurfaces(settings: unknown): SetupSurfaceId[] {
-  if (!hasStoredSetup(settings)) return [...SETUP_SURFACE_ORDER];
-
-  const onboarding = onboardingSettings(settings);
-  if (!onboarding) return [];
-
-  const explicit = Array.isArray(onboarding.setup_surface_ids)
-    ? unique(onboarding.setup_surface_ids.filter(isSetupSurfaceId))
-    : [];
-  const visible = new Set<SetupSurfaceId>(explicit);
-
-  for (const promptId of getSelectedSetupPromptIds(settings)) {
-    if (promptId.endsWith('.calendar')) visible.add('calendar');
-  }
-
-  return SETUP_SURFACE_ORDER.filter((id) => visible.has(id));
-}
-
-export function getVisibleSetupHrefs(
-  settings: unknown,
-  segment: SegmentId,
-): readonly string[] | null {
-  if (!hasStoredSetup(settings)) return null;
-  const promptIds = new Set(getSelectedSetupPromptIds(settings));
-  const section = SETUP_SECTIONS.find((s) => s.id === segment);
-  if (!section) return [];
-  return section.prompts.filter((prompt) => promptIds.has(prompt.id)).map((prompt) => prompt.href);
+export function getConfiguredSetupSurfaces(_settings: unknown): SetupSurfaceId[] {
+  return [...SETUP_SURFACE_ORDER];
 }
 
 export function chatPromptHref(prompt: string): string {
@@ -301,7 +245,7 @@ export function buildHermesOnboardingStartPrompt({
     `Alfred, start HomeHub onboarding for ${householdName || 'my household'}.`,
     selected.prompt,
     'Ask one follow-up at a time. Once you have enough to create something useful, populate the matching HomeHub data.',
-    'Only reveal Calendar, Decisions, sections, or tabs when there is information worth showing.',
+    'All HomeHub sections are already available, so focus on adding useful records instead of changing navigation visibility.',
   ].join('\n\n');
 }
 
@@ -330,6 +274,6 @@ export function buildAlfredSetupPrompt({
     `Alfred, help me set up HomeHub for ${householdName || 'my household'}.`,
     `Focus on: ${sectionLabels}.`,
     focus,
-    'Use your HomeHub onboarding skill. Ask one follow-up at a time, create useful HomeHub records when you can, and only reveal Calendar, Decisions, sections, or tabs when there is information worth showing.',
+    'Use your HomeHub onboarding skill. Ask one follow-up at a time, create useful HomeHub records when you can, and leave navigation visibility unchanged because every section is already available.',
   ].join('\n\n');
 }

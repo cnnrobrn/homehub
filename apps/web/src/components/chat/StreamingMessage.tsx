@@ -22,7 +22,6 @@
 
 import * as React from 'react';
 
-
 import { SuggestionCard } from './SuggestionCard';
 import { ToolCard, type ToolCallDisplay } from './ToolCard';
 
@@ -30,10 +29,23 @@ import type { StreamEvent } from '@/lib/chat/streamClient';
 
 import { HomeHubMark } from '@/components/design-system';
 
+export type StreamingMessageOutcome =
+  | {
+      kind: 'final';
+      assistantBody: string;
+      toolCalls: ToolCallDisplay[];
+      model: string | null;
+    }
+  | { kind: 'error'; message: string };
+
 interface StreamingMessageProps {
   events: AsyncIterable<StreamEvent>;
-  /** Called when the stream finishes; used by the parent to refresh. */
-  onFinal?: () => void;
+  /**
+   * Called once the stream terminates. The outcome tells the parent
+   * whether to optimistically persist the assistant turn (final) or to
+   * leave the error message visible until the user retries (error).
+   */
+  onComplete?: (outcome: StreamingMessageOutcome) => void;
   /** Called after visible stream state changes; used by parents to keep the latest turn in view. */
   onUpdate?: () => void;
 }
@@ -43,7 +55,7 @@ interface ToolCallState {
   streaming: boolean;
 }
 
-export function StreamingMessage({ events, onFinal, onUpdate }: StreamingMessageProps) {
+export function StreamingMessage({ events, onComplete, onUpdate }: StreamingMessageProps) {
   const [text, setText] = React.useState('');
   const [calls, setCalls] = React.useState<ToolCallState[]>([]);
   const [suggestions, setSuggestions] = React.useState<
@@ -53,12 +65,12 @@ export function StreamingMessage({ events, onFinal, onUpdate }: StreamingMessage
   const [thinkingStatus, setThinkingStatus] = React.useState('');
   const [thinking, setThinking] = React.useState(true);
   const [done, setDone] = React.useState(false);
-  const onFinalRef = React.useRef(onFinal);
+  const onCompleteRef = React.useRef(onComplete);
   const onUpdateRef = React.useRef(onUpdate);
 
   React.useEffect(() => {
-    onFinalRef.current = onFinal;
-  }, [onFinal]);
+    onCompleteRef.current = onComplete;
+  }, [onComplete]);
 
   React.useEffect(() => {
     onUpdateRef.current = onUpdate;
@@ -67,12 +79,18 @@ export function StreamingMessage({ events, onFinal, onUpdate }: StreamingMessage
   React.useEffect(() => {
     let cancelled = false;
     let finished = false;
-    function finish() {
+    // Keep refs to the latest streamed body and tool calls so we can
+    // forward them to the parent on completion. The state setters are
+    // async, so we can't read fresh state inside finish().
+    let bodyRef = '';
+    let callsRef: ToolCallState[] = [];
+    let modelRef: string | null = null;
+    function finish(outcome: StreamingMessageOutcome) {
       if (finished) return;
       finished = true;
       setThinking(false);
       setDone(true);
-      if (onFinalRef.current) onFinalRef.current();
+      if (onCompleteRef.current) onCompleteRef.current(outcome);
     }
     (async () => {
       for await (const ev of events) {
@@ -86,6 +104,7 @@ export function StreamingMessage({ events, onFinal, onUpdate }: StreamingMessage
             break;
           case 'token':
             setThinking(false);
+            bodyRef += ev.delta;
             setText((prev) => prev + ev.delta);
             break;
           case 'thinking':
@@ -104,8 +123,8 @@ export function StreamingMessage({ events, onFinal, onUpdate }: StreamingMessage
             setThinkingStatus(`using ${ev.tool}`);
             break;
           case 'tool_call_start':
-            setCalls((prev) => [
-              ...prev,
+            callsRef = [
+              ...callsRef,
               {
                 streaming: true,
                 call: {
@@ -116,41 +135,40 @@ export function StreamingMessage({ events, onFinal, onUpdate }: StreamingMessage
                   result: null,
                 },
               },
-            ]);
+            ];
+            setCalls(callsRef);
             break;
           case 'tool_call_done':
-            setCalls((prev) =>
-              prev.map((c) =>
-                c.call.id === ev.callId
-                  ? {
-                      streaming: false,
-                      call: {
-                        ...c.call,
-                        classification: ev.classification,
-                        result: ev.result,
-                        latency_ms: ev.latencyMs,
-                        ok: true,
-                      },
-                    }
-                  : c,
-              ),
+            callsRef = callsRef.map((c) =>
+              c.call.id === ev.callId
+                ? {
+                    streaming: false,
+                    call: {
+                      ...c.call,
+                      classification: ev.classification,
+                      result: ev.result,
+                      latency_ms: ev.latencyMs,
+                      ok: true,
+                    },
+                  }
+                : c,
             );
+            setCalls(callsRef);
             break;
           case 'tool_call_error':
-            setCalls((prev) =>
-              prev.map((c) =>
-                c.call.id === ev.callId
-                  ? {
-                      streaming: false,
-                      call: {
-                        ...c.call,
-                        ok: false,
-                        error: ev.error,
-                      },
-                    }
-                  : c,
-              ),
+            callsRef = callsRef.map((c) =>
+              c.call.id === ev.callId
+                ? {
+                    streaming: false,
+                    call: {
+                      ...c.call,
+                      ok: false,
+                      error: ev.error,
+                    },
+                  }
+                : c,
             );
+            setCalls(callsRef);
             break;
           case 'suggestion_card':
             setSuggestions((prev) => [
@@ -167,17 +185,36 @@ export function StreamingMessage({ events, onFinal, onUpdate }: StreamingMessage
             // The citation is already embedded in the token stream as
             // a [node:uuid] marker; we let the final render resolve it.
             break;
-          case 'final':
-            setText((prev) => ev.assistantBody || prev);
-            finish();
+          case 'final': {
+            const assistantBody = ev.assistantBody || bodyRef;
+            modelRef = ev.model || modelRef;
+            if (ev.assistantBody) {
+              bodyRef = ev.assistantBody;
+              setText(ev.assistantBody);
+            }
+            finish({
+              kind: 'final',
+              assistantBody,
+              toolCalls: callsRef.map((c) => c.call),
+              model: modelRef,
+            });
             break;
+          }
           case 'error':
-            setText((prev) => `${prev}\n\n_stream error: ${ev.message}_`);
-            finish();
+            setText((prev) => (prev ? `${prev}\n\n_${ev.message}_` : `_${ev.message}_`));
+            finish({ kind: 'error', message: ev.message });
             break;
         }
       }
-      if (!cancelled) finish();
+      if (!cancelled) {
+        // Stream EOF without a terminal event. streamClient now
+        // synthesizes an error event in this case, but defend in depth
+        // in case a future transport change forgets.
+        finish({
+          kind: 'error',
+          message: 'stream ended without a final event',
+        });
+      }
     })();
     return () => {
       cancelled = true;

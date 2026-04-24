@@ -143,9 +143,6 @@ function CreateHouseholdInner() {
       name: values.name,
       timezone: values.timezone,
       currency: DEFAULT_CURRENCY,
-      setupSegments: [],
-      setupPromptIds: [],
-      setupSurfaces: [],
       setupPrompt,
     });
     if (!res.ok) {
@@ -235,8 +232,8 @@ function CreateHouseholdInner() {
         </div>
       </div>
       <div className="rounded-[6px] border border-border bg-surface-soft px-3 py-2.5 text-[12.5px] leading-[1.5] text-fg-muted">
-        After this, {ASSISTANT_NAME} opens chat, asks one thing at a time, and reveals each surface
-        once there is something useful to show.
+        After this, {ASSISTANT_NAME} opens chat, asks one thing at a time, and helps populate the
+        surfaces you start with.
       </div>
       <Button type="submit" disabled={isSubmitting}>
         {isSubmitting ? 'Creating…' : `Create household with ${ASSISTANT_NAME}`}

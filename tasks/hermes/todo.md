@@ -143,6 +143,7 @@ Trade-off accepted: per-turn network round-trip for state. For typical HomeHub f
 - `HERMES_SHARED_SECRET` — injected into every sandbox
 - `HOMEHUB_OPENROUTER_API_KEY` — HomeHub-held key; billing lives here
 - `HERMES_DEFAULT_MODEL` (default `moonshotai/kimi-k2.6`)
+- `HERMES_TOOLSETS` (default `skills,terminal`)
 
 ### `apps/hermes-host` (inside each E2B sandbox, set by router)
 - `HERMES_HOME=/root/.hermes`
@@ -151,6 +152,7 @@ Trade-off accepted: per-turn network round-trip for state. For typical HomeHub f
 - `HERMES_SHARED_SECRET`
 - `OPENROUTER_API_KEY` (defaults to HomeHub-operated; family can override by editing their `.env` inside the state tarball)
 - `HERMES_DEFAULT_MODEL` (defaults to `moonshotai/kimi-k2.6`)
+- `HERMES_TOOLSETS` (defaults to `skills,terminal`)
 - `HOMEHUB_SUPABASE_URL`, `HOMEHUB_SUPABASE_ANON_KEY`
 - `HOMEHUB_SUPABASE_JWT` — household-scoped short-lived JWT (authorizes Storage reads/writes via RLS)
 - `HOMEHUB_MEMBER_MESSAGE` — the chat turn's message (E2B can't pipe stdin)

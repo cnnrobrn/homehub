@@ -23,7 +23,7 @@ import type { ConversationTurnDisplayRow } from '@/lib/chat/loadConversations';
 
 const conversationId = '11111111-1111-4111-8111-111111111111';
 
-function makeFinalStream(): ReadableStream<Uint8Array> {
+function makeFinalStream(assistantBody = ''): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder();
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -33,13 +33,31 @@ function makeFinalStream(): ReadableStream<Uint8Array> {
             type: 'final',
             turnId: '22222222-2222-4222-8222-222222222222',
             conversationId,
-            assistantBody: '',
+            assistantBody,
             toolCalls: [],
             citations: [],
             model: 'test-model',
             inputTokens: 0,
             outputTokens: 0,
             costUsd: 0,
+          })}\n\n`,
+        ),
+      );
+      controller.close();
+    },
+  });
+}
+
+function makeErrorStream(): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(
+        encoder.encode(
+          `data: ${JSON.stringify({
+            type: 'error',
+            message: 'upstream timed out',
+            code: 'hermes_upstream_request_failed',
           })}\n\n`,
         ),
       );
@@ -108,5 +126,48 @@ describe('ChatThread', () => {
     );
 
     await waitFor(() => expect(screen.getAllByText(message)).toHaveLength(1));
+  });
+
+  it('keeps the assistant reply on screen while waiting for the persisted turn', async () => {
+    const assistantBody = 'pasta tonight';
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      body: makeFinalStream(assistantBody),
+      status: 200,
+      text: async () => '',
+    } as unknown as Response);
+
+    renderThread();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /message composer/i }), {
+      target: { value: 'what for dinner?' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: /message composer/i }).closest('form')!);
+
+    // After the stream finishes the streaming view tears down and the
+    // optimistic assistant turn keeps the reply in view until the
+    // persisted version arrives via router.refresh().
+    await waitFor(() => expect(screen.getByText(assistantBody)).toBeInTheDocument());
+    expect(refreshMock).toHaveBeenCalled();
+  });
+
+  it('surfaces server errors and does not refresh', async () => {
+    vi.spyOn(globalThis, 'fetch').mockReset();
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce({
+      ok: true,
+      body: makeErrorStream(),
+      status: 200,
+      text: async () => '',
+    } as unknown as Response);
+
+    renderThread();
+
+    fireEvent.change(screen.getByRole('textbox', { name: /message composer/i }), {
+      target: { value: 'will this fail?' },
+    });
+    fireEvent.submit(screen.getByRole('textbox', { name: /message composer/i }).closest('form')!);
+
+    await waitFor(() => expect(screen.getByText(/upstream timed out/)).toBeInTheDocument());
+    expect(refreshMock).not.toHaveBeenCalled();
   });
 });

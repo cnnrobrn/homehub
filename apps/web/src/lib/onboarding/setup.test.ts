@@ -6,17 +6,15 @@ import {
   buildHermesOnboardingStartPrompt,
   getConfiguredSetupSegments,
   getConfiguredSetupSurfaces,
-  getVisibleSetupHrefs,
 } from './setup';
 
 describe('onboarding setup helpers', () => {
   it('keeps legacy households fully visible when no setup settings exist', () => {
     expect(getConfiguredSetupSegments({})).toEqual(['financial', 'food', 'fun', 'social']);
     expect(getConfiguredSetupSurfaces({})).toEqual(['calendar', 'decisions']);
-    expect(getVisibleSetupHrefs({}, 'food')).toBeNull();
   });
 
-  it('supports chat-driven households that start with no visible setup sections', () => {
+  it('keeps chat-driven households fully visible even with empty setup settings', () => {
     const settings = {
       onboarding: {
         setup_segments: [],
@@ -24,12 +22,11 @@ describe('onboarding setup helpers', () => {
         setup_surface_ids: [],
       },
     };
-    expect(getConfiguredSetupSegments(settings)).toEqual([]);
-    expect(getConfiguredSetupSurfaces(settings)).toEqual([]);
-    expect(getVisibleSetupHrefs(settings, 'food')).toEqual([]);
+    expect(getConfiguredSetupSegments(settings)).toEqual(['financial', 'food', 'fun', 'social']);
+    expect(getConfiguredSetupSurfaces(settings)).toEqual(['calendar', 'decisions']);
   });
 
-  it('returns only the tabs revealed by the onboarding skill', () => {
+  it('does not hide navigation for partially configured onboarding settings', () => {
     const settings = {
       onboarding: {
         setup_segments: ['food'],
@@ -37,12 +34,11 @@ describe('onboarding setup helpers', () => {
         setup_surface_ids: ['decisions'],
       },
     };
-    expect(getConfiguredSetupSegments(settings)).toEqual(['food']);
-    expect(getConfiguredSetupSurfaces(settings)).toEqual(['decisions']);
-    expect(getVisibleSetupHrefs(settings, 'food')).toEqual(['/food/pantry', '/food/groceries']);
+    expect(getConfiguredSetupSegments(settings)).toEqual(['financial', 'food', 'fun', 'social']);
+    expect(getConfiguredSetupSurfaces(settings)).toEqual(['calendar', 'decisions']);
   });
 
-  it('infers the global calendar surface from revealed calendar tabs', () => {
+  it('shows top-level surfaces even when onboarding did not select them', () => {
     const settings = {
       onboarding: {
         setup_segments: ['social'],
@@ -50,7 +46,7 @@ describe('onboarding setup helpers', () => {
         setup_surface_ids: [],
       },
     };
-    expect(getConfiguredSetupSurfaces(settings)).toEqual(['calendar']);
+    expect(getConfiguredSetupSurfaces(settings)).toEqual(['calendar', 'decisions']);
   });
 
   it('seeds Hermes onboarding prompts with the skill contract', () => {
@@ -64,6 +60,9 @@ describe('onboarding setup helpers', () => {
         selectedPromptIds: ['food.pantry'],
       }),
     ).toContain('HomeHub onboarding skill');
+    expect(buildHermesOnboardingStartPrompt({ householdName: 'Casa' })).not.toContain(
+      'Only reveal',
+    );
   });
 
   it('offers several onboarding starter prompts', () => {

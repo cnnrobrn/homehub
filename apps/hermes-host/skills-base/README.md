@@ -22,5 +22,6 @@ Instacart.
 
 `onboarding/` is the first-run setup coordinator. It asks members what
 they want HomeHub to handle, uses the section skills to populate safe
-data, then updates `household.settings.onboarding` so the relevant
-sections, tabs, Calendar, and Decisions surfaces appear in the app.
+data, and may record progress in `household.settings.onboarding`.
+Sections, tabs, Calendar, and Decisions are visible in the app by
+default for members with access.

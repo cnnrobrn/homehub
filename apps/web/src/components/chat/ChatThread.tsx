@@ -18,9 +18,8 @@
 import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
-
 import { Composer } from './Composer';
-import { StreamingMessage } from './StreamingMessage';
+import { StreamingMessage, type StreamingMessageOutcome } from './StreamingMessage';
 import { ToolCard, type ToolCallDisplay } from './ToolCard';
 
 import type { ConversationTurnDisplayRow } from '@/lib/chat/loadConversations';
@@ -120,13 +119,19 @@ function withoutPersistedOptimisticTurns(
     const submittedAt = new Date(optimistic.created_at).getTime();
     const matchIndex = persistedTurns.findIndex((persisted, index) => {
       if (usedPersistedIndexes.has(index)) return false;
-      if (!isMemberTurn(persisted)) return false;
+      // Roles must match: a persisted assistant turn does not retire
+      // an optimistic member turn (and vice versa).
+      if (isMemberTurn(persisted) !== isMemberTurn(optimistic)) return false;
       if (persisted.body_md !== optimistic.body_md) return false;
 
       const persistedAt = new Date(persisted.created_at).getTime();
-      // Client and database clocks can drift a little, but an older
-      // matching turn should not erase a newly submitted optimistic one.
-      return persistedAt >= submittedAt - 30_000;
+      // Clocks can drift slightly between the browser and database, but
+      // an OLDER matching turn must not erase a newly submitted
+      // optimistic one (e.g., if the user sent the same message hours
+      // ago and we accidentally match against that historical row).
+      // The persisted timestamp is allowed to be slightly behind the
+      // optimistic timestamp to absorb forward clock skew on the server.
+      return persistedAt >= submittedAt - 60_000;
     });
 
     if (matchIndex === -1) return true;
@@ -197,13 +202,43 @@ export function ChatThread({
     scrollToBottom();
   }, [scrollToBottom]);
 
-  const handleFinal = React.useCallback(() => {
-    // Let the router fetch the canonical turn list.
-    setTimeout(() => {
+  const handleStreamComplete = React.useCallback(
+    (outcome: StreamingMessageOutcome) => {
+      if (outcome.kind === 'error') {
+        // Leave the streaming view mounted so the user can read the
+        // error in place. They'll either retry (which mounts a fresh
+        // StreamingMessage via the streamKey) or navigate away.
+        return;
+      }
+      // Promote the assistant body into optimistic state BEFORE we tear
+      // down the streaming view. Without this, there's a visible gap
+      // between activeStream becoming null and router.refresh()
+      // returning the persisted turn — the assistant's reply briefly
+      // disappears from screen, which is exactly what users perceive as
+      // "buggy". Once the canonical turn arrives in initialTurns, the
+      // reconciliation effect below removes the optimistic copy.
+      const body = outcome.assistantBody.trim();
+      if (body.length > 0) {
+        setOptimisticTurns((current) => [
+          ...current,
+          {
+            id: optimisticTurnId(),
+            role: 'assistant',
+            body_md: outcome.assistantBody,
+            author_member_id: null,
+            author_display_name: null,
+            created_at: new Date().toISOString(),
+            tool_calls: outcome.toolCalls,
+            citations: [],
+            model: outcome.model,
+          },
+        ]);
+      }
       setActiveStream(null);
       router.refresh();
-    }, 100);
-  }, [router]);
+    },
+    [router],
+  );
 
   const isEmpty = displayedTurns.length === 0 && !activeStream;
 
@@ -252,7 +287,7 @@ export function ChatThread({
             <StreamingMessage
               key={streamKey}
               events={activeStream}
-              onFinal={handleFinal}
+              onComplete={handleStreamComplete}
               onUpdate={handleStreamUpdate}
             />
           ) : null}

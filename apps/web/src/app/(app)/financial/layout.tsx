@@ -22,7 +22,6 @@ import { FinancialSubNav } from '@/components/financial/FinancialSubNav';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { cn } from '@/lib/cn';
 import { hasFinancialRead, type SegmentGrant } from '@/lib/financial';
-import { getVisibleSetupHrefs } from '@/lib/onboarding/setup';
 
 export const metadata = {
   title: 'Financial — HomeHub',
@@ -66,8 +65,6 @@ export default async function FinancialLayout({ children }: { children: ReactNod
     );
   }
 
-  const visibleHrefs = getVisibleSetupHrefs(ctx.household.settings, 'financial');
-
   return (
     <div className="mx-auto flex max-w-6xl flex-col gap-6 p-6">
       <header className="flex flex-col gap-2">
@@ -76,7 +73,7 @@ export default async function FinancialLayout({ children }: { children: ReactNod
           Household ledger, balances, budgets, subscriptions, and alerts.
         </p>
       </header>
-      {visibleHrefs ? <FinancialSubNav visibleHrefs={visibleHrefs} /> : <FinancialSubNav />}
+      <FinancialSubNav />
       {children}
     </div>
   );

@@ -251,7 +251,7 @@ function surfacesForToolCall(args: {
   return uniqueSurfaces(surfaces);
 }
 
-async function revealOnboardingSurfaces(args: {
+async function recordOnboardingSurfaceProgress(args: {
   supabase: ServiceSupabaseClient;
   householdId: string;
   surfaces: readonly SetupSurfaceId[];
@@ -268,7 +268,7 @@ async function revealOnboardingSurfaces(args: {
     .eq('id', args.householdId)
     .single();
   if (error) {
-    args.logger.warn('onboarding surface reveal skipped: household lookup failed', {
+    args.logger.warn('onboarding surface progress skipped: household lookup failed', {
       household_id: args.householdId,
       surfaces,
       error: error.message,
@@ -283,9 +283,7 @@ async function revealOnboardingSurfaces(args: {
     ? (currentSettings.onboarding as Record<string, unknown>)
     : null;
 
-  // Legacy households did not opt into chat-driven reveal state, so
-  // their global links are already visible. Avoid converting them into
-  // a partially hidden onboarding household as a side effect of chat.
+  // Only households with onboarding state track this progress metadata.
   if (!currentOnboarding || !Array.isArray(currentOnboarding.setup_segments)) return;
 
   const existingSurfaceIds = Array.isArray(currentOnboarding.setup_surface_ids)
@@ -312,7 +310,7 @@ async function revealOnboardingSurfaces(args: {
     .update({ settings: settings as never })
     .eq('id', args.householdId);
   if (updateError) {
-    args.logger.warn('onboarding surface reveal skipped: household update failed', {
+    args.logger.warn('onboarding surface progress skipped: household update failed', {
       household_id: args.householdId,
       surfaces,
       error: updateError.message,
@@ -489,7 +487,7 @@ export async function* runConversationTurnStream(
             preview: (maybePreview.preview as unknown) ?? null,
           };
         }
-        await revealOnboardingSurfaces({
+        await recordOnboardingSurfaceProgress({
           supabase: deps.supabase,
           householdId: input.memberContext.householdId as string,
           surfaces: surfacesForToolCall({

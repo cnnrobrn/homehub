@@ -138,7 +138,12 @@ export function CommandKLauncher({ householdId }: CommandKLauncherProps) {
         </DialogHeader>
         <div className="min-h-[240px] space-y-3">
           {stream ? (
-            <StreamingMessage events={stream} onFinal={() => router.refresh()} />
+            <StreamingMessage
+              events={stream}
+              onComplete={(outcome) => {
+                if (outcome.kind === 'final') router.refresh();
+              }}
+            />
           ) : (
             <div className="rounded-md border border-dashed border-border bg-surface p-4 text-sm text-fg-muted">
               Your last three turns will appear here once you start a conversation. For now, ask{' '}
