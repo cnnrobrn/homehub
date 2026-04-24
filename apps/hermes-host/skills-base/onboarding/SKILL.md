@@ -25,7 +25,8 @@ shows Calendar, Decisions, and every section for members with access, so
 do not change navigation visibility or describe sections as newly
 visible.
 
-See `_shared` for Supabase auth and scoping rules.
+See `_shared` for Supabase auth and scoping rules. Use the `homehub`
+CLI; it injects household scope.
 
 ## Flow
 
@@ -120,72 +121,10 @@ and `surface_ids` before running. Use an empty `surface_ids` list if no
 top-level surface metadata applies. It preserves existing setup progress.
 
 ```bash
-python - <<'PY'
-import datetime
-import json
-import os
-import urllib.error
-import urllib.request
-
-segment = "food"
-prompt_ids = ["food.groceries"]
-surface_ids = []
-
-base = os.environ["HOMEHUB_SUPABASE_URL"].rstrip("/")
-household_id = os.environ["HOUSEHOLD_ID"]
-headers = {
-    "apikey": os.environ["HOMEHUB_SUPABASE_ANON_KEY"],
-    "Authorization": f"Bearer {os.environ['HOMEHUB_SUPABASE_JWT']}",
-    "Accept-Profile": "app",
-    "Content-Profile": "app",
-    "Content-Type": "application/json",
-    "Prefer": "return=representation",
-}
-
-def request(method, path, body=None):
-    data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(f"{base}{path}", data=data, method=method, headers=headers)
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        raw = resp.read().decode()
-        return json.loads(raw) if raw else None
-
-try:
-    rows = request("GET", f"/rest/v1/household?id=eq.{household_id}&select=settings")
-    settings = (rows[0].get("settings") if rows else {}) or {}
-    if not isinstance(settings, dict):
-        settings = {}
-    onboarding = settings.get("onboarding")
-    if not isinstance(onboarding, dict):
-        onboarding = {}
-
-    segments = list(onboarding.get("setup_segments") or [])
-    ids = list(onboarding.get("setup_prompt_ids") or [])
-    surfaces = list(onboarding.get("setup_surface_ids") or [])
-    if segment not in segments:
-        segments.append(segment)
-    for prompt_id in prompt_ids:
-        if prompt_id not in ids:
-            ids.append(prompt_id)
-    for surface_id in surface_ids:
-        if surface_id in ("calendar", "decisions") and surface_id not in surfaces:
-            surfaces.append(surface_id)
-
-    onboarding["setup_segments"] = segments
-    onboarding["setup_prompt_ids"] = ids
-    onboarding["setup_surface_ids"] = surfaces
-    onboarding["last_onboarded_at"] = datetime.datetime.now(datetime.UTC).isoformat()
-    settings["onboarding"] = onboarding
-
-    updated = request(
-        "PATCH",
-        f"/rest/v1/household?id=eq.{household_id}",
-        {"settings": settings},
-    )
-    print(json.dumps(updated, indent=2))
-except urllib.error.HTTPError as e:
-    print(e.read().decode() or f"HTTP {e.code}", flush=True)
-    raise
-PY
+homehub onboarding record-progress \
+  --segment food \
+  --prompt-id food.groceries \
+  --surface-id decisions
 ```
 
 If this returns a permission error, the active member is not allowed to
@@ -199,32 +138,14 @@ onboarding writes are safe when the member has write access:
 
 ```bash
 # Food pantry item
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -d '{"household_id":"'"$HOUSEHOLD_ID"'","name":"rice","quantity":2,"unit":"bags","location":"pantry"}' \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/pantry_item"
+homehub food pantry add --name rice --quantity 2 --unit bags --location pantry
 
 # Food grocery list + item. First create the list, then add items to its id.
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -H "Prefer: return=representation" \
-  -d '{"household_id":"'"$HOUSEHOLD_ID"'","status":"draft"}' \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/grocery_list"
+homehub food groceries create --status draft
+homehub food groceries add-item --list-id "$LIST_ID" --name rice --quantity 2 --unit bags
 
 # Social person
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -d '{"household_id":"'"$HOUSEHOLD_ID"'","display_name":"Jane Garcia","relationship":"friend"}' \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/person"
+homehub social people add --name "Jane Garcia" --relationship friend
 ```
 
 For events/reminders, write to `app.event` with the right `segment` and

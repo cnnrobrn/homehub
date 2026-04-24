@@ -18,8 +18,7 @@ required_environment_variables:
 
 See `_shared`. Tables: `meal`, `pantry_item`, `grocery_list`,
 `grocery_list_item`. All `app` schema, all `household_id`-scoped.
-`grocery_list.external_url` stores provider checkout/deep-link URLs,
-including Instacart shopping-list links.
+Use the `homehub` CLI; it injects household scope.
 
 ## When to Use
 
@@ -34,25 +33,13 @@ including Instacart shopping-list links.
 
 ```bash
 # This week's meal plan
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/meal?household_id=eq.$HOUSEHOLD_ID&planned_for=gte.$(date -u +%F)&order=planned_for.asc,slot.asc"
+homehub food meals list --from "$(date -u +%F)"
 
 # Current pantry
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/pantry_item?household_id=eq.$HOUSEHOLD_ID&order=name.asc"
+homehub food pantry list
 
-# Recent grocery lists, including Instacart URL when present
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/grocery_list?household_id=eq.$HOUSEHOLD_ID&select=id,planned_for,status,provider,external_url,updated_at&order=updated_at.desc&limit=10"
+# Recent grocery lists and items
+homehub food groceries list --limit 10
 ```
 
 ## Write (direct — low-stakes)
@@ -63,33 +50,29 @@ pattern for meals uses the composite conflict target
 `(household_id, planned_for, slot)`:
 
 ```bash
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -H "Prefer: resolution=merge-duplicates" \
-  -d "{\"household_id\":\"$HOUSEHOLD_ID\",\"planned_for\":\"2026-04-25\",\"slot\":\"dinner\",\"title\":\"$DISH\"}" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/meal"
+homehub food meals add --planned-for 2026-04-25 --slot dinner --title "$DISH"
+homehub food pantry add --name eggs --quantity 12 --unit count --location fridge
+homehub food groceries create --status draft
+homehub food groceries add-item --list-id "$LIST_ID" --name milk --quantity 1 --unit gallon
 ```
 
 ## Write (via suggestion)
 
 Checkout-like grocery requests ("place the order", "send this to
-Instacart"), delivery commitments, and expensive bulk swaps: propose via
-`app.suggestion` with `segment='food'` and `kind='propose_grocery_order'`.
-Use `preview.provider='instacart'` when the user specifically asks for
-Instacart.
+Instacart"), delivery commitments, and expensive bulk swaps: create a
+pending suggestion:
 
 ```bash
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -d "{\"household_id\":\"$HOUSEHOLD_ID\",\"segment\":\"food\",\"kind\":\"propose_grocery_order\",\"title\":\"Send groceries to Instacart\",\"rationale\":\"Needs approval before checkout handoff.\",\"preview\":{\"planned_for\":\"2026-04-25\",\"provider\":\"instacart\",\"items\":[{\"name\":\"Milk\",\"quantity\":1,\"unit\":\"gallon\"}]},\"status\":\"pending\"}" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/suggestion"
+homehub suggestions create \
+  --segment food \
+  --kind propose_grocery_order \
+  --title "Review grocery order" \
+  --rationale "$WHY" \
+  --preview-json "$PREVIEW_JSON"
 ```
+
+Use `preview.provider='instacart'` when the user specifically asks for
+Instacart.
 
 The sandbox does **not** have the Instacart API key. Do not call
 Instacart directly and do not tell the user to connect Instacart in

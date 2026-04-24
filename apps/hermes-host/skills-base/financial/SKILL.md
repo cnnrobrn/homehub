@@ -16,7 +16,7 @@ required_environment_variables:
 
 # Financial
 
-See `_shared`. **Filter every query by `household_id`.**
+See `_shared`. Use the `homehub` CLI; it injects household scope.
 
 ## When to Use
 
@@ -30,11 +30,9 @@ See `_shared`. **Filter every query by `household_id`.**
 
 ```bash
 # Recent transactions (amount_cents is a signed bigint; divide by 100 for dollars)
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/transaction?household_id=eq.$HOUSEHOLD_ID&order=posted_at.desc&limit=100"
+homehub money transactions list --limit 100
+homehub money accounts list
+homehub money budgets list
 ```
 
 Tables: `transaction`, `account`, `budget`, `event`. All scoped on
@@ -47,31 +45,13 @@ They do not move money, cancel services, or contact a provider.
 
 ```bash
 # Account
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -d '{"household_id":"'"$HOUSEHOLD_ID"'","kind":"checking","name":"Main checking","balance_cents":0,"currency":"USD"}' \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/account"
+homehub money accounts add --kind checking --name "Main checking" --balance-cents 0 --currency USD
 
 # Budget
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -d '{"household_id":"'"$HOUSEHOLD_ID"'","name":"Groceries","category":"groceries","period":"monthly","amount_cents":80000,"currency":"USD"}' \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/budget"
+homehub money budgets add --name Groceries --category groceries --period monthly --amount-cents 80000
 
 # Bill or autopay reminder
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -d '{"household_id":"'"$HOUSEHOLD_ID"'","segment":"financial","kind":"bill_due","title":"Rent due","starts_at":"2026-05-01T09:00:00Z","metadata":{"amount_cents":250000}}' \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/event"
+homehub money bills add --title "Rent due" --starts-at 2026-05-01T09:00:00Z --amount-cents 250000
 ```
 
 Use `account.kind` values exactly:
@@ -84,23 +64,21 @@ values exactly: `weekly|monthly|yearly`.
 
 ```bash
 # Propose a transfer / cancellation / large purchase
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -d "{\"household_id\":\"$HOUSEHOLD_ID\",\"segment\":\"financial\",\"status\":\"pending\",\"proposed_action\":$JSON_PAYLOAD,\"rationale\":\"$WHY\"}" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/suggestion"
+homehub suggestions create \
+  --segment financial \
+  --kind propose_transfer \
+  --title "$TITLE" \
+  --rationale "$WHY" \
+  --preview-json "$PREVIEW_JSON"
 ```
 
-`proposed_action` shapes match the `propose*` tool schemas in HomeHub
-(`proposeCancelSubscription`, `proposeTransfer`). The family approves
-in `/suggestions`.
+Preview payloads should match the action executor's expected shape as
+closely as possible. The family approves in `/suggestions`.
 
 ## Pitfalls
 
 - `amount_cents` is signed bigint — negative = outflow. Don't convert
   signs.
 - `account.kind` is check-constrained; don't invent new kinds.
-- Subscriptions are derived, not a raw table — query `transaction` with
+- Subscriptions are derived, not a raw table. Query `transaction` with
   a recurring filter or read the materialized view if present.

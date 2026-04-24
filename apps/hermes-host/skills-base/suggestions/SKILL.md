@@ -16,8 +16,8 @@ required_environment_variables:
 
 # Suggestions
 
-See `_shared`. Tables: `app.suggestion`, `app.action`. Every `draft-write`
-agent action lands here as `status='pending'`.
+See `_shared`. Tables: `app.suggestion`, `app.action`. Every commitment
+proposal lands here as `status='pending'`. Use the `homehub` CLI.
 
 ## When to Use
 
@@ -29,32 +29,21 @@ agent action lands here as `status='pending'`.
 ## Read pending
 
 ```bash
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/suggestion?household_id=eq.$HOUSEHOLD_ID&status=eq.pending&expires_at=gt.$(date -u +%FT%TZ)&order=created_at.desc"
+homehub suggestions list --status pending
+homehub suggestions list --segment food --status pending
 ```
 
 ## Create a suggestion
 
 ```bash
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"household_id\":\"$HOUSEHOLD_ID\",
-    \"segment\":\"financial\",
-    \"status\":\"pending\",
-    \"proposed_action\":$JSON_PAYLOAD,
-    \"rationale\":\"$WHY\"
-  }" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/suggestion"
+homehub suggestions create \
+  --segment financial \
+  --kind propose_transfer \
+  --title "$TITLE" \
+  --rationale "$WHY" \
+  --preview-json "$PREVIEW_JSON"
 ```
 
-`proposed_action` shapes mirror the `propose*` tool schemas in HomeHub.
 For food checkout handoffs, prefer
 `kind='propose_grocery_order'`, `segment='food'`, and
 `preview.provider='instacart'` when the user asks to send groceries to
@@ -72,6 +61,6 @@ in /suggestions" — the UI triggers the action-executor queue.
 
 - Suggestions have a TTL (`expires_at`). Filter expired rows from the
   default inbox view.
-- `proposed_action` is validated by the action-executor against the
-  corresponding Zod schema at dispatch time — construct payloads that
-  match those schemas exactly, or the executor will reject.
+- `preview` is validated by downstream action code when executed.
+  Construct payloads that match the corresponding action shape as
+  closely as possible, or the executor may reject.

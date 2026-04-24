@@ -20,6 +20,10 @@ pantry, and grocery-list data, but Instacart checkout links are created
 by HomeHub server code with the app API key and opened by the user on
 Instacart.
 
+Skills should use the baked `homehub` CLI instead of hand-written
+PostgREST `curl` calls. The CLI injects the current household scope from
+the Hermes turn environment and prints JSON for the model to summarize.
+
 `onboarding/` is the first-run setup coordinator. It asks members what
 they want HomeHub to handle, uses the section skills to populate safe
 data, and may record progress in `household.settings.onboarding`.

@@ -4,11 +4,14 @@
  * Nango's Connect API has no `redirect_url` parameter, so a top-level
  * navigation to its OAuth URL strands the user on Nango's success page.
  * We sidestep that by opening the URL in a popup: the caller stays on
- * the originating page (e.g. `/settings/connections`), and when the
- * popup closes we `router.refresh()` so the row the webhook wrote shows
- * up. We also re-refresh a couple of times over the next few seconds to
- * cover the common case where the webhook lands a beat after the user
- * closes the window.
+ * the originating page (e.g. `/settings/connections`). We refresh the
+ * page after opening the popup so the row the webhook wrote shows up.
+ * Multiple refreshes cover the common case where the webhook lands a
+ * beat after OAuth completes.
+ *
+ * Browser COOP isolation can sever access to the popup once it reaches
+ * Google/Nango, so we never read `popup.closed`. Instead we refresh on
+ * a short timer sequence and when focus returns to this tab.
  *
  * If the popup is blocked (return value is `null`), we fall back to a
  * full-page navigation so the flow still completes; the user returns
@@ -34,8 +37,10 @@ interface Props {
 }
 
 const POPUP_FEATURES = 'width=640,height=720,menubar=no,toolbar=no,location=yes';
-const REFRESH_TIMES_MS = [0, 2_000, 5_000, 10_000] as const;
-const WATCH_TIMEOUT_MS = 10_500;
+const REFRESH_TIMES_MS = [1_000, 3_000, 7_000, 15_000, 30_000] as const;
+const RETURN_REFRESH_TIMES_MS = [0, 1_500, 4_000] as const;
+const WATCH_TIMEOUT_MS = 31_000;
+const RETURN_SETTLE_MS = 4_500;
 
 export function ConnectProviderButton({
   provider,
@@ -49,6 +54,7 @@ export function ConnectProviderButton({
   const [watching, setWatching] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const returnRefreshScheduled = useRef(false);
 
   useEffect(() => {
     return () => {
@@ -57,8 +63,63 @@ export function ConnectProviderButton({
     };
   }, []);
 
+  useEffect(() => {
+    if (!watching) return;
+
+    function scheduleReturnRefreshes() {
+      if (returnRefreshScheduled.current) return;
+      returnRefreshScheduled.current = true;
+      for (const delay of RETURN_REFRESH_TIMES_MS) {
+        timers.current.push(
+          setTimeout(() => {
+            router.refresh();
+          }, delay),
+        );
+      }
+      timers.current.push(
+        setTimeout(() => {
+          setWatching(false);
+        }, RETURN_SETTLE_MS),
+      );
+    }
+
+    function onVisibilityChange() {
+      if (!document.hidden) scheduleReturnRefreshes();
+    }
+
+    window.addEventListener('focus', scheduleReturnRefreshes);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    return () => {
+      window.removeEventListener('focus', scheduleReturnRefreshes);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+    };
+  }, [router, watching]);
+
+  function clearTimers() {
+    for (const t of timers.current) clearTimeout(t);
+    timers.current = [];
+  }
+
+  function scheduleBackgroundRefreshes() {
+    clearTimers();
+    for (const delay of REFRESH_TIMES_MS) {
+      timers.current.push(
+        setTimeout(() => {
+          router.refresh();
+        }, delay),
+      );
+    }
+    timers.current.push(
+      setTimeout(() => {
+        setWatching(false);
+      }, WATCH_TIMEOUT_MS),
+    );
+  }
+
   async function onClick() {
     setError(null);
+    clearTimers();
+    returnRefreshScheduled.current = false;
     setPending(true);
     try {
       const res = await startConnectSessionAction({ provider, categories: categories?.slice() });
@@ -68,8 +129,7 @@ export function ConnectProviderButton({
       }
       onStarted?.();
 
-      const popup = window.open(res.data.connectUrl, 'homehub-nango-connect', POPUP_FEATURES);
-      if (!popup) {
+      if (!window.open(res.data.connectUrl, 'homehub-nango-connect', POPUP_FEATURES)) {
         // Popup blocked — fall back to full-page nav. The user will have
         // to navigate back manually after OAuth; the connection itself
         // still persists via the Nango webhook.
@@ -78,26 +138,7 @@ export function ConnectProviderButton({
       }
 
       setWatching(true);
-      const interval = window.setInterval(() => {
-        if (popup.closed) {
-          window.clearInterval(interval);
-          // Re-fetch the current page's data a few times; the webhook
-          // that writes `sync.provider_connection` usually lands within
-          // 1–3s of OAuth completion but can take longer.
-          for (const delay of REFRESH_TIMES_MS) {
-            timers.current.push(
-              setTimeout(() => {
-                router.refresh();
-              }, delay),
-            );
-          }
-          timers.current.push(
-            setTimeout(() => {
-              setWatching(false);
-            }, WATCH_TIMEOUT_MS),
-          );
-        }
-      }, 500);
+      scheduleBackgroundRefreshes();
     } finally {
       setPending(false);
     }
@@ -106,7 +147,7 @@ export function ConnectProviderButton({
   return (
     <div className="flex flex-col gap-1">
       <Button variant={variant} disabled={pending || watching} onClick={onClick} type="button">
-        {watching ? 'Finishing connection…' : pending ? 'Opening…' : children}
+        {watching ? 'Checking connection…' : pending ? 'Opening…' : children}
       </Button>
       {error ? <span className="text-xs text-destructive">{error}</span> : null}
     </div>

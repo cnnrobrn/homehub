@@ -11,7 +11,7 @@
 | # | Decision | Chosen | Notes |
 |---|---|---|---|
 | 1 | Provisioning timing | **Pre-provision a GCS pointer on household create** | `createHouseholdAction` fires best-effort `POST /provision/:id` at the router. The router inserts a `hermes_state_bucket`/`hermes_state_prefix` pair on `app.household`. Self-heals on first chat turn if the pre-provision call failed. |
-| 2 | API keys | **HomeHub-operated key, BYOK optional** | Consumer ChatGPT/Claude subscriptions can't power third-party agent calls (OAuth flows are scoped to first-party surfaces only). HomeHub holds `HOMEHUB_OPENROUTER_API_KEY`. Families can override by editing `${HERMES_HOME}/.env` in their state bucket — the next turn rsyncs the edit back into place. Default model: **Kimi 2.6 (`moonshotai/kimi-k2.6`)**, overridable via `HERMES_DEFAULT_MODEL`. |
+| 2 | API keys | **HomeHub-operated key, BYOK optional** | Consumer ChatGPT/Claude subscriptions can't power third-party agent calls (OAuth flows are scoped to first-party surfaces only). HomeHub holds `HOMEHUB_OPENROUTER_API_KEY`. Families can override by editing `${HERMES_HOME}/.env` in their state bucket — the next turn rsyncs the edit back into place. Default model: **DeepSeek V4 Pro (`deepseek/deepseek-v4-pro`)**, overridable via `HERMES_DEFAULT_MODEL`. |
 | 3 | Skills | **Common baked in + per-family overlays** | Shared skills ship inside the `hermes-host` image under `/opt/hermes-skills-base/`; entrypoint rsyncs them to `${HERMES_HOME}/skills/base/` on every sandbox boot. Families write their own under `${HERMES_HOME}/skills/overlay/` — kept in their GCS prefix, round-tripped per turn. |
 | 4 | Integration shape | **Replace foreground loop with HTTP/SSE to a router** | `apps/web/src/app/api/chat/stream/route.ts` branches on `HOMEHUB_USE_HERMES_ROUTER`; router path is a thin SSE proxy. Legacy local-loop path preserved until rollout completes. |
 | 5 | Host platform | **Router on Railway (always-on) + E2B for sandboxes + Supabase Storage for state.** No GCP. | Railway: always-on service, no cold-start on the router. E2B: Firecracker microVMs spawned per chat turn via `e2b` npm SDK; template at `apps/hermes-host/template.ts`, tag `homehub-hermes`. Supabase Storage: per-household state tarball at `hermes-state/<household_id>/state.tar.gz`, RLS-scoped by JWT household_id claim (migration 0017). |
@@ -142,7 +142,7 @@ Trade-off accepted: per-turn network round-trip for state. For typical HomeHub f
 - `HOMEHUB_PROXY_SECRET`, `HOMEHUB_PROVISION_SECRET` — distinct, 32+ chars
 - `HERMES_SHARED_SECRET` — injected into every sandbox
 - `HOMEHUB_OPENROUTER_API_KEY` — HomeHub-held key; billing lives here
-- `HERMES_DEFAULT_MODEL` (default `moonshotai/kimi-k2.6`)
+- `HERMES_DEFAULT_MODEL` (default `deepseek/deepseek-v4-pro`)
 - `HERMES_TOOLSETS` (default `skills,terminal`)
 
 ### `apps/hermes-host` (inside each E2B sandbox, set by router)
@@ -151,7 +151,7 @@ Trade-off accepted: per-turn network round-trip for state. For typical HomeHub f
 - `HERMES_STORAGE_BUCKET`, `HERMES_STORAGE_PATH` — Supabase Storage pointers
 - `HERMES_SHARED_SECRET`
 - `OPENROUTER_API_KEY` (defaults to HomeHub-operated; family can override by editing their `.env` inside the state tarball)
-- `HERMES_DEFAULT_MODEL` (defaults to `moonshotai/kimi-k2.6`)
+- `HERMES_DEFAULT_MODEL` (defaults to `deepseek/deepseek-v4-pro`)
 - `HERMES_TOOLSETS` (defaults to `skills,terminal`)
 - `HOMEHUB_SUPABASE_URL`, `HOMEHUB_SUPABASE_ANON_KEY`
 - `HOMEHUB_SUPABASE_JWT` — household-scoped short-lived JWT (authorizes Storage reads/writes via RLS)

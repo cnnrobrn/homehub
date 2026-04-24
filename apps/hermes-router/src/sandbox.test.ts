@@ -20,7 +20,7 @@ const env = {
   HERMES_SANDBOX_TIMEOUT_SECONDS: 60,
   HERMES_SHARED_SECRET: 'shared',
   HOMEHUB_OPENROUTER_API_KEY: 'openrouter-key',
-  HERMES_DEFAULT_MODEL: 'moonshotai/kimi-k2.6',
+  HERMES_DEFAULT_MODEL: 'deepseek/deepseek-v4-pro',
   HERMES_TOOLSETS: 'skills,terminal',
   HOMEHUB_SUPABASE_URL: 'https://supabase.test',
   HOMEHUB_SUPABASE_ANON_KEY: 'anon-key',
@@ -70,6 +70,19 @@ describe('sandbox env assembly', () => {
     expect(envs.HERMES_TOOLSETS).toBe('skills,terminal');
     expect(envs.HOMEHUB_CONVERSATION_HISTORY).toContain('build me a budget');
     expect(envs.HOMEHUB_CONVERSATION_HISTORY).toContain('monthly take-home pay');
+  });
+
+  it('forwards HOMEHUB_TRIPADVISOR_API_KEY as TRIPADVISOR_API_KEY when set', () => {
+    const envs = buildSandboxTurnEnvs(
+      { ...env, HOMEHUB_TRIPADVISOR_API_KEY: 'ta-key' } as RouterEnv,
+      turn,
+    );
+    expect(envs.TRIPADVISOR_API_KEY).toBe('ta-key');
+  });
+
+  it('omits TRIPADVISOR_API_KEY when the router env is not configured', () => {
+    const envs = buildSandboxTurnEnvs(env, turn);
+    expect(envs.TRIPADVISOR_API_KEY).toBeUndefined();
   });
 
   it('passes the full per-turn env at sandbox boot and command execution', async () => {

@@ -19,6 +19,7 @@ import { useRouter } from 'next/navigation';
 import * as React from 'react';
 
 import { Composer } from './Composer';
+import { renderRichBody } from './richText';
 import { StreamingMessage, type StreamingMessageOutcome } from './StreamingMessage';
 import { ToolCard, type ToolCallDisplay } from './ToolCard';
 
@@ -69,33 +70,7 @@ function formatTurnTimestamp(iso: string, nowIso: string, timeZone: string): str
   return `${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone }).toLowerCase()} · ${time}`;
 }
 
-function renderTurnBody(body: string): React.ReactElement {
-  // Lightweight rendering: split on [node:uuid] / [episode:uuid] so
-  // citations can be styled without a full markdown renderer.
-  const parts = body.split(/(\[(?:node|episode):[0-9a-f-]{36}\])/i);
-  return (
-    <span>
-      {parts.map((part, i) => {
-        const m = /^\[(node|episode):([0-9a-f-]{36})\]$/i.exec(part);
-        if (m) {
-          const type = m[1]?.toLowerCase() as 'node' | 'episode';
-          const id = m[2]!;
-          const label = id.slice(0, 8);
-          return (
-            <span
-              key={`${i}-${id}`}
-              className="mx-0.5 inline-flex items-center rounded-[3px] border border-border bg-surface-soft px-1 font-mono text-[10.5px] text-fg-muted"
-            >
-              <span className="mr-1 text-[9px] uppercase tracking-[0.06em]">{type}</span>
-              {label}
-            </span>
-          );
-        }
-        return <React.Fragment key={i}>{part}</React.Fragment>;
-      })}
-    </span>
-  );
-}
+const renderTurnBody = renderRichBody;
 
 function isMemberTurn(turn: ConversationTurnDisplayRow): boolean {
   return turn.role !== 'assistant';
@@ -271,11 +246,7 @@ export function ChatThread({
                   />
                 ) : null}
                 {isAssistant ? (
-                  <BotTurn
-                    body={renderTurnBody(turn.body_md)}
-                    model={turn.model}
-                    toolCalls={toolCalls}
-                  />
+                  <BotTurn body={renderTurnBody(turn.body_md)} toolCalls={toolCalls} />
                 ) : (
                   <UserTurn body={renderTurnBody(turn.body_md)} />
                 )}
@@ -355,15 +326,7 @@ function UserTurn({ body }: { body: React.ReactElement }) {
 
 /* ── Assistant turn (left gutter + avatar) ────────────────────── */
 
-function BotTurn({
-  body,
-  toolCalls,
-  model,
-}: {
-  body: React.ReactElement;
-  toolCalls: ToolCallDisplay[];
-  model: string | null;
-}) {
+function BotTurn({ body, toolCalls }: { body: React.ReactElement; toolCalls: ToolCallDisplay[] }) {
   return (
     <div className="flex items-start gap-2.5">
       <div className="mt-0.5 flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full border border-border bg-surface text-fg">
@@ -372,11 +335,6 @@ function BotTurn({
       <div className="min-w-0 flex-1">
         {toolCalls.length > 0 ? toolCalls.map((c) => <ToolCard key={c.id} call={c} />) : null}
         <div className="whitespace-pre-wrap text-[14.5px] leading-[1.6] text-fg">{body}</div>
-        {model ? (
-          <div className="mt-1.5 font-mono text-[10.5px] tracking-[0.04em] text-fg-muted">
-            via {model}
-          </div>
-        ) : null}
       </div>
     </div>
   );

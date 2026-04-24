@@ -20,7 +20,8 @@ required_environment_variables:
 
 # Calendar
 
-See `_shared` for auth/scoping rules. **Always filter by `household_id`.**
+See `_shared` for auth/scoping rules. Use the `homehub` CLI; it injects
+household scope.
 
 ## When to Use
 
@@ -32,11 +33,10 @@ See `_shared` for auth/scoping rules. **Always filter by `household_id`.**
 
 ```bash
 # Next 7 days
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/event?household_id=eq.$HOUSEHOLD_ID&starts_at=gte.$(date -u +%FT%TZ)&order=starts_at.asc&limit=50"
+homehub calendar list --from "$(date -u +%FT%TZ)" --limit 50
+
+# Segment-specific
+homehub calendar list --segment food --from 2026-04-24T00:00:00Z --to 2026-05-01T00:00:00Z
 ```
 
 Key columns: `id`, `title`, `starts_at`, `ends_at`, `source`, `notes`.
@@ -45,23 +45,20 @@ Source is one of `manual`, `gcal`, `financial`, `food`, `fun`, `social`.
 ## Write
 
 ```bash
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: app" \
-  -H "Content-Type: application/json" \
-  -H "Prefer: return=representation" \
-  -d "{\"household_id\":\"$HOUSEHOLD_ID\",\"title\":\"$TITLE\",\"starts_at\":\"$START_ISO\",\"ends_at\":\"$END_ISO\",\"source\":\"manual\"}" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/event"
+homehub calendar add \
+  --title "$TITLE" \
+  --starts-at "$START_ISO" \
+  --ends-at "$END_ISO" \
+  --segment social \
+  --kind appointment
 ```
 
 ## Pitfalls
 
-- `source` is check-constrained. Don't invent values — stick to the
-  enum above.
-- Events with `source != 'manual'` are produced by other skills/workers.
-  Don't edit them directly; update the origin (financial transaction,
-  meal, person) instead.
+- `segment` is check-constrained. Use
+  `financial|food|fun|social|system`.
+- Provider/imported events are produced by workers. Don't edit them
+  directly; update the origin object or create a suggestion.
 - Timezones: `starts_at`/`ends_at` are `timestamptz`. Send UTC ISO.
 
 ## Suggesting (not executing)

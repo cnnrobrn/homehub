@@ -30,7 +30,9 @@
  *       Local dev: leave both unset → the route rejects all requests.
  *
  *   POST /webhooks/nango
- *     - Nango signs the body with `X-Nango-Signature` (HMAC-SHA256 hex).
+ *     - Nango signs the body with either `X-Nango-Hmac-Sha256`
+ *       (HMAC-SHA256 over the raw body) or legacy `X-Nango-Signature`
+ *       (`sha256(secret + JSON.stringify(payload))`).
  *     - `connection.created` with `provider=google-calendar`:
  *         1. Upsert `sync.provider_connection`.
  *         2. Call `gcal.watch()`; store channel in `sync.cursor`.
@@ -59,7 +61,7 @@ import { type FinancialProvider } from '@homehub/providers-financial';
 import { type Logger, type QueueClient, queueNames } from '@homehub/worker-runtime';
 import { type SupabaseClient } from '@supabase/supabase-js';
 
-import { verifyHmac } from './hmac.js';
+import { verifyHmac, verifyNangoLegacySignature } from './hmac.js';
 
 export const GCAL_CHANNEL_KIND = 'gcal.channel';
 export const GCAL_SYNC_TOKEN_KIND = 'gcal.sync_token';
@@ -363,24 +365,14 @@ export async function handleNangoWebhook(
   deps: WebhookIngestDeps,
   args: HandleNangoArgs,
 ): Promise<WebhookResult> {
-  const signature = headerAsString(args.headers['x-nango-signature']);
-  if (!signature) {
-    return { status: 400, body: { error: 'missing x-nango-signature header' } };
+  const hmacSignature = headerAsString(args.headers['x-nango-hmac-sha256']);
+  const legacySignature = headerAsString(args.headers['x-nango-signature']);
+  if (!hmacSignature && !legacySignature) {
+    return { status: 400, body: { error: 'missing nango signature header' } };
   }
   if (!deps.env.NANGO_WEBHOOK_SECRET) {
     deps.log.error('NANGO_WEBHOOK_SECRET not configured; rejecting webhook');
     return { status: 500, body: { error: 'webhook secret not configured' } };
-  }
-
-  const ok = verifyHmac({
-    rawBody: args.rawBody,
-    signature,
-    secret: deps.env.NANGO_WEBHOOK_SECRET,
-    encoding: 'hex',
-  });
-  if (!ok) {
-    deps.log.warn('nango webhook signature mismatch');
-    return { status: 401, body: { error: 'invalid signature' } };
   }
 
   let payload: {
@@ -400,6 +392,23 @@ export async function handleNangoWebhook(
       error: err instanceof Error ? err.message : String(err),
     });
     return { status: 400, body: { error: 'invalid json' } };
+  }
+
+  const signatureOk = hmacSignature
+    ? verifyHmac({
+        rawBody: args.rawBody,
+        signature: hmacSignature,
+        secret: deps.env.NANGO_WEBHOOK_SECRET,
+        encoding: 'hex',
+      })
+    : verifyNangoLegacySignature({
+        payload,
+        signature: legacySignature as string,
+        secret: deps.env.NANGO_WEBHOOK_SECRET,
+      });
+  if (!signatureOk) {
+    deps.log.warn('nango webhook signature mismatch');
+    return { status: 401, body: { error: 'invalid signature' } };
   }
 
   const eventType = (payload.type ?? payload.operation ?? '').toLowerCase();

@@ -38,8 +38,8 @@ import { type ActionResult, ok, toErr } from './_envelope';
 import { getHouseholdContext } from '@/lib/auth/context';
 import { nextCookieAdapter } from '@/lib/auth/cookies';
 import { authEnv } from '@/lib/auth/env';
-import { serverEnv } from '@/lib/env';
 import { NangoNotConfiguredError, createWebNangoClient } from '@/lib/nango/client';
+
 
 export interface ConnectionSummary {
   id: string;
@@ -56,14 +56,24 @@ const startConnectSchema = z.object({
   categories: z.array(z.string()).optional(),
 });
 
+function parseConnectLink(raw: string | undefined): URL | null {
+  if (!raw) return null;
+  try {
+    const url = new URL(raw);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Mint a Nango Connect session and return its URL so a client island can
  * open it in a popup. We avoid full-page navigation to Nango because the
  * Connect API has no post-OAuth redirect-back parameter — the user would
  * be stranded on Nango's success page with no way home. Opening the URL
- * in a popup keeps the caller on their originating page; when the popup
- * closes we `router.refresh()` and the `sync.provider_connection` row
- * written by the webhook shows up in the UI.
+ * in a popup keeps the caller on their originating page while the
+ * client refreshes until the webhook-written `sync.provider_connection`
+ * row shows up in the UI.
  */
 export async function startConnectSessionAction(
   input: z.input<typeof startConnectSchema>,
@@ -112,9 +122,16 @@ export async function startConnectSessionAction(
       tags,
     });
 
-    const { NANGO_HOST } = serverEnv();
-    const connectUrl = new URL(`/oauth/connect/${encodeURIComponent(parsed.provider)}`, NANGO_HOST);
-    connectUrl.searchParams.set('connect_session_token', session.token);
+    const connectUrl = parseConnectLink(session.connectLink);
+    if (!connectUrl) {
+      return {
+        ok: false,
+        error: {
+          code: 'NANGO_CONNECT_LINK_INVALID',
+          message: 'Nango did not return a valid connect_link',
+        },
+      };
+    }
     return ok({ connectUrl: connectUrl.toString() });
   } catch (err) {
     if (err instanceof NangoNotConfiguredError) {

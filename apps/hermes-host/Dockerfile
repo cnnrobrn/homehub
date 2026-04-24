@@ -39,8 +39,9 @@ RUN git clone --depth 1 --branch "${HERMES_REF}" \
 # Paths relative to the build context (apps/hermes-host/).
 COPY skills-base /opt/hermes-skills-base
 COPY server /opt/hermes-host/server
+COPY bin/homehub /usr/local/bin/homehub
 COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
+RUN chmod +x /entrypoint.sh /usr/local/bin/homehub
 
 # No ENTRYPOINT: E2B boots a long-running shell by default, and the
 # router invokes /entrypoint.sh per-turn via `commands.run`. A baked-in

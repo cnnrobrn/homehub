@@ -120,10 +120,9 @@ function ensureOk<T>(
 }
 
 export function createQueueClient(supabase: ServiceSupabaseClient): QueueClient {
-  // pgmq lives in the `pgmq_public` schema in Supabase. That schema is
-  // not part of the generated `Database` type (it's operational, not
-  // application data), so we widen to `unknown` and call the RPCs by
-  // name. The underlying HTTP layer is the same.
+  // pgmq itself lives in the unexposed `pgmq` schema. Migration 0019
+  // exposes narrow SECURITY DEFINER wrappers in `sync`, which is already
+  // available to service-role PostgREST requests.
   const rpc = (
     supabase as unknown as {
       schema: (name: string) => {
@@ -133,13 +132,13 @@ export function createQueueClient(supabase: ServiceSupabaseClient): QueueClient 
         ) => Promise<{ data: unknown; error: PostgrestError | null }>;
       };
     }
-  ).schema('pgmq_public');
+  ).schema('sync');
 
   return {
     async send(queueName, payload, options) {
       // Validate envelope before writing — producer-side schema guard.
       const parsed = messageEnvelopeSchema.parse(payload);
-      const res = await rpc.rpc('send', {
+      const res = await rpc.rpc('pgmq_send', {
         queue_name: queueName,
         message: parsed,
         sleep_seconds: options?.delaySeconds ?? 0,
@@ -153,7 +152,7 @@ export function createQueueClient(supabase: ServiceSupabaseClient): QueueClient 
 
     async sendBatch(queueName, payloads, options) {
       const parsed = payloads.map((p) => messageEnvelopeSchema.parse(p));
-      const res = await rpc.rpc('send_batch', {
+      const res = await rpc.rpc('pgmq_send_batch', {
         queue_name: queueName,
         messages: parsed,
         sleep_seconds: options?.delaySeconds ?? 0,
@@ -165,7 +164,7 @@ export function createQueueClient(supabase: ServiceSupabaseClient): QueueClient 
     async claim(queueName, options) {
       const vt = options?.visibilityTimeoutSec ?? 60;
       const quantity = options?.quantity ?? 1;
-      const res = await rpc.rpc('read', {
+      const res = await rpc.rpc('pgmq_read', {
         queue_name: queueName,
         sleep_seconds: vt,
         n: quantity,
@@ -188,7 +187,7 @@ export function createQueueClient(supabase: ServiceSupabaseClient): QueueClient 
     },
 
     async ack(queueName, messageId) {
-      const res = await rpc.rpc('archive', {
+      const res = await rpc.rpc('pgmq_archive', {
         queue_name: queueName,
         msg_id: messageId,
       });
@@ -197,7 +196,7 @@ export function createQueueClient(supabase: ServiceSupabaseClient): QueueClient 
 
     async nack(queueName, messageId, options) {
       // pgmq's visibility bump is `set_vt` in seconds from now.
-      const res = await rpc.rpc('set_vt', {
+      const res = await rpc.rpc('pgmq_set_vt', {
         queue_name: queueName,
         msg_id: messageId,
         vt_offset: options?.retryDelaySec ?? 30,
@@ -237,7 +236,7 @@ export function createQueueClient(supabase: ServiceSupabaseClient): QueueClient 
     },
 
     async depth(queueName) {
-      const res = await rpc.rpc('metrics', { queue_name: queueName });
+      const res = await rpc.rpc('pgmq_metrics', { queue_name: queueName });
       const data = ensureOk(queueName, res, 'metrics') as unknown;
       const row = Array.isArray(data) ? data[0] : data;
       const obj = (row ?? {}) as Record<string, unknown>;
@@ -246,7 +245,7 @@ export function createQueueClient(supabase: ServiceSupabaseClient): QueueClient 
     },
 
     async ageOfOldestSec(queueName) {
-      const res = await rpc.rpc('metrics', { queue_name: queueName });
+      const res = await rpc.rpc('pgmq_metrics', { queue_name: queueName });
       const data = ensureOk(queueName, res, 'metrics') as unknown;
       const row = Array.isArray(data) ? data[0] : data;
       const obj = (row ?? {}) as Record<string, unknown>;

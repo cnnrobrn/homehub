@@ -8,7 +8,7 @@
  *   4. HMAC helper — basic correctness.
  */
 
-import { createHmac } from 'node:crypto';
+import { createHash, createHmac } from 'node:crypto';
 
 import { type CalendarProvider } from '@homehub/providers-calendar';
 import { type EmailProvider } from '@homehub/providers-email';
@@ -28,7 +28,7 @@ import {
   handleNangoWebhook,
   type WebhookIngestDeps,
 } from './handler.js';
-import { verifyHmac } from './hmac.js';
+import { verifyHmac, verifyNangoLegacySignature } from './hmac.js';
 
 function makeLog(): Logger {
   const noop = () => {};
@@ -263,6 +263,27 @@ describe('verifyHmac', () => {
   });
 });
 
+describe('verifyNangoLegacySignature', () => {
+  it('returns true for Nango 0.70 legacy signatures', () => {
+    const payload = { type: 'connection.created', connectionId: 'nango-1' };
+    const secret = 'secret';
+    const signature = createHash('sha256')
+      .update(`${secret}${JSON.stringify(payload)}`)
+      .digest('hex');
+    expect(verifyNangoLegacySignature({ payload, signature, secret })).toBe(true);
+  });
+
+  it('returns false on mismatch', () => {
+    expect(
+      verifyNangoLegacySignature({
+        payload: { type: 'connection.created' },
+        signature: 'deadbeef',
+        secret: 'secret',
+      }),
+    ).toBe(false);
+  });
+});
+
 // --- /webhooks/google-calendar -----------------------------------------
 
 describe('handleGoogleCalendarWebhook', () => {
@@ -475,6 +496,14 @@ describe('handleNangoWebhook — gcal', () => {
   function signed(body: unknown): { rawBody: Buffer; headers: Record<string, string> } {
     const rawBody = Buffer.from(JSON.stringify(body));
     const signature = createHmac('sha256', SECRET).update(rawBody).digest('hex');
+    return { rawBody, headers: { 'x-nango-hmac-sha256': signature } };
+  }
+
+  function legacySigned(body: unknown): { rawBody: Buffer; headers: Record<string, string> } {
+    const rawBody = Buffer.from(JSON.stringify(body));
+    const signature = createHash('sha256')
+      .update(`${SECRET}${JSON.stringify(body)}`)
+      .digest('hex');
     return { rawBody, headers: { 'x-nango-signature': signature } };
   }
 
@@ -494,7 +523,7 @@ describe('handleNangoWebhook — gcal', () => {
     const res = await handleNangoWebhook(
       { ...baseDeps(), supabase: supabase as never, queues, env: { NANGO_WEBHOOK_SECRET: SECRET } },
       {
-        headers: { 'x-nango-signature': 'wrong' },
+        headers: { 'x-nango-hmac-sha256': 'wrong' },
         rawBody: Buffer.from('{}'),
       },
     );
@@ -538,6 +567,34 @@ describe('handleNangoWebhook — gcal', () => {
     expect(cursorUpserts[0]?.kind).toBe(GCAL_CHANNEL_KIND);
     expect(sends[0]?.queue).toBe(queueNames.syncFull(GCAL_PROVIDER));
   });
+
+  it('accepts the legacy X-Nango-Signature format', async () => {
+    const payload = {
+      type: 'connection.created',
+      providerConfigKey: 'google-calendar',
+      connectionId: 'nango-legacy',
+      endUser: { tags: { household_id: HOUSEHOLD_ID } },
+    };
+    const { rawBody, headers } = legacySigned(payload);
+    const { supabase } = makeSupabase({
+      upsertConnectionReturns: {
+        id: CONNECTION_ID,
+        household_id: HOUSEHOLD_ID,
+        nango_connection_id: 'nango-legacy',
+      },
+    });
+    const { queues } = makeQueues();
+    const res = await handleNangoWebhook(
+      {
+        ...baseDeps(),
+        supabase: supabase as never,
+        queues,
+        env: { NANGO_WEBHOOK_SECRET: SECRET },
+      },
+      { headers, rawBody },
+    );
+    expect(res.status).toBe(204);
+  });
 });
 
 describe('handleNangoWebhook — gmail', () => {
@@ -546,7 +603,7 @@ describe('handleNangoWebhook — gmail', () => {
   function signed(body: unknown): { rawBody: Buffer; headers: Record<string, string> } {
     const rawBody = Buffer.from(JSON.stringify(body));
     const signature = createHmac('sha256', SECRET).update(rawBody).digest('hex');
-    return { rawBody, headers: { 'x-nango-signature': signature } };
+    return { rawBody, headers: { 'x-nango-hmac-sha256': signature } };
   }
 
   it('on connection.created: upserts with email_categories metadata, watches, enqueues full', async () => {
@@ -709,7 +766,7 @@ describe('handleNangoWebhook — ynab', () => {
   function signed(body: unknown): { rawBody: Buffer; headers: Record<string, string> } {
     const rawBody = Buffer.from(JSON.stringify(body));
     const signature = createHmac('sha256', SECRET).update(rawBody).digest('hex');
-    return { rawBody, headers: { 'x-nango-signature': signature } };
+    return { rawBody, headers: { 'x-nango-hmac-sha256': signature } };
   }
 
   it('on connection.created: upserts connection and enqueues sync_full:ynab', async () => {
@@ -815,7 +872,7 @@ describe('handleNangoWebhook — instacart', () => {
   function signed(body: unknown): { rawBody: Buffer; headers: Record<string, string> } {
     const rawBody = Buffer.from(JSON.stringify(body));
     const signature = createHmac('sha256', SECRET).update(rawBody).digest('hex');
-    return { rawBody, headers: { 'x-nango-signature': signature } };
+    return { rawBody, headers: { 'x-nango-hmac-sha256': signature } };
   }
 
   it('on connection.created: upserts connection and enqueues sync_full:instacart', async () => {

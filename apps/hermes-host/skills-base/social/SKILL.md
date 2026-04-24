@@ -19,6 +19,7 @@ required_environment_variables:
 See `_shared`. Tables: `app.person` (canonical), `mem.node` with
 `node_type='person'` (graph identity). Birthdays project into
 `app.event` via the social-materializer worker.
+Use the `homehub` CLI.
 
 ## When to Use
 
@@ -31,21 +32,27 @@ See `_shared`. Tables: `app.person` (canonical), `mem.node` with
 
 ```bash
 # People directory
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/person?household_id=eq.$HOUSEHOLD_ID&order=display_name.asc"
+homehub social people list
+homehub social people list --query Jane
+homehub memory nodes search --type person --query Jane
 ```
 
 ## Write
 
 - **Prefer the memory skill** for touchpoints: a "saw aunt Jane today"
-  is a `mem.fact` with a `person` node reference, not a raw `app.person`
-  edit.
+  is a `mem.fact_candidate` with a `person` node reference, not a raw
+  `app.person` edit. Use `homehub memory fact-candidates add`.
 - Direct `app.person` edits (correcting a name, adding a birthday) are
   fine, but note the materializer needs to refresh derived rows — flag
   when the change won't be visible immediately.
+
+```bash
+homehub social people add --name "Jane Garcia" --relationship friend
+homehub memory fact-candidates add \
+  --subject-node-id "$PERSON_NODE_ID" \
+  --predicate last_seen \
+  --object-text "Visited on 2026-04-24"
+```
 
 ## Pitfalls
 

@@ -20,7 +20,8 @@ required_environment_variables:
 
 # Settings
 
-See `_shared` for auth/scoping rules. **Read-only.** All mutations must go through `/settings` UI.
+See `_shared` for auth/scoping rules. Use the `homehub` CLI.
+**Read-only.** All mutations must go through `/settings` UI.
 
 ## When to Use
 
@@ -31,11 +32,7 @@ See `_shared` for auth/scoping rules. **Read-only.** All mutations must go throu
 ## Read: Household
 
 ```bash
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/household?household_id=eq.$HOUSEHOLD_ID"
+homehub settings household
 ```
 
 Key columns: `id`, `name`, `timezone`, `settings` (jsonb).
@@ -43,11 +40,7 @@ Key columns: `id`, `name`, `timezone`, `settings` (jsonb).
 ## Read: Members
 
 ```bash
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/member?household_id=eq.$HOUSEHOLD_ID&order=created_at.asc"
+homehub settings members
 ```
 
 Key columns: `id`, `display_name`, `role`, `invited_at`, `joined_at`.
@@ -56,11 +49,7 @@ Role is check-constrained enum: `owner`, `admin`, `editor`, `viewer`.
 ## Read: Segment Grants
 
 ```bash
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/member_segment_grant?household_id=eq.$HOUSEHOLD_ID"
+homehub settings grants
 ```
 
 Key columns: `member_id`, `segment`, `granted_at`.
@@ -68,11 +57,7 @@ Key columns: `member_id`, `segment`, `granted_at`.
 ## Read: Provider Connections
 
 ```bash
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: sync" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/provider_connection?household_id=eq.$HOUSEHOLD_ID&order=created_at.desc"
+homehub settings connections
 ```
 
 Key columns: `id`, `provider`, `status`, `last_sync_at`, `error_message`.

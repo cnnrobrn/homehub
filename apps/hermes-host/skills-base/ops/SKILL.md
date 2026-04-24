@@ -20,7 +20,9 @@ required_environment_variables:
 
 # Ops
 
-See `_shared` for auth/scoping rules. **Owner-gated; read-only.** Do not execute DLQ replays or mutations.
+See `_shared` for auth/scoping rules. **Owner-gated; read-only.** Use
+the `homehub` CLI for exposed owner-safe reads. Do not execute DLQ
+replays or mutations.
 
 ## When to Use
 
@@ -30,27 +32,15 @@ See `_shared` for auth/scoping rules. **Owner-gated; read-only.** Do not execute
 
 ## Read: Worker Heartbeats
 
-```bash
-# Stale workers (last_seen_at > 5 min ago)
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: sync" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/worker_heartbeat?household_id=eq.$HOUSEHOLD_ID&last_seen_at=lt.$(date -u -d '5 minutes ago' +%FT%TZ)&order=last_seen_at.desc&limit=50"
-```
+No sandbox CLI command yet. Worker heartbeat rows are service-role only;
+send the user to `/ops/health` for the owner dashboard.
 
 Key columns: `worker_id`, `last_seen_at`, `status`, `queue_depth`.
 
 ## Read: Dead Letter Queue
 
-```bash
-# Recent DLQ entries
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: sync" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/dead_letter?household_id=eq.$HOUSEHOLD_ID&order=created_at.desc&limit=50"
-```
+No sandbox CLI command yet. DLQ rows are service-role only; send the
+user to `/ops/dlq` for replay and inspection.
 
 Key columns: `id`, `event_type`, `error_reason`, `created_at`, `payload`.
 
@@ -58,11 +48,7 @@ Key columns: `id`, `event_type`, `error_reason`, `created_at`, `payload`.
 
 ```bash
 # Daily model calls
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/model_calls?household_id=eq.$HOUSEHOLD_ID&order=created_at.desc&limit=100"
+homehub ops model-calls --limit 100
 ```
 
 Key columns: `id`, `model`, `created_at`, `input_tokens`, `output_tokens`, `cost`.

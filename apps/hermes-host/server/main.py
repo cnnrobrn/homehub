@@ -128,7 +128,7 @@ async def _stream_turn(body: ChatTurnRequest) -> AsyncIterator[dict]:
     env["HOMEHUB_CONVERSATION_HISTORY"] = json.dumps(history)
     contextual_message = build_contextual_message(body.message, history)
 
-    default_model = os.environ.get("HERMES_DEFAULT_MODEL", "moonshotai/kimi-k2.6")
+    default_model = os.environ.get("HERMES_DEFAULT_MODEL", "deepseek/deepseek-v4-pro")
     toolsets = os.environ.get("HERMES_TOOLSETS", "skills,terminal")
     max_turns = os.environ.get("HERMES_MAX_TURNS", "10")
     override = os.environ.get("HERMES_CLI_ARGS")

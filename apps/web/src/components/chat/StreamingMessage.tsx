@@ -10,7 +10,7 @@
  *
  * Visual language matches the static bot turn rendered in
  * `ChatThread` — HomeHubMark avatar in a ring, prose body to the
- * right, mono meta underneath. Streaming and event handling remain
+ * right. Streaming and event handling remain
  * identical; only the JSX layer was restyled.
  *
  * A11y: token chunks don't announce individually. The container is
@@ -22,6 +22,7 @@
 
 import * as React from 'react';
 
+import { renderRichBody } from './richText';
 import { SuggestionCard } from './SuggestionCard';
 import { ToolCard, type ToolCallDisplay } from './ToolCard';
 
@@ -263,7 +264,13 @@ export function StreamingMessage({ events, onComplete, onUpdate }: StreamingMess
           <SuggestionCard key={s.callId} {...s} />
         ))}
         <div className="whitespace-pre-wrap text-[14.5px] leading-[1.6] text-fg">
-          {text || (done ? <span className="text-fg-muted">(no response)</span> : '')}
+          {text ? (
+            renderRichBody(text)
+          ) : done ? (
+            <span className="text-fg-muted">(no response)</span>
+          ) : (
+            ''
+          )}
         </div>
       </div>
     </div>

@@ -266,7 +266,7 @@ describe('startConnectSessionAction', () => {
     });
     const createConnectSession = vi.fn().mockResolvedValue({
       token: 'tok_abc',
-      connectLink: 'https://nango.test/connect?token=abc',
+      connectLink: 'https://connect.nango.test/session/session-token',
       expiresAt: '2026-04-23T01:00:00Z',
     });
     mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
@@ -274,9 +274,7 @@ describe('startConnectSessionAction', () => {
     const res = await startConnectSessionAction({ provider: 'google-calendar' });
     expect(res.ok).toBe(true);
     if (res.ok) {
-      expect(res.data.connectUrl).toBe(
-        'https://nango.test/oauth/connect/google-calendar?connect_session_token=tok_abc',
-      );
+      expect(res.data.connectUrl).toBe('https://connect.nango.test/session/session-token');
     }
     expect(createConnectSession).toHaveBeenCalledTimes(1);
     const call = createConnectSession.mock.calls[0]?.[0];
@@ -308,7 +306,7 @@ describe('startConnectSessionAction', () => {
     });
     const createConnectSession = vi.fn().mockResolvedValue({
       token: 't',
-      connectLink: 'x',
+      connectLink: 'https://connect.nango.test/session/gmail',
       expiresAt: 'x',
     });
     mocks.createWebNangoClient.mockReturnValue({ createConnectSession });
@@ -321,6 +319,28 @@ describe('startConnectSessionAction', () => {
     const call = createConnectSession.mock.calls[0]?.[0];
     expect(call?.tags?.email_categories).toBe('receipt,shipping');
     expect(call?.tags?.email_address).toBe(USER.email);
+  });
+
+  it('rejects an invalid Nango connect_link', async () => {
+    mocks.getUser.mockResolvedValue(USER);
+    mocks.getHouseholdContext.mockResolvedValue({
+      household: { id: HOUSEHOLD_ID },
+      member: { id: MEMBER_ID, role: 'owner' },
+      grants: [],
+    });
+    mocks.createWebNangoClient.mockReturnValue({
+      createConnectSession: vi.fn().mockResolvedValue({
+        token: 't',
+        connectLink: '',
+        expiresAt: 'x',
+      }),
+    });
+
+    const res = await startConnectSessionAction({ provider: 'google-calendar' });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.message).toContain('connect_link');
+    }
   });
 
   it('rejects unauthenticated callers', async () => {

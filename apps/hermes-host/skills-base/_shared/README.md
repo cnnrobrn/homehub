@@ -26,17 +26,35 @@ Authorization: Bearer $HOMEHUB_SUPABASE_JWT
 The `apikey` identifies the project; the `Authorization` bearer is the
 household-scoped JWT. RLS takes over from there.
 
-## Reading with curl (PostgREST)
+## Primary Tool Surface
+
+Use the `homehub` CLI for HomeHub data. It injects `HOUSEHOLD_ID`,
+uses the short-lived Hermes JWT, and prints JSON.
 
 ```bash
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/event?household_id=eq.$HOUSEHOLD_ID&order=starts_at.asc&limit=50"
+homehub calendar list --from "$(date -u +%FT%TZ)" --limit 50
+homehub food pantry list
+homehub food groceries create --status draft
+homehub suggestions create \
+  --segment food \
+  --kind propose_grocery_order \
+  --title "Review grocery order" \
+  --rationale "Checkout requires approval." \
+  --preview-json '{"provider":"instacart"}'
 ```
 
-## Writing with curl
+Useful discovery:
+
+```bash
+homehub --help
+homehub food --help
+homehub food pantry --help
+```
+
+## Raw PostgREST Fallback
+
+Avoid raw `curl` for normal work. Use it only when the CLI is missing a
+needed surface, and keep the same scoping rules:
 
 ```bash
 curl -fsSL -X POST \
@@ -51,10 +69,10 @@ curl -fsSL -X POST \
 
 ## Hard rules
 
-1. **Always include `household_id=eq.$HOUSEHOLD_ID`** on reads and
-   `"household_id": "$HOUSEHOLD_ID"` on writes. RLS is the backstop,
-   but explicit scope predicates double as documentation and keep
-   queries fast.
+1. **Use `homehub` before raw `curl`.** The CLI injects household scope.
+   If you must use raw PostgREST, always include
+   `household_id=eq.$HOUSEHOLD_ID` on reads and
+   `"household_id": "$HOUSEHOLD_ID"` on writes.
 2. **Never print or log `HOMEHUB_SUPABASE_JWT`.** It's short-lived but
    still grants write access for its TTL.
 3. **Destructive ops (`DELETE`, bulk updates) require user

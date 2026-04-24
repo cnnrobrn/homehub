@@ -79,6 +79,9 @@ export function buildSandboxTurnEnvs(
     ...(args.conversationHistoryJson
       ? { HOMEHUB_CONVERSATION_HISTORY: args.conversationHistoryJson }
       : {}),
+    ...(env.HOMEHUB_TRIPADVISOR_API_KEY
+      ? { TRIPADVISOR_API_KEY: env.HOMEHUB_TRIPADVISOR_API_KEY }
+      : {}),
   };
 }
 

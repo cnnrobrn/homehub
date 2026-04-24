@@ -47,8 +47,12 @@ export const routerEnvSchema = z.object({
   // Injected into every sandbox.
   HERMES_SHARED_SECRET: z.string().min(32),
   HOMEHUB_OPENROUTER_API_KEY: z.string().min(1),
-  HERMES_DEFAULT_MODEL: z.string().min(1).default('moonshotai/kimi-k2.6'),
+  HERMES_DEFAULT_MODEL: z.string().min(1).default('deepseek/deepseek-v4-pro'),
   HERMES_TOOLSETS: z.string().min(1).default('skills,terminal'),
+  // TripAdvisor Content API key. Optional — sandboxes that don't have
+  // it will surface a clear "key not set" error when a skill tries to
+  // call `homehub tripadvisor ...`. Configured per-household in Railway.
+  HOMEHUB_TRIPADVISOR_API_KEY: z.string().min(1).optional(),
 });
 
 export type RouterEnv = z.infer<typeof routerEnvSchema>;

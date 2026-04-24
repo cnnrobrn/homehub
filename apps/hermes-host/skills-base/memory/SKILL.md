@@ -19,6 +19,8 @@ required_environment_variables:
 See `_shared`. Schema is `mem` (set `Accept-Profile: mem` and
 `Content-Profile: mem`). Tables: `node`, `alias`, `edge`, `mention`,
 `episode`, `fact`, `fact_candidate`, `pattern`, `rule`, `insight`.
+Use the `homehub` CLI; it injects household scope and chooses the
+right schema.
 
 ## When to Use
 
@@ -31,18 +33,11 @@ See `_shared`. Schema is `mem` (set `Accept-Profile: mem` and
 
 ```bash
 # Find a node by name
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: mem" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/node?household_id=eq.$HOUSEHOLD_ID&name=ilike.*$QUERY*&limit=10"
+homehub memory nodes search --query "$QUERY" --limit 10
+homehub memory nodes search --type person --query "$QUERY"
 
 # Facts about a node
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: mem" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/fact?household_id=eq.$HOUSEHOLD_ID&subject_node_id=eq.$NODE_ID&deleted_at=is.null"
+homehub memory facts list --subject-node-id "$NODE_ID" --current
 ```
 
 ## Write
@@ -52,13 +47,11 @@ approval/consolidation pipeline promotes them. Direct `fact` inserts
 bypass conflict detection:
 
 ```bash
-curl -fsSL -X POST \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Content-Profile: mem" \
-  -H "Content-Type: application/json" \
-  -d "{\"household_id\":\"$HOUSEHOLD_ID\",\"subject_node_id\":\"$NODE_ID\",\"predicate\":\"$P\",\"object_text\":\"$O\",\"source\":\"chat-hermes\"}" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/fact_candidate"
+homehub memory fact-candidates add \
+  --subject-node-id "$NODE_ID" \
+  --predicate "$P" \
+  --object-text "$O" \
+  --reason "member told Hermes in chat"
 ```
 
 ## Pitfalls

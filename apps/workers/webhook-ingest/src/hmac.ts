@@ -9,7 +9,11 @@
  *  - **HMAC (generic)** — Slack, Plaid, Monarch, Instacart all sign
  *    payloads with a shared secret. Implementation below computes
  *    `hmac-sha256(secret, rawBody)` and timing-safe compares. Used by
- *    the Nango webhook (Nango's webhook secret signs the POST body).
+ *    Nango's newer `X-Nango-Hmac-Sha256` header.
+ *
+ *  - **Nango legacy SHA-256** — Nango 0.70's SDK verifies
+ *    `X-Nango-Signature` as `sha256(secret + JSON.stringify(payload))`.
+ *    Keep this until the self-hosted Nango image is upgraded.
  *
  *  - **Google Calendar push notifications** — Google does NOT sign the
  *    payload. Instead, the `X-Goog-Channel-Token` header (or, in our
@@ -17,7 +21,7 @@
  *    serves as the shared secret. See `verifyGoogleChannel` below.
  */
 
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 export interface HmacVerifyInput {
   /** Raw request body bytes as received over the wire. */
@@ -29,7 +33,7 @@ export interface HmacVerifyInput {
   readonly signature: string;
   /** Signing secret loaded from env for this provider. */
   readonly secret: string;
-  /** Optional encoding hint. Defaults to hex; Slack uses hex, Nango base64. */
+  /** Optional encoding hint. Defaults to hex. */
   readonly encoding?: 'hex' | 'base64';
 }
 
@@ -41,7 +45,27 @@ export interface HmacVerifyInput {
 export function verifyHmac(input: HmacVerifyInput): boolean {
   const encoding = input.encoding ?? 'hex';
   const expected = createHmac('sha256', input.secret).update(input.rawBody).digest(encoding);
-  const actual = input.signature.trim();
+  return timingSafeCompare(expected, input.signature);
+}
+
+export interface NangoLegacyVerifyInput {
+  /** Parsed JSON request body. */
+  readonly payload: unknown;
+  /** Value from the legacy `X-Nango-Signature` header. */
+  readonly signature: string;
+  /** Nango environment secret key. */
+  readonly secret: string;
+}
+
+export function verifyNangoLegacySignature(input: NangoLegacyVerifyInput): boolean {
+  const expected = createHash('sha256')
+    .update(`${input.secret}${JSON.stringify(input.payload)}`)
+    .digest('hex');
+  return timingSafeCompare(expected, input.signature);
+}
+
+function timingSafeCompare(expected: string, signature: string): boolean {
+  const actual = signature.trim();
   if (expected.length !== actual.length) return false;
   try {
     return timingSafeEqual(Buffer.from(expected), Buffer.from(actual));

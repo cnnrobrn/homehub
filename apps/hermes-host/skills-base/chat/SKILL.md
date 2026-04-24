@@ -19,7 +19,7 @@ required_environment_variables:
 # Chat
 
 See `_shared`. Tables: `app.conversation`, `app.conversation_turn`,
-`app.conversation_attachment`.
+`app.conversation_attachment`. Use the `homehub` CLI.
 
 ## When to Use
 
@@ -31,11 +31,10 @@ See `_shared`. Tables: `app.conversation`, `app.conversation_turn`,
 
 ```bash
 # Turns in the current conversation
-curl -fsSL \
-  -H "apikey: $HOMEHUB_SUPABASE_ANON_KEY" \
-  -H "Authorization: Bearer $HOMEHUB_SUPABASE_JWT" \
-  -H "Accept-Profile: app" \
-  "$HOMEHUB_SUPABASE_URL/rest/v1/conversation_turn?household_id=eq.$HOUSEHOLD_ID&conversation_id=eq.$HOMEHUB_CONVERSATION_ID&order=created_at.asc"
+homehub chat turns list
+
+# Recent conversations
+homehub chat conversations list --limit 20
 ```
 
 ## Do NOT write
