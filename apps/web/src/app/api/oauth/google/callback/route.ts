@@ -316,37 +316,30 @@ export async function GET(request: NextRequest): Promise<Response> {
 /**
  * Inline `QueueClient` shim that only implements `send` (the single
  * method `runGcalPostConnect` / `runGmailPostConnect` actually use)
- * against the pgmq `pgmq_public.send` RPC. Full `QueueClient` wiring
- * lives in worker-runtime; we don't want the web bundle to take a
- * transitive dep on every `pgmq_*` RPC.
+ * against the `sync.pgmq_send` SECURITY DEFINER wrapper from migration
+ * 0019. Full `QueueClient` wiring lives in worker-runtime; we don't
+ * want the web bundle to take a transitive dep on every `pgmq_*` RPC.
  */
 function makeInlineQueueClient(service: ReturnType<typeof createServiceClient>) {
+  const rpc = (
+    service as unknown as {
+      schema: (name: string) => {
+        rpc: (
+          fn: string,
+          args?: Record<string, unknown>,
+        ) => Promise<{ error: { message: string } | null }>;
+      };
+    }
+  ).schema('sync');
   return {
     async send(queue: string, envelope: unknown) {
-      const { error } = await (
-        service.rpc as unknown as (
-          fn: string,
-          args: Record<string, unknown>,
-        ) => Promise<{ error: { message: string } | null }>
-      )('pgmq_public_send', {
+      const { error } = await rpc.rpc('pgmq_send', {
         queue_name: queue,
-        msg: envelope,
+        message: envelope,
+        sleep_seconds: 0,
       });
       if (error) {
-        // Fall back to the underlying pgmq RPC name if the public alias
-        // isn't present in this environment.
-        const { error: fallbackErr } = await (
-          service.rpc as unknown as (
-            fn: string,
-            args: Record<string, unknown>,
-          ) => Promise<{ error: { message: string } | null }>
-        )('send', {
-          queue_name: queue,
-          msg: envelope,
-        });
-        if (fallbackErr) {
-          throw new Error(`queue send failed: ${error.message} (fallback: ${fallbackErr.message})`);
-        }
+        throw new Error(`queue send failed for ${queue}: ${error.message}`);
       }
     },
   } as never;
