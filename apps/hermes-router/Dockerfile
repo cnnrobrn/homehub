@@ -14,10 +14,7 @@ ARG SERVICE_NAME
 ENV CI=true \
     PNPM_HOME=/pnpm \
     PATH=/pnpm:$PATH
-# Bundled corepack on node:20.18.0-alpine ships stale npm-registry
-# signing keys; upgrade before enabling so signature verification
-# against the current registry keys succeeds.
-RUN npm install -g corepack@latest && corepack enable
+RUN npm install -g pnpm@9.15.9
 
 WORKDIR /workspace
 
