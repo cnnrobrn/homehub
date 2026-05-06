@@ -75,6 +75,10 @@ const createQueueItemSchema = z.object({
   title: z.string().trim().min(1).max(200),
   subcategory: z.enum(QUEUE_ITEM_SUBCATEGORIES).optional(),
   note: z.string().max(2_000).optional(),
+  targetDate: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'expected YYYY-MM-DD')
+    .optional(),
 });
 
 export async function createQueueItemAction(
@@ -90,6 +94,7 @@ export async function createQueueItemAction(
     };
     if (parsed.subcategory) metadata.subcategory = parsed.subcategory;
     if (parsed.note) metadata.note = parsed.note;
+    if (parsed.targetDate) metadata.target_date = parsed.targetDate;
 
     const { data, error } = await actor.service
       .schema('mem')

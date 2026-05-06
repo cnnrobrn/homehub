@@ -28,6 +28,8 @@ export interface QueueItemRow {
   householdId: string;
   title: string;
   subcategory: string | null;
+  /** Optional `YYYY-MM-DD` the member is hyped about (release / target). */
+  targetDate: string | null;
   createdAt: string;
   metadata: Record<string, unknown>;
 }
@@ -42,11 +44,17 @@ function toCamel(row: NodeRowDb): QueueItemRow {
       : {};
   const subcategory =
     typeof normalizedMeta.subcategory === 'string' ? (normalizedMeta.subcategory as string) : null;
+  const targetDate =
+    typeof normalizedMeta.target_date === 'string' &&
+    /^\d{4}-\d{2}-\d{2}$/.test(normalizedMeta.target_date as string)
+      ? (normalizedMeta.target_date as string)
+      : null;
   return {
     id: row.id,
     householdId: row.household_id,
     title: row.canonical_name,
     subcategory,
+    targetDate,
     createdAt: row.created_at,
     metadata: normalizedMeta,
   };

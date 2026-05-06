@@ -26,6 +26,7 @@ export function CreateQueueItemForm({ householdId }: CreateQueueItemFormProps) {
   const router = useRouter();
   const [title, setTitle] = useState('');
   const [subcategory, setSubcategory] = useState<(typeof SUBCATEGORIES)[number]>('book');
+  const [targetDate, setTargetDate] = useState('');
   const [isPending, startTransition] = useTransition();
 
   function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -36,10 +37,12 @@ export function CreateQueueItemForm({ householdId }: CreateQueueItemFormProps) {
         householdId,
         title: title.trim(),
         subcategory,
+        targetDate: targetDate || undefined,
       });
       if (res.ok) {
         toast({ title: 'Added to queue', variant: 'success' });
         setTitle('');
+        setTargetDate('');
         router.refresh();
       } else {
         toast({
@@ -83,6 +86,19 @@ export function CreateQueueItemForm({ householdId }: CreateQueueItemFormProps) {
             </option>
           ))}
         </select>
+      </div>
+      <div className="flex flex-col gap-1">
+        <Label htmlFor="queue-target-date">Target date (optional)</Label>
+        <Input
+          id="queue-target-date"
+          type="date"
+          value={targetDate}
+          onChange={(e) => setTargetDate(e.target.value)}
+          disabled={isPending}
+        />
+        <span className="text-xs text-fg-muted">
+          Adds a hype bar that fills over the last 30 days.
+        </span>
       </div>
       <Button type="submit" disabled={isPending || !title.trim()}>
         {isPending ? 'Adding…' : 'Add to queue'}
