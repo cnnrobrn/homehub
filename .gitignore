@@ -49,6 +49,9 @@ supabase/.env
 __pycache__/
 *.py[cod]
 
+# Scratch image outputs from read_card.py
+card_*.png
+
 # OS
 Thumbs.db
 
