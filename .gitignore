@@ -51,6 +51,7 @@ __pycache__/
 
 # Scratch image outputs from read_card.py
 card_*.png
+hq_*.png
 
 # OS
 Thumbs.db
